@@ -1,0 +1,1913 @@
+import 'dart:typed_data';
+
+import 'package:dart_emu/src/cpu/cpu_state.dart';
+import 'package:dart_emu/src/cpu/csr.dart';
+import 'package:dart_emu/src/cpu/decoder.dart';
+import 'package:dart_emu/src/cpu/exception.dart';
+import 'package:dart_emu/src/cpu/extensions/a_extension.dart';
+import 'package:dart_emu/src/cpu/extensions/m_extension.dart';
+import 'package:dart_emu/src/cpu/mmu.dart';
+import 'package:dart_emu/src/cpu/tlb.dart';
+import 'package:dart_emu/src/ram/phys_memory_map.dart';
+import 'package:dart_emu/src/ram/phys_memory_range.dart';
+import 'package:dart_emu/src/util/bit_utils.dart';
+
+class CpuExecutor {
+  CpuExecutor({required PhysMemoryMap memMap})
+      : state = RiscVCpuState(memMap: memMap),
+        csrHandler = CsrHandler(
+          state: RiscVCpuState(memMap: memMap),
+        ) {
+    csrHandler = CsrHandler(state: state);
+    exceptionHandler = ExceptionHandler(state: state);
+    mmu = Mmu(state: state);
+    _aExt = AExtension(state: state);
+    _initMisa();
+  }
+
+  final RiscVCpuState state;
+  late CsrHandler csrHandler;
+  late ExceptionHandler exceptionHandler;
+  late Mmu mmu;
+  late AExtension _aExt;
+
+  final MExtension _mExt = MExtension();
+
+  int get cycles => state.instructionCounter;
+
+  bool get powerDown => state.powerDown;
+
+  /// Executes up to [maxCycles] instructions.
+  void execute(int maxCycles) {
+    if (maxCycles <= 0) return;
+
+    final counterTarget =
+        state.instructionCounter + maxCycles;
+    state.nCycles = maxCycles;
+
+    if (_hasPendingInterrupt()) {
+      _handleInterrupt();
+      state.nCycles--;
+      _syncCounter(counterTarget);
+      return;
+    }
+
+    state.pendingException = _noPendingException;
+
+    while (state.nCycles > 0) {
+      if (_hasPendingInterrupt()) {
+        _handleInterrupt();
+        state.nCycles--;
+        break;
+      }
+
+      final insn = _fetchInstruction();
+      if (insn == null) {
+        _handlePendingException(counterTarget);
+        return;
+      }
+
+      state.nCycles--;
+
+      final compressed =
+          InstructionDecoder.isCompressed(insn);
+      final instrSize = compressed
+          ? _compressedInsnSize
+          : _fullInsnSize;
+
+      if (!_executeInstruction(insn, instrSize)) {
+        _handlePendingException(counterTarget);
+        return;
+      }
+    }
+
+    _syncCounter(counterTarget);
+  }
+
+  void setMip(int mask) => state.setMip(mask);
+
+  void resetMip(int mask) => state.resetMip(mask);
+
+  int get mip => state.mip;
+
+  bool _hasPendingInterrupt() =>
+      (state.mip & state.mie) != 0 &&
+      exceptionHandler.hasPendingInterrupt();
+
+  void _handleInterrupt() =>
+      exceptionHandler.handlePendingInterrupt();
+
+  void _syncCounter(int counterTarget) {
+    state.instructionCounter =
+        counterTarget - state.nCycles;
+  }
+
+  int? _fetchInstruction() {
+    final addr = state.pc;
+    final tlbIdx =
+        (addr >>> TlbConstants.pageSizeLog2) &
+        TlbConstants.indexMask;
+    final pageTag = addr & ~TlbConstants.pageMask;
+    final entry = state.tlbCode[tlbIdx];
+
+    if (entry.virtualTag == pageTag &&
+        entry.hostData != null) {
+      final offset = entry.hostOffset +
+          (addr & TlbConstants.pageMask);
+      final remaining =
+          entry.hostData!.lengthInBytes - offset;
+      if (remaining >= _fullInsnSize) {
+        return _readInsn32(entry.hostData!, offset);
+      }
+      if (remaining >= _compressedInsnSize) {
+        final low = entry.hostData!
+            .getUint16(offset, Endian.little);
+        if ((low & _compressedMask) != _compressedMask) {
+          return low;
+        }
+        return _fetchCrossPage(addr, low);
+      }
+    }
+
+    return _fetchSlow(addr);
+  }
+
+  int _readInsn32(ByteData data, int offset) {
+    final low = data.getUint16(offset, Endian.little);
+    if ((low & _compressedMask) != _compressedMask) {
+      return low;
+    }
+    final high =
+        data.getUint16(offset + 2, Endian.little);
+    return low | (high << _halfWordBits);
+  }
+
+  int? _fetchSlow(int addr) {
+    try {
+      final physAddr =
+          mmu.translate(addr, MemoryAccessType.fetch);
+      final range = state.memMap.findRange(physAddr);
+      if (range == null || range is! RamRange) {
+        state
+          ..pendingException = _Exception.faultFetch
+          ..pendingTval = addr;
+        return null;
+      }
+
+      final pageOffset = addr & TlbConstants.pageMask;
+      final rangeOffset = physAddr - range.addr;
+      final pageBase = rangeOffset - pageOffset;
+
+      final tlbIdx =
+          (addr >>> TlbConstants.pageSizeLog2) &
+          TlbConstants.indexMask;
+      state.tlbCode[tlbIdx]
+        ..virtualTag = addr & ~TlbConstants.pageMask
+        ..hostData = range.byteData
+        ..hostOffset = pageBase;
+
+      final offset = pageBase + pageOffset;
+      final remaining =
+          range.byteData.lengthInBytes - offset;
+
+      if (remaining >= _fullInsnSize) {
+        return _readInsn32(range.byteData, offset);
+      }
+
+      if (remaining >= _compressedInsnSize) {
+        final low = range.byteData
+            .getUint16(offset, Endian.little);
+        if ((low & _compressedMask) != _compressedMask) {
+          return low;
+        }
+        return _fetchCrossPage(addr, low);
+      }
+
+      state
+        ..pendingException = _Exception.faultFetch
+        ..pendingTval = addr;
+      return null;
+    } on MmuException catch (e) {
+      state
+        ..pendingException = e.causeCode
+        ..pendingTval = e.virtualAddr;
+      return null;
+    }
+  }
+
+  int? _fetchCrossPage(int addr, int lowHalf) {
+    try {
+      final nextAddr = addr + _compressedInsnSize;
+      final physAddr = mmu.translate(
+        nextAddr,
+        MemoryAccessType.fetch,
+      );
+      final range = state.memMap.findRange(physAddr);
+      if (range == null || range is! RamRange) {
+        state
+          ..pendingException = _Exception.faultFetch
+          ..pendingTval = nextAddr;
+        return null;
+      }
+      final offset = physAddr - range.addr;
+      final high = range.byteData
+          .getUint16(offset, Endian.little);
+      return lowHalf | (high << _halfWordBits);
+    } on MmuException catch (e) {
+      state
+        ..pendingException = e.causeCode
+        ..pendingTval = e.virtualAddr;
+      return null;
+    }
+  }
+
+  void _handlePendingException(int counterTarget) {
+    if (state.pendingException >= 0) {
+      state.nCycles--;
+      exceptionHandler.raiseException(
+        state.pendingException,
+        state.pendingTval,
+      );
+    }
+    _syncCounter(counterTarget);
+  }
+
+  bool _executeInstruction(int insn, int instrSize) {
+    final opcode = insn & _opcodeMask;
+
+    switch (opcode) {
+      case _Opcode.lui:
+        return _executeLui(insn, instrSize);
+      case _Opcode.auipc:
+        return _executeAuipc(insn, instrSize);
+      case _Opcode.jal:
+        return _executeJal(insn);
+      case _Opcode.jalr:
+        return _executeJalr(insn);
+      case _Opcode.branch:
+        return _executeBranch(insn, instrSize);
+      case _Opcode.load:
+        return _executeLoad(insn, instrSize);
+      case _Opcode.store:
+        return _executeStore(insn, instrSize);
+      case _Opcode.opImm:
+        return _executeOpImm(insn, instrSize);
+      case _Opcode.opImm32:
+        return _executeOpImm32(insn, instrSize);
+      case _Opcode.op:
+        return _executeOp(insn, instrSize);
+      case _Opcode.op32:
+        return _executeOp32(insn, instrSize);
+      case _Opcode.system:
+        return _executeSystem(insn, instrSize);
+      case _Opcode.miscMem:
+        return _executeMiscMem(insn, instrSize);
+      case _Opcode.amo:
+        return _executeAmo(insn, instrSize);
+      default:
+        if (instrSize == _compressedInsnSize) {
+          return _executeCompressed(insn);
+        }
+        _raiseIllegalInsn(insn);
+        return false;
+    }
+  }
+
+  bool _executeCompressed(int insn) {
+    final quadrant = insn & _compressedMask;
+    final funct3 =
+        (insn >> _cFunct3Shift) & _cFunct3Mask;
+
+    return switch (quadrant) {
+      0 => _executeCompressedQ0(insn, funct3),
+      1 => _executeCompressedQ1(insn, funct3),
+      2 => _executeCompressedQ2(insn, funct3),
+      _ => _illegalCompressed(insn),
+    };
+  }
+
+  bool _illegalCompressed(int insn) {
+    _raiseIllegalInsn(insn);
+    return false;
+  }
+
+  bool _executeCompressedQ0(int insn, int funct3) {
+    final rdPrime = ((insn >> 2) & 7) | 8;
+
+    return switch (funct3) {
+      0 => _cAddi4spn(insn, rdPrime),
+      2 => _cLw(insn, rdPrime),
+      3 => _cLd(insn, rdPrime),
+      6 => _cSw(insn, rdPrime),
+      7 => _cSd(insn, rdPrime),
+      _ => _illegalCompressed(insn),
+    };
+  }
+
+  bool _cAddi4spn(int insn, int rd) {
+    final imm = _cField(insn, 11, 4, 5) |
+        _cField(insn, 7, 6, 9) |
+        _cField(insn, 6, 2, 2) |
+        _cField(insn, 5, 3, 3);
+    if (imm == 0) {
+      _raiseIllegalInsn(insn);
+      return false;
+    }
+    _writeReg(rd, state.regs[2] + imm);
+    state.pc += _compressedInsnSize;
+    return true;
+  }
+
+  bool _cLw(int insn, int rd) {
+    final rs1 = ((insn >> 7) & 7) | 8;
+    final imm = _cField(insn, 10, 3, 5) |
+        _cField(insn, 6, 2, 2) |
+        _cField(insn, 5, 6, 6);
+    final addr = state.regs[rs1] + imm;
+    final val = _memReadU32(addr);
+    if (val == null) return false;
+    _writeReg(rd, BitUtils.signExtend32(val));
+    state.pc += _compressedInsnSize;
+    return true;
+  }
+
+  bool _cLd(int insn, int rd) {
+    final rs1 = ((insn >> 7) & 7) | 8;
+    final imm = _cField(insn, 10, 3, 5) |
+        _cField(insn, 5, 6, 7);
+    final addr = state.regs[rs1] + imm;
+    final val = _memReadU64(addr);
+    if (val == null) return false;
+    _writeReg(rd, val);
+    state.pc += _compressedInsnSize;
+    return true;
+  }
+
+  bool _cSw(int insn, int rdPrime) {
+    final rs1 = ((insn >> 7) & 7) | 8;
+    final imm = _cField(insn, 10, 3, 5) |
+        _cField(insn, 6, 2, 2) |
+        _cField(insn, 5, 6, 6);
+    final addr = state.regs[rs1] + imm;
+    if (!_memWriteU32(addr, state.regs[rdPrime])) {
+      return false;
+    }
+    state.pc += _compressedInsnSize;
+    return true;
+  }
+
+  bool _cSd(int insn, int rdPrime) {
+    final rs1 = ((insn >> 7) & 7) | 8;
+    final imm = _cField(insn, 10, 3, 5) |
+        _cField(insn, 5, 6, 7);
+    final addr = state.regs[rs1] + imm;
+    if (!_memWriteU64(addr, state.regs[rdPrime])) {
+      return false;
+    }
+    state.pc += _compressedInsnSize;
+    return true;
+  }
+
+  bool _executeCompressedQ1(int insn, int funct3) =>
+      switch (funct3) {
+        0 => _cAddiNop(insn),
+        1 => _cAddiw(insn),
+        2 => _cLi(insn),
+        3 => _cLuiAddi16sp(insn),
+        4 => _cArith(insn),
+        5 => _cJ(insn),
+        6 => _cBeqz(insn),
+        7 => _cBnez(insn),
+        _ => _illegalCompressed(insn),
+      };
+
+  bool _cAddiNop(int insn) {
+    final rd = InstructionDecoder.extractRd(insn);
+    if (rd != 0) {
+      final imm = _cSignExtend(
+        _cField(insn, 12, 5, 5) |
+            _cField(insn, 2, 0, 4),
+        6,
+      );
+      _writeReg(rd, state.regs[rd] + imm);
+    }
+    state.pc += _compressedInsnSize;
+    return true;
+  }
+
+  bool _cAddiw(int insn) {
+    final rd = InstructionDecoder.extractRd(insn);
+    if (rd != 0) {
+      final imm = _cSignExtend(
+        _cField(insn, 12, 5, 5) |
+            _cField(insn, 2, 0, 4),
+        6,
+      );
+      _writeReg(
+        rd,
+        BitUtils.signExtend32(state.regs[rd] + imm),
+      );
+    }
+    state.pc += _compressedInsnSize;
+    return true;
+  }
+
+  bool _cLi(int insn) {
+    final rd = InstructionDecoder.extractRd(insn);
+    if (rd != 0) {
+      final imm = _cSignExtend(
+        _cField(insn, 12, 5, 5) |
+            _cField(insn, 2, 0, 4),
+        6,
+      );
+      _writeReg(rd, imm);
+    }
+    state.pc += _compressedInsnSize;
+    return true;
+  }
+
+  bool _cLuiAddi16sp(int insn) {
+    final rd = InstructionDecoder.extractRd(insn);
+    if (rd == 2) {
+      final imm = _cSignExtend(
+        _cField(insn, 12, 9, 9) |
+            _cField(insn, 6, 4, 4) |
+            _cField(insn, 5, 6, 6) |
+            _cField(insn, 3, 7, 8) |
+            _cField(insn, 2, 5, 5),
+        10,
+      );
+      if (imm == 0) {
+        _raiseIllegalInsn(insn);
+        return false;
+      }
+      _writeReg(2, state.regs[2] + imm);
+    } else if (rd != 0) {
+      final imm = _cSignExtend(
+        _cField(insn, 12, 17, 17) |
+            _cField(insn, 2, 12, 16),
+        18,
+      );
+      _writeReg(rd, imm);
+    }
+    state.pc += _compressedInsnSize;
+    return true;
+  }
+
+  bool _cArith(int insn) {
+    final subFunct = (insn >> 10) & 3;
+    final rd = ((insn >> 7) & 7) | 8;
+
+    return switch (subFunct) {
+      0 || 1 => _cShift(insn, rd, subFunct),
+      2 => _cAndi(insn, rd),
+      3 => _cRegArith(insn, rd),
+      _ => _illegalCompressed(insn),
+    };
+  }
+
+  bool _cShift(int insn, int rd, int isArith) {
+    final imm = _cField(insn, 12, 5, 5) |
+        _cField(insn, 2, 0, 4);
+    if (isArith == 0) {
+      _writeReg(rd, state.regs[rd] >>> imm);
+    } else {
+      _writeReg(rd, state.regs[rd] >> imm);
+    }
+    state.pc += _compressedInsnSize;
+    return true;
+  }
+
+  bool _cAndi(int insn, int rd) {
+    final imm = _cSignExtend(
+      _cField(insn, 12, 5, 5) |
+          _cField(insn, 2, 0, 4),
+      6,
+    );
+    _writeReg(rd, state.regs[rd] & imm);
+    state.pc += _compressedInsnSize;
+    return true;
+  }
+
+  bool _cRegArith(int insn, int rd) {
+    final rs2 = ((insn >> 2) & 7) | 8;
+    final subOp =
+        ((insn >> 5) & 3) | ((insn >> (12 - 2)) & 4);
+
+    switch (subOp) {
+      case 0:
+        _writeReg(rd, state.regs[rd] - state.regs[rs2]);
+      case 1:
+        _writeReg(rd, state.regs[rd] ^ state.regs[rs2]);
+      case 2:
+        _writeReg(rd, state.regs[rd] | state.regs[rs2]);
+      case 3:
+        _writeReg(rd, state.regs[rd] & state.regs[rs2]);
+      case 4:
+        _writeReg(
+          rd,
+          BitUtils.signExtend32(
+            state.regs[rd] - state.regs[rs2],
+          ),
+        );
+      case 5:
+        _writeReg(
+          rd,
+          BitUtils.signExtend32(
+            state.regs[rd] + state.regs[rs2],
+          ),
+        );
+      default:
+        _raiseIllegalInsn(insn);
+        return false;
+    }
+    state.pc += _compressedInsnSize;
+    return true;
+  }
+
+  bool _cJ(int insn) {
+    state.pc += _cJImm(insn);
+    return true;
+  }
+
+  bool _cBeqz(int insn) {
+    final rs1 = ((insn >> 7) & 7) | 8;
+    if (state.regs[rs1] == 0) {
+      state.pc += _cBranchImm(insn);
+    } else {
+      state.pc += _compressedInsnSize;
+    }
+    return true;
+  }
+
+  bool _cBnez(int insn) {
+    final rs1 = ((insn >> 7) & 7) | 8;
+    if (state.regs[rs1] != 0) {
+      state.pc += _cBranchImm(insn);
+    } else {
+      state.pc += _compressedInsnSize;
+    }
+    return true;
+  }
+
+  bool _executeCompressedQ2(int insn, int funct3) {
+    final rs2 = (insn >> 2) & _regMask;
+
+    return switch (funct3) {
+      0 => _cSlli(insn, rs2),
+      2 => _cLwsp(insn, rs2),
+      3 => _cLdsp(insn, rs2),
+      4 => _cJrMvAddEbreak(insn, rs2),
+      6 => _cSwsp(insn, rs2),
+      7 => _cSdsp(insn, rs2),
+      _ => _illegalCompressed(insn),
+    };
+  }
+
+  bool _cSlli(int insn, int rs2) {
+    final rd = InstructionDecoder.extractRd(insn);
+    final imm = _cField(insn, 12, 5, 5) | rs2;
+    if (rd != 0) {
+      _writeReg(rd, state.regs[rd] << imm);
+    }
+    state.pc += _compressedInsnSize;
+    return true;
+  }
+
+  bool _cLwsp(int insn, int rs2) {
+    final rd = InstructionDecoder.extractRd(insn);
+    final imm = _cField(insn, 12, 5, 5) |
+        (rs2 & (7 << 2)) |
+        _cField(insn, 2, 6, 7);
+    final addr = state.regs[2] + imm;
+    final val = _memReadU32(addr);
+    if (val == null) return false;
+    if (rd != 0) {
+      _writeReg(rd, BitUtils.signExtend32(val));
+    }
+    state.pc += _compressedInsnSize;
+    return true;
+  }
+
+  bool _cLdsp(int insn, int rs2) {
+    final rd = InstructionDecoder.extractRd(insn);
+    final imm = _cField(insn, 12, 5, 5) |
+        (rs2 & (3 << 3)) |
+        _cField(insn, 2, 6, 8);
+    final addr = state.regs[2] + imm;
+    final val = _memReadU64(addr);
+    if (val == null) return false;
+    if (rd != 0) {
+      _writeReg(rd, val);
+    }
+    state.pc += _compressedInsnSize;
+    return true;
+  }
+
+  bool _cJrMvAddEbreak(int insn, int rs2) {
+    final rd = InstructionDecoder.extractRd(insn);
+    final bit12 = (insn >> 12) & 1;
+
+    if (bit12 == 0) {
+      if (rs2 == 0) {
+        if (rd == 0) {
+          _raiseIllegalInsn(insn);
+          return false;
+        }
+        state.pc = state.regs[rd] & ~1;
+        return true;
+      } else {
+        if (rd != 0) {
+          _writeReg(rd, state.regs[rs2]);
+        }
+        state.pc += _compressedInsnSize;
+        return true;
+      }
+    } else {
+      if (rs2 == 0) {
+        if (rd == 0) {
+          state.pendingException =
+              _Exception.breakpoint;
+          return false;
+        } else {
+          final returnAddr =
+              state.pc + _compressedInsnSize;
+          state.pc = state.regs[rd] & ~1;
+          _writeReg(1, returnAddr);
+          return true;
+        }
+      } else {
+        if (rd != 0) {
+          _writeReg(
+            rd,
+            state.regs[rd] + state.regs[rs2],
+          );
+        }
+        state.pc += _compressedInsnSize;
+        return true;
+      }
+    }
+  }
+
+  bool _cSwsp(int insn, int rs2) {
+    final imm = _cField(insn, 9, 2, 5) |
+        _cField(insn, 7, 6, 7);
+    final addr = state.regs[2] + imm;
+    if (!_memWriteU32(addr, state.regs[rs2])) {
+      return false;
+    }
+    state.pc += _compressedInsnSize;
+    return true;
+  }
+
+  bool _cSdsp(int insn, int rs2) {
+    final imm = _cField(insn, 10, 3, 5) |
+        _cField(insn, 7, 6, 8);
+    final addr = state.regs[2] + imm;
+    if (!_memWriteU64(addr, state.regs[rs2])) {
+      return false;
+    }
+    state.pc += _compressedInsnSize;
+    return true;
+  }
+
+  bool _executeLui(int insn, int instrSize) {
+    final rd = InstructionDecoder.extractRd(insn);
+    if (rd != 0) {
+      _writeReg(
+        rd,
+        BitUtils.signExtend32(insn & _immUMask),
+      );
+    }
+    state.pc += instrSize;
+    return true;
+  }
+
+  bool _executeAuipc(int insn, int instrSize) {
+    final rd = InstructionDecoder.extractRd(insn);
+    if (rd != 0) {
+      _writeReg(
+        rd,
+        state.pc +
+            BitUtils.signExtend32(insn & _immUMask),
+      );
+    }
+    state.pc += instrSize;
+    return true;
+  }
+
+  bool _executeJal(int insn) {
+    final rd = InstructionDecoder.extractRd(insn);
+    final imm = InstructionDecoder.extractImmJ(insn);
+    if (rd != 0) {
+      _writeReg(rd, state.pc + _fullInsnSize);
+    }
+    state.pc += imm;
+    return true;
+  }
+
+  bool _executeJalr(int insn) {
+    final rd = InstructionDecoder.extractRd(insn);
+    final rs1 = InstructionDecoder.extractRs1(insn);
+    final imm = InstructionDecoder.extractImmI(insn);
+    final returnAddr = state.pc + _fullInsnSize;
+    state.pc = (state.regs[rs1] + imm) & ~1;
+    if (rd != 0) {
+      _writeReg(rd, returnAddr);
+    }
+    return true;
+  }
+
+  bool _executeBranch(int insn, int instrSize) {
+    final rs1 = InstructionDecoder.extractRs1(insn);
+    final rs2 = InstructionDecoder.extractRs2(insn);
+    final funct3 =
+        InstructionDecoder.extractFunct3(insn);
+    final a = state.regs[rs1];
+    final b = state.regs[rs2];
+
+    bool condition;
+    switch (funct3 >> 1) {
+      case 0:
+        condition = a == b;
+      case 2:
+        condition = a < b;
+      case 3:
+        condition = _unsignedLessThan(a, b);
+      default:
+        _raiseIllegalInsn(insn);
+        return false;
+    }
+
+    if ((funct3 & 1) != 0) condition = !condition;
+
+    if (condition) {
+      final imm = InstructionDecoder.extractImmB(insn);
+      state.pc += imm;
+    } else {
+      state.pc += instrSize;
+    }
+    return true;
+  }
+
+  bool _executeLoad(int insn, int instrSize) {
+    final rd = InstructionDecoder.extractRd(insn);
+    final rs1 = InstructionDecoder.extractRs1(insn);
+    final funct3 =
+        InstructionDecoder.extractFunct3(insn);
+    final imm = InstructionDecoder.extractImmI(insn);
+    final addr = state.regs[rs1] + imm;
+
+    int? val;
+    switch (funct3) {
+      case _LoadFunct3.lb:
+        val = _memReadU8(addr);
+        if (val == null) return false;
+        val = _signExtend8(val);
+      case _LoadFunct3.lh:
+        val = _memReadU16(addr);
+        if (val == null) return false;
+        val = _signExtend16(val);
+      case _LoadFunct3.lw:
+        val = _memReadU32(addr);
+        if (val == null) return false;
+        val = BitUtils.signExtend32(val);
+      case _LoadFunct3.ld:
+        val = _memReadU64(addr);
+        if (val == null) return false;
+      case _LoadFunct3.lbu:
+        val = _memReadU8(addr);
+        if (val == null) return false;
+      case _LoadFunct3.lhu:
+        val = _memReadU16(addr);
+        if (val == null) return false;
+      case _LoadFunct3.lwu:
+        val = _memReadU32(addr);
+        if (val == null) return false;
+        val = val & _mask32;
+      default:
+        _raiseIllegalInsn(insn);
+        return false;
+    }
+
+    if (rd != 0) _writeReg(rd, val);
+    state.pc += instrSize;
+    return true;
+  }
+
+  bool _executeStore(int insn, int instrSize) {
+    final rs1 = InstructionDecoder.extractRs1(insn);
+    final rs2 = InstructionDecoder.extractRs2(insn);
+    final funct3 =
+        InstructionDecoder.extractFunct3(insn);
+    final imm = InstructionDecoder.extractImmS(insn);
+    final addr = state.regs[rs1] + imm;
+    final val = state.regs[rs2];
+
+    switch (funct3) {
+      case _StoreFunct3.sb:
+        if (!_memWriteU8(addr, val)) return false;
+      case _StoreFunct3.sh:
+        if (!_memWriteU16(addr, val)) return false;
+      case _StoreFunct3.sw:
+        if (!_memWriteU32(addr, val)) return false;
+      case _StoreFunct3.sd:
+        if (!_memWriteU64(addr, val)) return false;
+      default:
+        _raiseIllegalInsn(insn);
+        return false;
+    }
+
+    state.pc += instrSize;
+    return true;
+  }
+
+  bool _executeOpImm(int insn, int instrSize) {
+    final rd = InstructionDecoder.extractRd(insn);
+    final rs1 = InstructionDecoder.extractRs1(insn);
+    final funct3 =
+        InstructionDecoder.extractFunct3(insn);
+    final imm = InstructionDecoder.extractImmI(insn);
+    final src = state.regs[rs1];
+
+    int val;
+    switch (funct3) {
+      case _AluFunct3.add:
+        val = src + imm;
+      case _AluFunct3.sll:
+        if ((imm & ~_shamtMask64) != 0) {
+          _raiseIllegalInsn(insn);
+          return false;
+        }
+        val = src << (imm & _shamtMask64);
+      case _AluFunct3.slt:
+        val = (src < imm) ? 1 : 0;
+      case _AluFunct3.sltu:
+        val = _unsignedLessThan(src, imm) ? 1 : 0;
+      case _AluFunct3.xor:
+        val = src ^ imm;
+      case _AluFunct3.srl:
+        final shamtBits = imm & _shamtMask64;
+        if ((imm & ~(_shamtMask64 | _sraBit)) != 0) {
+          _raiseIllegalInsn(insn);
+          return false;
+        }
+        if ((imm & _sraBit) != 0) {
+          val = src >> shamtBits;
+        } else {
+          val = src >>> shamtBits;
+        }
+      case _AluFunct3.or:
+        val = src | imm;
+      case _AluFunct3.and:
+        val = src & imm;
+      default:
+        _raiseIllegalInsn(insn);
+        return false;
+    }
+
+    if (rd != 0) _writeReg(rd, val);
+    state.pc += instrSize;
+    return true;
+  }
+
+  bool _executeOpImm32(int insn, int instrSize) {
+    final rd = InstructionDecoder.extractRd(insn);
+    final rs1 = InstructionDecoder.extractRs1(insn);
+    final funct3 =
+        InstructionDecoder.extractFunct3(insn);
+    final imm = InstructionDecoder.extractImmI(insn);
+    final src = state.regs[rs1];
+
+    int val;
+    switch (funct3) {
+      case _AluFunct3.add:
+        val = BitUtils.signExtend32(src + imm);
+      case _AluFunct3.sll:
+        if ((imm & ~_shamtMask32) != 0) {
+          _raiseIllegalInsn(insn);
+          return false;
+        }
+        val = BitUtils.signExtend32(
+          src << (imm & _shamtMask32),
+        );
+      case _AluFunct3.srl:
+        final shamt = imm & _shamtMask32;
+        if ((imm & ~(_shamtMask32 | _sraBit)) != 0) {
+          _raiseIllegalInsn(insn);
+          return false;
+        }
+        if ((imm & _sraBit) != 0) {
+          val = BitUtils.signExtend32(src) >> shamt;
+        } else {
+          val = BitUtils.signExtend32(
+            (src & _mask32) >>> shamt,
+          );
+        }
+      default:
+        _raiseIllegalInsn(insn);
+        return false;
+    }
+
+    if (rd != 0) _writeReg(rd, val);
+    state.pc += instrSize;
+    return true;
+  }
+
+  bool _executeOp(int insn, int instrSize) {
+    final rd = InstructionDecoder.extractRd(insn);
+    final rs1 = InstructionDecoder.extractRs1(insn);
+    final rs2 = InstructionDecoder.extractRs2(insn);
+    final funct7 = insn >>> _funct7Shift;
+
+    if (funct7 == _MExtFunct7.muldiv) {
+      final funct3 =
+          InstructionDecoder.extractFunct3(insn);
+      final result = _mExt.executeMulDiv(
+        funct3: funct3,
+        rs1Val: state.regs[rs1],
+        rs2Val: state.regs[rs2],
+        isWord: false,
+      );
+      if (rd != 0) _writeReg(rd, result);
+      state.pc += instrSize;
+      return true;
+    }
+
+    if ((funct7 & ~_subFunct7) != 0) {
+      _raiseIllegalInsn(insn);
+      return false;
+    }
+
+    final funct3With30 =
+        InstructionDecoder.extractFunct3(insn) |
+        ((insn >>> (_bit30Shift - _funct3Width)) &
+            _bit30InFunct3);
+    final a = state.regs[rs1];
+    final b = state.regs[rs2];
+
+    int val;
+    switch (funct3With30) {
+      case _RegAluFunct.add:
+        val = a + b;
+      case _RegAluFunct.sub:
+        val = a - b;
+      case _RegAluFunct.sll:
+        val = a << (b & _shamtMask64);
+      case _RegAluFunct.slt:
+        val = (a < b) ? 1 : 0;
+      case _RegAluFunct.sltu:
+        val = _unsignedLessThan(a, b) ? 1 : 0;
+      case _RegAluFunct.xor:
+        val = a ^ b;
+      case _RegAluFunct.srl:
+        val = a >>> (b & _shamtMask64);
+      case _RegAluFunct.sra:
+        val = a >> (b & _shamtMask64);
+      case _RegAluFunct.or:
+        val = a | b;
+      case _RegAluFunct.and:
+        val = a & b;
+      default:
+        _raiseIllegalInsn(insn);
+        return false;
+    }
+
+    if (rd != 0) _writeReg(rd, val);
+    state.pc += instrSize;
+    return true;
+  }
+
+  bool _executeOp32(int insn, int instrSize) {
+    final rd = InstructionDecoder.extractRd(insn);
+    final rs1 = InstructionDecoder.extractRs1(insn);
+    final rs2 = InstructionDecoder.extractRs2(insn);
+    final funct7 = insn >>> _funct7Shift;
+
+    if (funct7 == _MExtFunct7.muldiv) {
+      final funct3 =
+          InstructionDecoder.extractFunct3(insn);
+      final result = _mExt.executeMulDiv(
+        funct3: funct3,
+        rs1Val: state.regs[rs1],
+        rs2Val: state.regs[rs2],
+        isWord: true,
+      );
+      if (rd != 0) _writeReg(rd, result);
+      state.pc += instrSize;
+      return true;
+    }
+
+    if ((funct7 & ~_subFunct7) != 0) {
+      _raiseIllegalInsn(insn);
+      return false;
+    }
+
+    final funct3With30 =
+        InstructionDecoder.extractFunct3(insn) |
+        ((insn >>> (_bit30Shift - _funct3Width)) &
+            _bit30InFunct3);
+    final a = state.regs[rs1];
+    final b = state.regs[rs2];
+
+    int val;
+    switch (funct3With30) {
+      case _RegAluFunct.add:
+        val = BitUtils.signExtend32(a + b);
+      case _RegAluFunct.sub:
+        val = BitUtils.signExtend32(a - b);
+      case _RegAluFunct.sll:
+        val = BitUtils.signExtend32(
+          (a & _mask32) << (b & _shamtMask32),
+        );
+      case _RegAluFunct.srl:
+        val = BitUtils.signExtend32(
+          (a & _mask32) >>> (b & _shamtMask32),
+        );
+      case _RegAluFunct.sra:
+        val = BitUtils.signExtend32(a) >>
+            (b & _shamtMask32);
+      default:
+        _raiseIllegalInsn(insn);
+        return false;
+    }
+
+    if (rd != 0) _writeReg(rd, val);
+    state.pc += instrSize;
+    return true;
+  }
+
+  bool _executeSystem(int insn, int instrSize) {
+    final funct3 =
+        InstructionDecoder.extractFunct3(insn);
+    final imm = insn >>> _immIShift;
+
+    if (funct3 == 0) {
+      return _executePrivileged(insn, imm, instrSize);
+    }
+
+    return _executeCsr(insn, funct3, imm, instrSize);
+  }
+
+  bool _executePrivileged(
+    int insn,
+    int imm,
+    int instrSize,
+  ) {
+    final rs1 = InstructionDecoder.extractRs1(insn);
+    switch (imm) {
+      case _SystemImm.ecall:
+        if (insn & _systemExtraBitsMask != 0) {
+          _raiseIllegalInsn(insn);
+          return false;
+        }
+        state.pendingException =
+            _Exception.userEcall +
+            state.privilege.value;
+        return false;
+
+      case _SystemImm.ebreak:
+        if (insn & _systemExtraBitsMask != 0) {
+          _raiseIllegalInsn(insn);
+          return false;
+        }
+        state.pendingException = _Exception.breakpoint;
+        return false;
+
+      case _SystemImm.sret:
+        if (insn & _systemExtraBitsMask != 0) {
+          _raiseIllegalInsn(insn);
+          return false;
+        }
+        if (state.privilege.value <
+            PrivilegeLevel.supervisor.value) {
+          _raiseIllegalInsn(insn);
+          return false;
+        }
+        exceptionHandler.handleSret();
+        return true;
+
+      case _SystemImm.mret:
+        if (insn & _systemExtraBitsMask != 0) {
+          _raiseIllegalInsn(insn);
+          return false;
+        }
+        if (state.privilege.value <
+            PrivilegeLevel.machine.value) {
+          _raiseIllegalInsn(insn);
+          return false;
+        }
+        exceptionHandler.handleMret();
+        return true;
+
+      case _SystemImm.wfi:
+        if (insn & _wfiExtraBitsMask != 0) {
+          _raiseIllegalInsn(insn);
+          return false;
+        }
+        if (state.privilege == PrivilegeLevel.user) {
+          _raiseIllegalInsn(insn);
+          return false;
+        }
+        if ((state.mip & state.mie) == 0) {
+          state.powerDown = true;
+          state.pc += instrSize;
+          return true;
+        }
+        state.pc += instrSize;
+        return true;
+
+      default:
+        if ((imm >> _sfenceVmaIdShift) ==
+            _sfenceVmaIdValue) {
+          if (insn & _wfiExtraBitsMask != 0) {
+            _raiseIllegalInsn(insn);
+            return false;
+          }
+          if (state.privilege == PrivilegeLevel.user) {
+            _raiseIllegalInsn(insn);
+            return false;
+          }
+          if (rs1 == 0) {
+            state.flushTlb();
+          } else {
+            state.flushTlb();
+          }
+          state.pc += instrSize;
+          return true;
+        }
+        _raiseIllegalInsn(insn);
+        return false;
+    }
+  }
+
+  bool _executeCsr(
+    int insn,
+    int funct3,
+    int csrAddr,
+    int instrSize,
+  ) {
+    final rd = InstructionDecoder.extractRd(insn);
+    final rs1 = InstructionDecoder.extractRs1(insn);
+    final isImmediate =
+        (funct3 & _csrImmediateBit) != 0;
+    final writeVal =
+        isImmediate ? rs1 : state.regs[rs1];
+    final csrOp = funct3 & _csrOpMask;
+
+    try {
+      int oldVal;
+      switch (csrOp) {
+        case _CsrOp.readWrite:
+          oldVal = csrHandler.read(csrAddr);
+          csrHandler.write(csrAddr, writeVal);
+          if (rd != 0) _writeReg(rd, oldVal);
+
+        case _CsrOp.readSet:
+          oldVal = csrHandler.read(csrAddr);
+          if (rs1 != 0) {
+            csrHandler.write(
+              csrAddr,
+              oldVal | writeVal,
+            );
+          }
+          if (rd != 0) _writeReg(rd, oldVal);
+
+        case _CsrOp.readClear:
+          oldVal = csrHandler.read(csrAddr);
+          if (rs1 != 0) {
+            csrHandler.write(
+              csrAddr,
+              oldVal & ~writeVal,
+            );
+          }
+          if (rd != 0) _writeReg(rd, oldVal);
+
+        default:
+          _raiseIllegalInsn(insn);
+          return false;
+      }
+    } on CsrAccessException {
+      _raiseIllegalInsn(insn);
+      return false;
+    }
+
+    state.pc += instrSize;
+    return true;
+  }
+
+  bool _executeMiscMem(int insn, int instrSize) {
+    final funct3 =
+        InstructionDecoder.extractFunct3(insn);
+    switch (funct3) {
+      case _FenceFunct3.fence:
+      case _FenceFunct3.fenceI:
+        state.pc += instrSize;
+        return true;
+      default:
+        _raiseIllegalInsn(insn);
+        return false;
+    }
+  }
+
+  bool _executeAmo(int insn, int instrSize) {
+    final funct3 =
+        InstructionDecoder.extractFunct3(insn);
+    final funct7 =
+        InstructionDecoder.extractFunct7(insn);
+    final rd = InstructionDecoder.extractRd(insn);
+    final rs1 = InstructionDecoder.extractRs1(insn);
+    final rs2 = InstructionDecoder.extractRs2(insn);
+
+    try {
+      _aExt.executeAtomic(
+        funct3: funct3,
+        funct7: funct7,
+        rd: rd,
+        rs1Val: state.regs[rs1],
+        rs2Val: state.regs[rs2],
+        readWord: _amoReadWord,
+        readDouble: _amoReadDouble,
+        writeWord: _amoWriteWord,
+        writeDouble: _amoWriteDouble,
+      );
+    } on IllegalAtomicException {
+      _raiseIllegalInsn(insn);
+      return false;
+    }
+    state.regs[0] = 0;
+    state.pc += instrSize;
+    return true;
+  }
+
+  int _amoReadWord(int addr) {
+    final val = _memReadU32(addr);
+    if (val == null) return 0;
+    return BitUtils.signExtend32(val);
+  }
+
+  int _amoReadDouble(int addr) =>
+      _memReadU64(addr) ?? 0;
+
+  void _amoWriteWord(int addr, int value) {
+    _memWriteU32(addr, value);
+  }
+
+  void _amoWriteDouble(int addr, int value) {
+    _memWriteU64(addr, value);
+  }
+
+  int? _memReadU8(int addr) {
+    final tlbIdx =
+        (addr >>> TlbConstants.pageSizeLog2) &
+        TlbConstants.indexMask;
+    final pageTag = addr & ~TlbConstants.pageMask;
+    final entry = state.tlbRead[tlbIdx];
+
+    if (entry.virtualTag == pageTag &&
+        entry.hostData != null) {
+      final offset = entry.hostOffset +
+          (addr & TlbConstants.pageMask);
+      return entry.hostData!.getUint8(offset);
+    }
+    return _memReadSlow(addr, _SizeLog2.byte);
+  }
+
+  int? _memReadU16(int addr) {
+    final tlbIdx =
+        (addr >>> TlbConstants.pageSizeLog2) &
+        TlbConstants.indexMask;
+    final alignedTag = addr &
+        ~(TlbConstants.pageMask &
+            ~(_halfWordSize - 1));
+    final entry = state.tlbRead[tlbIdx];
+
+    if (entry.virtualTag == alignedTag &&
+        entry.hostData != null) {
+      final offset = entry.hostOffset +
+          (addr & TlbConstants.pageMask);
+      return entry.hostData!
+          .getUint16(offset, Endian.little);
+    }
+    return _memReadSlow(addr, _SizeLog2.halfWord);
+  }
+
+  int? _memReadU32(int addr) {
+    final tlbIdx =
+        (addr >>> TlbConstants.pageSizeLog2) &
+        TlbConstants.indexMask;
+    final alignedTag = addr &
+        ~(TlbConstants.pageMask & ~(_wordSize - 1));
+    final entry = state.tlbRead[tlbIdx];
+
+    if (entry.virtualTag == alignedTag &&
+        entry.hostData != null) {
+      final offset = entry.hostOffset +
+          (addr & TlbConstants.pageMask);
+      return entry.hostData!
+          .getUint32(offset, Endian.little);
+    }
+    return _memReadSlow(addr, _SizeLog2.word);
+  }
+
+  int? _memReadU64(int addr) {
+    final tlbIdx =
+        (addr >>> TlbConstants.pageSizeLog2) &
+        TlbConstants.indexMask;
+    final alignedTag = addr &
+        ~(TlbConstants.pageMask &
+            ~(_doubleWordSize - 1));
+    final entry = state.tlbRead[tlbIdx];
+
+    if (entry.virtualTag == alignedTag &&
+        entry.hostData != null) {
+      final offset = entry.hostOffset +
+          (addr & TlbConstants.pageMask);
+      return entry.hostData!
+          .getUint64(offset, Endian.little);
+    }
+    return _memReadSlow(addr, _SizeLog2.doubleWord);
+  }
+
+  int? _memReadSlow(int addr, int sizeLog2) {
+    final size = 1 << sizeLog2;
+    final alignment = addr & (size - 1);
+    if (alignment != 0) {
+      return _memReadUnaligned(addr, sizeLog2);
+    }
+
+    try {
+      final physAddr =
+          mmu.translate(addr, MemoryAccessType.read);
+      final range = state.memMap.findRange(physAddr);
+      if (range == null) return 0;
+
+      if (range is RamRange) {
+        _fillReadTlb(addr, physAddr, range);
+        return _readFromRam(
+          range,
+          physAddr,
+          sizeLog2,
+        );
+      }
+
+      if (range is DeviceRange) {
+        return _readFromDevice(
+          range,
+          physAddr,
+          sizeLog2,
+        );
+      }
+
+      return 0;
+    } on MmuException catch (e) {
+      state
+        ..pendingException = e.causeCode
+        ..pendingTval = e.virtualAddr;
+      return null;
+    }
+  }
+
+  int? _memReadUnaligned(int addr, int sizeLog2) {
+    switch (sizeLog2) {
+      case _SizeLog2.halfWord:
+        final b0 = _memReadU8(addr);
+        if (b0 == null) return null;
+        final b1 = _memReadU8(addr + 1);
+        if (b1 == null) return null;
+        return b0 | (b1 << _bitsPerByte);
+      case _SizeLog2.word:
+        final aligned = addr & ~(_wordSize - 1);
+        final al = addr & (_wordSize - 1);
+        final v0 = _memReadU32(aligned);
+        if (v0 == null) return null;
+        final v1 = _memReadU32(aligned + _wordSize);
+        if (v1 == null) return null;
+        return ((v0 & _mask32) >>>
+                (al * _bitsPerByte)) |
+            ((v1 & _mask32) <<
+                (_wordBits - al * _bitsPerByte));
+      case _SizeLog2.doubleWord:
+        final aligned =
+            addr & ~(_doubleWordSize - 1);
+        final al = addr & (_doubleWordSize - 1);
+        final v0 = _memReadU64(aligned);
+        if (v0 == null) return null;
+        final v1 =
+            _memReadU64(aligned + _doubleWordSize);
+        if (v1 == null) return null;
+        return (v0 >>> (al * _bitsPerByte)) |
+            (v1 <<
+                (_doubleWordBits -
+                    al * _bitsPerByte));
+      default:
+        return null;
+    }
+  }
+
+  void _fillReadTlb(
+    int addr,
+    int physAddr,
+    RamRange range,
+  ) {
+    final tlbIdx =
+        (addr >>> TlbConstants.pageSizeLog2) &
+        TlbConstants.indexMask;
+    final pageOffset = addr & TlbConstants.pageMask;
+    final rangeOffset = physAddr - range.addr;
+    final pageBase = rangeOffset - pageOffset;
+
+    state.tlbRead[tlbIdx]
+      ..virtualTag = addr & ~TlbConstants.pageMask
+      ..hostData = range.byteData
+      ..hostOffset = pageBase;
+  }
+
+  int _readFromRam(
+    RamRange range,
+    int physAddr,
+    int sizeLog2,
+  ) {
+    final offset = physAddr - range.addr;
+    return switch (sizeLog2) {
+      _SizeLog2.byte =>
+        range.byteData.getUint8(offset),
+      _SizeLog2.halfWord => range.byteData
+          .getUint16(offset, Endian.little),
+      _SizeLog2.word => range.byteData
+          .getUint32(offset, Endian.little),
+      _SizeLog2.doubleWord => range.byteData
+          .getUint64(offset, Endian.little),
+      _ => 0,
+    };
+  }
+
+  int _readFromDevice(
+    DeviceRange range,
+    int physAddr,
+    int sizeLog2,
+  ) {
+    final offset = physAddr - range.addr;
+    if (sizeLog2 == _SizeLog2.doubleWord) {
+      final low =
+          range.readFunc(offset, _SizeLog2.word);
+      final high = range.readFunc(
+        offset + _wordSize,
+        _SizeLog2.word,
+      );
+      return low | (high << _wordBits);
+    }
+    return range.readFunc(offset, sizeLog2);
+  }
+
+  bool _memWriteU8(int addr, int val) {
+    final tlbIdx =
+        (addr >>> TlbConstants.pageSizeLog2) &
+        TlbConstants.indexMask;
+    final pageTag = addr & ~TlbConstants.pageMask;
+    final entry = state.tlbWrite[tlbIdx];
+
+    if (entry.virtualTag == pageTag &&
+        entry.hostData != null) {
+      final offset = entry.hostOffset +
+          (addr & TlbConstants.pageMask);
+      entry.hostData!.setUint8(offset, val);
+      return true;
+    }
+    return _memWriteSlow(addr, val, _SizeLog2.byte);
+  }
+
+  bool _memWriteU16(int addr, int val) {
+    final tlbIdx =
+        (addr >>> TlbConstants.pageSizeLog2) &
+        TlbConstants.indexMask;
+    final alignedTag = addr &
+        ~(TlbConstants.pageMask &
+            ~(_halfWordSize - 1));
+    final entry = state.tlbWrite[tlbIdx];
+
+    if (entry.virtualTag == alignedTag &&
+        entry.hostData != null) {
+      final offset = entry.hostOffset +
+          (addr & TlbConstants.pageMask);
+      entry.hostData!
+          .setUint16(offset, val, Endian.little);
+      return true;
+    }
+    return _memWriteSlow(
+      addr,
+      val,
+      _SizeLog2.halfWord,
+    );
+  }
+
+  bool _memWriteU32(int addr, int val) {
+    final tlbIdx =
+        (addr >>> TlbConstants.pageSizeLog2) &
+        TlbConstants.indexMask;
+    final alignedTag = addr &
+        ~(TlbConstants.pageMask & ~(_wordSize - 1));
+    final entry = state.tlbWrite[tlbIdx];
+
+    if (entry.virtualTag == alignedTag &&
+        entry.hostData != null) {
+      final offset = entry.hostOffset +
+          (addr & TlbConstants.pageMask);
+      entry.hostData!
+          .setUint32(offset, val, Endian.little);
+      return true;
+    }
+    return _memWriteSlow(addr, val, _SizeLog2.word);
+  }
+
+  bool _memWriteU64(int addr, int val) {
+    final tlbIdx =
+        (addr >>> TlbConstants.pageSizeLog2) &
+        TlbConstants.indexMask;
+    final alignedTag = addr &
+        ~(TlbConstants.pageMask &
+            ~(_doubleWordSize - 1));
+    final entry = state.tlbWrite[tlbIdx];
+
+    if (entry.virtualTag == alignedTag &&
+        entry.hostData != null) {
+      final offset = entry.hostOffset +
+          (addr & TlbConstants.pageMask);
+      entry.hostData!
+          .setUint64(offset, val, Endian.little);
+      return true;
+    }
+    return _memWriteSlow(
+      addr,
+      val,
+      _SizeLog2.doubleWord,
+    );
+  }
+
+  bool _memWriteSlow(
+    int addr,
+    int val,
+    int sizeLog2,
+  ) {
+    final size = 1 << sizeLog2;
+    final alignment = addr & (size - 1);
+    if (alignment != 0) {
+      return _memWriteUnaligned(
+        addr,
+        val,
+        sizeLog2,
+      );
+    }
+
+    try {
+      final physAddr = mmu.translate(
+        addr,
+        MemoryAccessType.write,
+      );
+      final range = state.memMap.findRange(physAddr);
+      if (range == null) return true;
+
+      if (range is RamRange) {
+        _fillWriteTlb(addr, physAddr, range);
+        _writeToRam(range, physAddr, val, sizeLog2);
+        return true;
+      }
+
+      if (range is DeviceRange) {
+        _writeToDevice(
+          range,
+          physAddr,
+          val,
+          sizeLog2,
+        );
+        return true;
+      }
+
+      return true;
+    } on MmuException catch (e) {
+      state
+        ..pendingException = e.causeCode
+        ..pendingTval = e.virtualAddr;
+      return false;
+    }
+  }
+
+  bool _memWriteUnaligned(
+    int addr,
+    int val,
+    int sizeLog2,
+  ) {
+    final size = 1 << sizeLog2;
+    for (var i = 0; i < size; i++) {
+      if (!_memWriteU8(
+        addr + i,
+        (val >> (i * _bitsPerByte)) & _byteMask,
+      )) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  void _fillWriteTlb(
+    int addr,
+    int physAddr,
+    RamRange range,
+  ) {
+    final tlbIdx =
+        (addr >>> TlbConstants.pageSizeLog2) &
+        TlbConstants.indexMask;
+    final pageOffset = addr & TlbConstants.pageMask;
+    final rangeOffset = physAddr - range.addr;
+    final pageBase = rangeOffset - pageOffset;
+
+    range.dirtyBits.set(
+      (physAddr - range.addr) >>
+          TlbConstants.pageSizeLog2,
+    );
+
+    state.tlbWrite[tlbIdx]
+      ..virtualTag = addr & ~TlbConstants.pageMask
+      ..hostData = range.byteData
+      ..hostOffset = pageBase;
+  }
+
+  void _writeToRam(
+    RamRange range,
+    int physAddr,
+    int val,
+    int sizeLog2,
+  ) {
+    final offset = physAddr - range.addr;
+    switch (sizeLog2) {
+      case _SizeLog2.byte:
+        range.byteData.setUint8(offset, val);
+      case _SizeLog2.halfWord:
+        range.byteData
+            .setUint16(offset, val, Endian.little);
+      case _SizeLog2.word:
+        range.byteData
+            .setUint32(offset, val, Endian.little);
+      case _SizeLog2.doubleWord:
+        range.byteData
+            .setUint64(offset, val, Endian.little);
+    }
+  }
+
+  void _writeToDevice(
+    DeviceRange range,
+    int physAddr,
+    int val,
+    int sizeLog2,
+  ) {
+    final offset = physAddr - range.addr;
+    if (sizeLog2 == _SizeLog2.doubleWord) {
+      range.writeFunc(
+        offset,
+        val & _mask32,
+        _SizeLog2.word,
+      );
+      range.writeFunc(
+        offset + _wordSize,
+        (val >>> _wordBits) & _mask32,
+        _SizeLog2.word,
+      );
+      return;
+    }
+    range.writeFunc(offset, val, sizeLog2);
+  }
+
+  void _writeReg(int rd, int value) {
+    state.regs[rd] = value;
+    state.regs[0] = 0;
+  }
+
+  void _raiseIllegalInsn(int insn) {
+    state
+      ..pendingException =
+          _Exception.illegalInstruction
+      ..pendingTval = insn;
+  }
+
+  bool _unsignedLessThan(int a, int b) =>
+      (a ^ _signBit) < (b ^ _signBit);
+
+  int _signExtend8(int value) {
+    final masked = value & _byteMask;
+    if ((masked & _byteMsb) != 0) {
+      return masked | ~_byteMask;
+    }
+    return masked;
+  }
+
+  int _signExtend16(int value) {
+    final masked = value & _halfWordMask;
+    if ((masked & _halfWordMsb) != 0) {
+      return masked | ~_halfWordMask;
+    }
+    return masked;
+  }
+
+  int _cField(
+    int insn,
+    int srcPos,
+    int dstPos,
+    int dstPosMax,
+  ) {
+    final width = dstPosMax - dstPos + 1;
+    final mask = ((1 << width) - 1) << dstPos;
+    if (dstPos >= srcPos) {
+      return (insn << (dstPos - srcPos)) & mask;
+    }
+    return (insn >>> (srcPos - dstPos)) & mask;
+  }
+
+  int _cSignExtend(int value, int bits) {
+    final signBitVal = 1 << (bits - 1);
+    return (value ^ signBitVal) - signBitVal;
+  }
+
+  int _cJImm(int insn) => _cSignExtend(
+        _cField(insn, 12, 11, 11) |
+            _cField(insn, 11, 4, 4) |
+            _cField(insn, 9, 8, 9) |
+            _cField(insn, 8, 10, 10) |
+            _cField(insn, 7, 6, 6) |
+            _cField(insn, 6, 7, 7) |
+            _cField(insn, 3, 1, 3) |
+            _cField(insn, 2, 5, 5),
+        12,
+      );
+
+  int _cBranchImm(int insn) => _cSignExtend(
+        _cField(insn, 12, 8, 8) |
+            _cField(insn, 10, 3, 4) |
+            _cField(insn, 5, 6, 7) |
+            _cField(insn, 3, 1, 2) |
+            _cField(insn, 2, 5, 5),
+        9,
+      );
+
+  void _initMisa() {
+    state
+      ..misa = _IsaBits.i |
+          _IsaBits.m |
+          _IsaBits.a |
+          _IsaBits.c |
+          _IsaBits.s |
+          _IsaBits.u |
+          (_mxlRv64 << _mxlShift)
+      ..mxl = _mxlRv64
+      ..curXlen = _xlen64;
+  }
+
+  static const _mxlRv64 = 2;
+  static const _mxlShift = 62;
+  static const _xlen64 = 64;
+
+  static const _noPendingException = -1;
+  static const _compressedInsnSize = 2;
+  static const _fullInsnSize = 4;
+  static const _compressedMask = 0x03;
+  static const _halfWordBits = 16;
+  static const _opcodeMask = 0x7F;
+  static const _regMask = 0x1F;
+  static const _funct7Shift = 25;
+  static const _immIShift = 20;
+  static const _immUMask = 0xFFFFF000;
+  static const _cFunct3Shift = 13;
+  static const _cFunct3Mask = 0x07;
+
+  static const _shamtMask64 = 63;
+  static const _shamtMask32 = 31;
+  static const _sraBit = 0x400;
+  static const _subFunct7 = 0x20;
+  static const _funct3Width = 3;
+  static const _bit30Shift = 30;
+  static const _bit30InFunct3 = 1 << 3;
+
+  static const _signBit = 0x8000000000000000;
+  static const _mask32 = 0xFFFFFFFF;
+  static const _byteMask = 0xFF;
+  static const _byteMsb = 0x80;
+  static const _halfWordMask = 0xFFFF;
+  static const _halfWordMsb = 0x8000;
+  static const _bitsPerByte = 8;
+  static const _wordBits = 32;
+  static const _doubleWordBits = 64;
+  static const _wordSize = 4;
+  static const _halfWordSize = 2;
+  static const _doubleWordSize = 8;
+
+  static const _csrImmediateBit = 4;
+  static const _csrOpMask = 3;
+
+  static const _systemExtraBitsMask = 0x000FFF80;
+  static const _wfiExtraBitsMask = 0x00007F80;
+  static const _sfenceVmaIdShift = 5;
+  static const _sfenceVmaIdValue = 0x09;
+}
+
+class _Opcode {
+  static const lui = 0x37;
+  static const auipc = 0x17;
+  static const jal = 0x6F;
+  static const jalr = 0x67;
+  static const branch = 0x63;
+  static const load = 0x03;
+  static const store = 0x23;
+  static const opImm = 0x13;
+  static const opImm32 = 0x1B;
+  static const op = 0x33;
+  static const op32 = 0x3B;
+  static const system = 0x73;
+  static const miscMem = 0x0F;
+  static const amo = 0x2F;
+}
+
+class _LoadFunct3 {
+  static const lb = 0;
+  static const lh = 1;
+  static const lw = 2;
+  static const ld = 3;
+  static const lbu = 4;
+  static const lhu = 5;
+  static const lwu = 6;
+}
+
+class _StoreFunct3 {
+  static const sb = 0;
+  static const sh = 1;
+  static const sw = 2;
+  static const sd = 3;
+}
+
+class _AluFunct3 {
+  static const add = 0;
+  static const sll = 1;
+  static const slt = 2;
+  static const sltu = 3;
+  static const xor = 4;
+  static const srl = 5;
+  static const or = 6;
+  static const and = 7;
+}
+
+class _RegAluFunct {
+  static const add = 0;
+  static const sub = 0 | 8;
+  static const sll = 1;
+  static const slt = 2;
+  static const sltu = 3;
+  static const xor = 4;
+  static const srl = 5;
+  static const sra = 5 | 8;
+  static const or = 6;
+  static const and = 7;
+}
+
+class _MExtFunct7 {
+  static const muldiv = 1;
+}
+
+class _CsrOp {
+  static const readWrite = 1;
+  static const readSet = 2;
+  static const readClear = 3;
+}
+
+class _FenceFunct3 {
+  static const fence = 0;
+  static const fenceI = 1;
+}
+
+class _SystemImm {
+  static const ecall = 0x000;
+  static const ebreak = 0x001;
+  static const sret = 0x102;
+  static const mret = 0x302;
+  static const wfi = 0x105;
+}
+
+class _Exception {
+  static const faultFetch = 0x1;
+  static const illegalInstruction = 0x2;
+  static const breakpoint = 0x3;
+  static const userEcall = 0x8;
+}
+
+class _SizeLog2 {
+  static const byte = 0;
+  static const halfWord = 1;
+  static const word = 2;
+  static const doubleWord = 3;
+}
+
+class _IsaBits {
+  static const i = 1 << 8;
+  static const m = 1 << 12;
+  static const a = 1 << 0;
+  static const c = 1 << 2;
+  static const s = 1 << 18;
+  static const u = 1 << 20;
+}
