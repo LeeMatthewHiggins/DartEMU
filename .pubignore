@@ -1,0 +1,19 @@
+# Build artifacts
+build/
+
+# Binary firmware files (users provide their own or clone the repo)
+data/
+
+# Image builder tooling
+tool/
+
+# CI and GitHub metadata
+.github/
+
+# Test coverage
+coverage/
+coverage_badge.svg
+dart_test.yaml
+
+# Plans
+plans/

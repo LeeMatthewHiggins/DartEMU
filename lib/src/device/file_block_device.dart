@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import 'package:dart_emu/src/device/block_device.dart';
 
+/// A [BlockDevice] backed by a file on disk.
 class FileBlockDevice implements BlockDevice {
   FileBlockDevice({
     required RandomAccessFile file,

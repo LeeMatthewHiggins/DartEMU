@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:dart_emu/src/machine/machine_config.dart';
 import 'package:yaml/yaml.dart';
 
+/// Loads [MachineConfig] from YAML configuration files or strings.
 class ConfigLoader {
   const ConfigLoader._();
 
@@ -169,6 +170,7 @@ class _Keys {
   static const accel = 'accel';
 }
 
+/// Exception thrown when machine configuration parsing fails.
 class ConfigException implements Exception {
   const ConfigException(this.message);
   final String message;

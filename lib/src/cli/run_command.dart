@@ -101,10 +101,7 @@ class RunCommand extends Command<int> {
 
   void _tryRestoreTerminal() {
     try {
-      _applySttyFlags(_restoreSttyArgs);
-      stdin
-        ..echoMode = true
-        ..lineMode = true;
+      Process.runSync('sh', ['-c', 'stty sane < /dev/tty']);
     } on Object {
       // ignored
     }
@@ -126,16 +123,6 @@ class RunCommand extends Command<int> {
     '-igncr',
     '-opost',
   ];
-  static const _restoreSttyArgs = [
-    'iexten',
-    'ixon',
-    'ixoff',
-    'icrnl',
-    'inlcr',
-    'igncr',
-    'opost',
-  ];
-
   MachineConfig _buildConfig() {
     final configPath = argResults!['config'] as String?;
     if (configPath != null) {

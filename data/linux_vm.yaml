@@ -5,4 +5,4 @@ bios: bbl64.bin
 kernel: kernel-riscv64.bin
 cmdline: "console=hvc0 root=/dev/vda rw"
 drive0:
-  file: root-riscv64.bin
+  file: rootfs/root-riscv64.bin

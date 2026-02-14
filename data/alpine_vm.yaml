@@ -1,0 +1,8 @@
+version: 1
+machine: riscv64
+memory_size: 256
+bios: bbl64.bin
+kernel: kernel-riscv64.bin
+cmdline: "console=hvc0 root=/dev/vda rw init=/init loglevel=7 earlyprintk"
+drive0:
+  file: rootfs/alpine-riscv64-rootfs.bin

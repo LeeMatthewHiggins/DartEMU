@@ -14,5 +14,5 @@ coverage/
 # Android studio and IntelliJ
 .idea
 
-# Disk images and ROM binaries
-data/*.bin
+# Generated rootfs disk images (built via tool/image_builder)
+data/rootfs/

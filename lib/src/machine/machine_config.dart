@@ -4,6 +4,10 @@ import 'package:dart_emu/src/device/block_device.dart';
 import 'package:dart_emu/src/device/character_device.dart';
 import 'package:dart_emu/src/device/ethernet_device.dart';
 
+/// Configuration for a RISC-V virtual machine instance.
+///
+/// Supports both file-path based loading (for CLI) and in-memory
+/// byte data (for Flutter or embedded use).
 class MachineConfig {
   MachineConfig({
     this.machineType = defaultMachineType,
@@ -93,6 +97,7 @@ class MachineConfig {
   static const defaultMachineType = 'riscv64';
 }
 
+/// Configuration for a VirtIO 9P shared filesystem.
 class FilesystemConfig {
   const FilesystemConfig({
     required this.file,
@@ -103,6 +108,7 @@ class FilesystemConfig {
   final String? tag;
 }
 
+/// Configuration for a VirtIO block device backed by a file.
 class DriveConfig {
   const DriveConfig({
     required this.file,
@@ -113,6 +119,7 @@ class DriveConfig {
   final String? device;
 }
 
+/// Configuration for a VirtIO network device.
 class EthernetConfig {
   const EthernetConfig({
     required this.driver,

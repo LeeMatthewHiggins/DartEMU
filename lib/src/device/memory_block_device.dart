@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import 'package:dart_emu/src/device/block_device.dart';
 
+/// A [BlockDevice] backed by an in-memory byte buffer.
 class MemoryBlockDevice implements BlockDevice {
   MemoryBlockDevice(this._data);
 
