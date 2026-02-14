@@ -9,6 +9,8 @@ export 'src/device/ethernet_device.dart';
 export 'src/device/file_block_device.dart';
 export 'src/device/irq_signal.dart';
 export 'src/device/memory_block_device.dart';
+export 'src/emulator/emulator.dart';
+export 'src/emulator/emulator_status.dart';
 export 'src/io/clint.dart';
 export 'src/io/htif.dart';
 export 'src/io/plic.dart';

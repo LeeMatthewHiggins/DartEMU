@@ -1,10 +1,10 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:args/command_runner.dart';
-import 'package:dart_emu/src/io/console_adapter.dart';
+import 'package:dart_emu/src/emulator/emulator.dart';
 import 'package:dart_emu/src/machine/config_loader.dart';
 import 'package:dart_emu/src/machine/machine_config.dart';
-import 'package:dart_emu/src/machine/riscv_machine.dart';
 import 'package:mason_logger/mason_logger.dart';
 
 class RunCommand extends Command<int> {
@@ -49,8 +49,8 @@ class RunCommand extends Command<int> {
 
   @override
   Future<int> run() async {
-    final consoleAdapter = ConsoleAdapter();
-    final config = _buildConfig(consoleAdapter);
+    final config = _buildConfig();
+    final emulator = Emulator(config);
 
     _logger.info(
       'Starting RISC-V emulator '
@@ -58,66 +58,32 @@ class RunCommand extends Command<int> {
       '${config.memorySizeMb}MB RAM)...',
     );
 
-    final machine = RiscVMachine.fromConfig(config);
-
-    _logger.info(
-      'Machine created: '
-      '${machine.memMap.ranges.length} memory regions',
-    );
-
-    await _runMachine(machine, consoleAdapter);
-
-    return ExitCode.success.code;
-  }
-
-  Future<void> _runMachine(
-    RiscVMachine machine,
-    ConsoleAdapter consoleAdapter,
-  ) async {
     final rawMode = _trySetRawMode();
-    var escapeArmed = false;
 
-    final stdinSub = stdin.listen((bytes) {
-      final filtered = <int>[];
-      for (final b in bytes) {
-        if (escapeArmed) {
-          escapeArmed = false;
-          if (b == _EscapeKey.quit) {
-            machine.cpu.state.shutDown = true;
-            return;
-          }
-          if (b == _EscapeKey.escape) {
-            filtered.add(_EscapeKey.escape);
-            continue;
-          }
-          filtered
-            ..add(_EscapeKey.escape)
-            ..add(b);
-          continue;
-        }
-        if (b == _EscapeKey.escape) {
-          escapeArmed = true;
-          continue;
-        }
-        filtered.add(b);
-      }
-      if (filtered.isNotEmpty) {
-        consoleAdapter.feedInput(filtered);
-      }
+    final sigintSub = ProcessSignal.sigint.watch().listen((_) {
+      emulator.stop();
     });
 
+    final stdinSub = stdin.listen(emulator.sendInput);
+
+    final outputSub = emulator.output.listen(
+      (bytes) => stdout.add(bytes),
+    );
+
     try {
-      _logger.info('Press Ctrl+A x to exit.');
-      while (!machine.cpu.state.shutDown) {
-        machine.step(_cyclesPerStep);
-        await Future<void>.delayed(Duration.zero);
-      }
+      _logger.info('Press Ctrl+C to exit.');
+      await emulator.start();
     } finally {
+      await outputSub.cancel();
+      await sigintSub.cancel();
       await stdinSub.cancel();
+      await emulator.dispose();
       if (rawMode) {
         _tryRestoreTerminal();
       }
     }
+
+    return ExitCode.success.code;
   }
 
   bool _trySetRawMode() {
@@ -126,23 +92,51 @@ class RunCommand extends Command<int> {
       stdin
         ..echoMode = false
         ..lineMode = false;
+      _applySttyFlags(_rawModeSttyArgs);
       return true;
-    } on StdinException {
+    } on Object {
       return false;
     }
   }
 
   void _tryRestoreTerminal() {
     try {
+      _applySttyFlags(_restoreSttyArgs);
       stdin
         ..echoMode = true
         ..lineMode = true;
-    } on StdinException {
-      // ignore
+    } on Object {
+      // ignored
     }
   }
 
-  MachineConfig _buildConfig(ConsoleAdapter consoleAdapter) {
+  void _applySttyFlags(List<String> flags) {
+    Process.runSync(
+      'sh',
+      ['-c', 'stty ${flags.join(' ')} < /dev/tty'],
+    );
+  }
+
+  static const _rawModeSttyArgs = [
+    '-iexten',
+    '-ixon',
+    '-ixoff',
+    '-icrnl',
+    '-inlcr',
+    '-igncr',
+    '-opost',
+  ];
+  static const _restoreSttyArgs = [
+    'iexten',
+    'ixon',
+    'ixoff',
+    'icrnl',
+    'inlcr',
+    'igncr',
+    'opost',
+  ];
+
+  MachineConfig _buildConfig() {
     final configPath = argResults!['config'] as String?;
     if (configPath != null) {
       final loaded = ConfigLoader.loadFromFile(configPath);
@@ -158,7 +152,6 @@ class RunCommand extends Command<int> {
         ethernetConfigs: loaded.ethernetConfigs,
         rtcLocalTime: loaded.rtcLocalTime,
         accel: loaded.accel,
-        console: consoleAdapter,
       );
     }
 
@@ -177,14 +170,6 @@ class RunCommand extends Command<int> {
       kernelPath: argResults!['kernel'] as String?,
       cmdLine: argResults!['cmdline'] as String?,
       driveConfigs: driveConfigs,
-      console: consoleAdapter,
     );
   }
-
-  static const _cyclesPerStep = 50000;
-}
-
-class _EscapeKey {
-  static const escape = 0x01;
-  static const quit = 0x78;
 }

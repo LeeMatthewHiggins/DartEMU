@@ -48,6 +48,46 @@ class MachineConfig {
 
   int get memorySizeBytes => memorySizeMb * _bytesPerMb;
 
+  MachineConfig copyWith({
+    String? machineType,
+    int? memorySizeMb,
+    CharacterDevice? console,
+    List<BlockDevice>? blockDevices,
+    List<EthernetDevice>? ethDevices,
+    List<DriveConfig>? driveConfigs,
+    List<FilesystemConfig>? filesystemConfigs,
+    List<EthernetConfig>? ethernetConfigs,
+    String? cmdLine,
+    String? biosPath,
+    String? kernelPath,
+    String? initrdPath,
+    Uint8List? biosData,
+    Uint8List? kernelData,
+    Uint8List? initrdData,
+    bool? rtcLocalTime,
+    String? accel,
+  }) {
+    return MachineConfig(
+      machineType: machineType ?? this.machineType,
+      memorySizeMb: memorySizeMb ?? this.memorySizeMb,
+      console: console ?? this.console,
+      blockDevices: blockDevices ?? this.blockDevices,
+      ethDevices: ethDevices ?? this.ethDevices,
+      driveConfigs: driveConfigs ?? this.driveConfigs,
+      filesystemConfigs: filesystemConfigs ?? this.filesystemConfigs,
+      ethernetConfigs: ethernetConfigs ?? this.ethernetConfigs,
+      cmdLine: cmdLine ?? this.cmdLine,
+      biosPath: biosPath ?? this.biosPath,
+      kernelPath: kernelPath ?? this.kernelPath,
+      initrdPath: initrdPath ?? this.initrdPath,
+      biosData: biosData ?? this.biosData,
+      kernelData: kernelData ?? this.kernelData,
+      initrdData: initrdData ?? this.initrdData,
+      rtcLocalTime: rtcLocalTime ?? this.rtcLocalTime,
+      accel: accel ?? this.accel,
+    );
+  }
+
   static const _bytesPerMb = 1024 * 1024;
   static const defaultMemorySizeMb = 256;
   static const defaultMachineType = 'riscv64';
