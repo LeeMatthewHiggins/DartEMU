@@ -23,15 +23,17 @@ class ExceptionHandler {
   }
 
   void handleMret() {
-    final mpp = (state.mstatus >> _Mstatus.mppShift) & _Mstatus.privMask;
-    final mpie = (state.mstatus >> _Mstatus.mpieShift) & 1;
+    final mpp =
+        (state.mstatus >> _Mstatus.mppShift) &
+        _Mstatus.privMask;
+    final mpie =
+        (state.mstatus >> _Mstatus.mpieShift) & 1;
 
-    state.mstatus = (state.mstatus & ~(1 << _Mstatus.mieShift)) |
-        (mpie << _Mstatus.mieShift);
+    state.mstatus = (state.mstatus & ~(1 << mpp)) |
+        (mpie << mpp);
     state.mstatus |= 1 << _Mstatus.mpieShift;
-    state.mstatus = (state.mstatus &
-            ~(_Mstatus.privMask << _Mstatus.mppShift)) |
-        (PrivilegeLevel.user.value << _Mstatus.mppShift);
+    state.mstatus &= ~(_Mstatus.privMask <<
+        _Mstatus.mppShift);
 
     state.privilege = PrivilegeLevel.fromValue(mpp);
     state.pc = state.mepc;
@@ -39,11 +41,13 @@ class ExceptionHandler {
   }
 
   void handleSret() {
-    final spp = (state.mstatus >> _Mstatus.sppShift) & 1;
-    final spie = (state.mstatus >> _Mstatus.spieShift) & 1;
+    final spp =
+        (state.mstatus >> _Mstatus.sppShift) & 1;
+    final spie =
+        (state.mstatus >> _Mstatus.spieShift) & 1;
 
-    state.mstatus = (state.mstatus & ~(1 << _Mstatus.sieShift)) |
-        (spie << _Mstatus.sieShift);
+    state.mstatus = (state.mstatus & ~(1 << spp)) |
+        (spie << spp);
     state.mstatus |= 1 << _Mstatus.spieShift;
     state.mstatus &= ~(1 << _Mstatus.sppShift);
 
@@ -57,16 +61,24 @@ class ExceptionHandler {
     if (mask == 0) return false;
 
     final priv = state.privilege.value;
-    final mie = (state.mstatus >> _Mstatus.mieShift) & 1;
-    final sie = (state.mstatus >> _Mstatus.sieShift) & 1;
+    final mie =
+        (state.mstatus >> _Mstatus.mieShift) & 1;
+    final sie =
+        (state.mstatus >> _Mstatus.sieShift) & 1;
 
-    final enabledAtM = priv < PrivilegeLevel.machine.value ||
-        (priv == PrivilegeLevel.machine.value && mie != 0);
-    final enabledAtS = priv < PrivilegeLevel.supervisor.value ||
-        (priv == PrivilegeLevel.supervisor.value && sie != 0);
+    final enabledAtM =
+        priv < PrivilegeLevel.machine.value ||
+            (priv == PrivilegeLevel.machine.value &&
+                mie != 0);
+    final enabledAtS =
+        priv < PrivilegeLevel.supervisor.value ||
+            (priv == PrivilegeLevel.supervisor.value &&
+                sie != 0);
 
-    final mEnabled = enabledAtM ? mask & ~state.mideleg : 0;
-    final sEnabled = enabledAtS ? mask & state.mideleg : 0;
+    final mEnabled =
+        enabledAtM ? mask & ~state.mideleg : 0;
+    final sEnabled =
+        enabledAtS ? mask & state.mideleg : 0;
 
     return (mEnabled | sEnabled) != 0;
   }
@@ -83,13 +95,14 @@ class ExceptionHandler {
     state.mcause = cause;
     state.mtval = tval;
 
-    final mie = (state.mstatus >> _Mstatus.mieShift) & 1;
+    final prevIe =
+        (state.mstatus >> state.privilege.value) & 1;
     state.mstatus = (state.mstatus &
             ~(_Mstatus.privMask << _Mstatus.mppShift)) |
         (state.privilege.value << _Mstatus.mppShift);
     state.mstatus = (state.mstatus &
             ~(1 << _Mstatus.mpieShift)) |
-        (mie << _Mstatus.mpieShift);
+        (prevIe << _Mstatus.mpieShift);
     state.mstatus &= ~(1 << _Mstatus.mieShift);
 
     state.privilege = PrivilegeLevel.machine;
@@ -102,12 +115,15 @@ class ExceptionHandler {
     state.scause = cause;
     state.stval = tval;
 
-    final sie = (state.mstatus >> _Mstatus.sieShift) & 1;
-    state.mstatus = (state.mstatus & ~(1 << _Mstatus.sppShift)) |
-        (state.privilege.value << _Mstatus.sppShift);
+    final prevIe =
+        (state.mstatus >> state.privilege.value) & 1;
+    state.mstatus =
+        (state.mstatus & ~(1 << _Mstatus.sppShift)) |
+            (state.privilege.value <<
+                _Mstatus.sppShift);
     state.mstatus = (state.mstatus &
             ~(1 << _Mstatus.spieShift)) |
-        (sie << _Mstatus.spieShift);
+        (prevIe << _Mstatus.spieShift);
     state.mstatus &= ~(1 << _Mstatus.sieShift);
 
     state.privilege = PrivilegeLevel.supervisor;

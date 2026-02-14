@@ -10,10 +10,15 @@ class CsrHandler {
     return switch (csrAddr) {
       _Addr.fflags => state.fflags,
       _Addr.frm => state.frm,
-      _Addr.fcsr => state.fflags | (state.frm << _frmShift),
-      _Addr.cycle || _Addr.mcycle => state.instructionCounter,
-      _Addr.instret || _Addr.minstret => state.instructionCounter,
-      _Addr.sstatus => state.mstatus & _sstatusMask,
+      _Addr.fcsr =>
+        state.fflags | (state.frm << _frmShift),
+      _Addr.cycle ||
+      _Addr.mcycle =>
+        state.instructionCounter,
+      _Addr.instret ||
+      _Addr.minstret =>
+        state.instructionCounter,
+      _Addr.sstatus => _getMstatus(_Mstatus.sstatusMask),
       _Addr.sie => state.mie & state.mideleg,
       _Addr.stvec => state.stvec,
       _Addr.scounteren => state.scounteren,
@@ -23,7 +28,7 @@ class CsrHandler {
       _Addr.stval => state.stval,
       _Addr.sip => state.mip & state.mideleg,
       _Addr.satp => state.satp,
-      _Addr.mstatus => state.mstatus,
+      _Addr.mstatus => _getMstatus(_Mstatus.allBits),
       _Addr.misa => state.misa,
       _Addr.medeleg => state.medeleg,
       _Addr.mideleg => state.mideleg,
@@ -51,8 +56,10 @@ class CsrHandler {
         state.fflags = value & _fflagsMask;
         state.frm = (value >> _frmShift) & _frmMask;
       case _Addr.sstatus:
-        state.mstatus = (state.mstatus & ~_sstatusMask) |
-            (value & _sstatusMask);
+        _setMstatus(
+          (state.mstatus & ~_Mstatus.sstatusMask) |
+              (value & _Mstatus.sstatusMask),
+        );
       case _Addr.sie:
         state.mie = (state.mie & ~state.mideleg) |
             (value & state.mideleg);
@@ -75,7 +82,7 @@ class CsrHandler {
         state.satp = value;
         state.flushTlb();
       case _Addr.mstatus:
-        state.mstatus = value;
+        _setMstatus(value);
       case _Addr.misa:
         state.misa = value;
       case _Addr.medeleg:
@@ -101,8 +108,48 @@ class CsrHandler {
     }
   }
 
+  int _getMstatus(int mask) {
+    var val = state.mstatus & mask;
+    final fsDirty =
+        (val & _Mstatus.fsMask) == _Mstatus.fsMask;
+    final xsDirty =
+        (val & _Mstatus.xsMask) == _Mstatus.xsMask;
+    if (fsDirty || xsDirty) {
+      val |= _Mstatus.sdBit;
+    }
+    return val;
+  }
+
+  void _setMstatus(int val) {
+    final mod = state.mstatus ^ val;
+    final mprvChanged =
+        (mod & _Mstatus.tlbFlushBits) != 0;
+    final mprvMppChanged =
+        (state.mstatus & _Mstatus.mprvBit) != 0 &&
+            (mod & _Mstatus.mppMask) != 0;
+    if (mprvChanged || mprvMppChanged) {
+      state.flushTlb();
+    }
+
+    var mask = _Mstatus.writeMask;
+    final uxl =
+        (val >> _Mstatus.uxlShift) & _Mstatus.xlMask;
+    if (uxl >= 1 && uxl <= _mxlRv64) {
+      mask |= _Mstatus.uxlMask;
+    }
+    final sxl =
+        (val >> _Mstatus.sxlShift) & _Mstatus.xlMask;
+    if (sxl >= 1 && sxl <= _mxlRv64) {
+      mask |= _Mstatus.sxlMask;
+    }
+
+    state.mstatus =
+        (state.mstatus & ~mask) | (val & mask);
+  }
+
   void _checkAccess(int csrAddr) {
-    final requiredPriv = (csrAddr >> _privShift) & _privMask;
+    final requiredPriv =
+        (csrAddr >> _privShift) & _privMask;
     if (state.privilege.value < requiredPriv) {
       throw CsrAccessException(csrAddr, state.privilege);
     }
@@ -113,7 +160,7 @@ class CsrHandler {
   static const _fflagsMask = 0x1F;
   static const _frmMask = 0x07;
   static const _frmShift = 5;
-  static const _sstatusMask = 0x800DE162;
+  static const _mxlRv64 = 2;
 }
 
 class CsrAccessException implements Exception {
@@ -159,4 +206,56 @@ class _Addr {
   static const mcycle = 0xB00;
   static const minstret = 0xB02;
   static const mhartid = 0xF14;
+}
+
+class _Mstatus {
+  static const uieBit = 1 << 0;
+  static const sieBit = 1 << 1;
+  static const mieBit = 1 << 3;
+  static const upieBit = 1 << 4;
+  static const spieBit = 1 << 5;
+  static const mpieBit = 1 << 7;
+  static const sppBit = 1 << 8;
+  static const mppMask = 3 << 11;
+  static const fsMask = 3 << 13;
+  static const xsMask = 3 << 15;
+  static const mprvBit = 1 << 17;
+  static const sumBit = 1 << 18;
+  static const mxrBit = 1 << 19;
+
+  static const uxlShift = 32;
+  static const sxlShift = 34;
+  static const xlMask = 3;
+  static const uxlMask = 3 << 32;
+  static const sxlMask = 3 << 34;
+
+  static const sdBit = 1 << 63;
+
+  static const sstatusMask = uieBit |
+      sieBit |
+      upieBit |
+      spieBit |
+      sppBit |
+      fsMask |
+      xsMask |
+      sumBit |
+      mxrBit |
+      uxlMask;
+
+  static const writeMask = uieBit |
+      sieBit |
+      mieBit |
+      upieBit |
+      spieBit |
+      mpieBit |
+      sppBit |
+      mppMask |
+      fsMask |
+      mprvBit |
+      sumBit |
+      mxrBit;
+
+  static const tlbFlushBits = mprvBit | sumBit | mxrBit;
+
+  static const allBits = -1;
 }

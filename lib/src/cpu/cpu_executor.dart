@@ -118,10 +118,10 @@ class CpuExecutor {
 
     if (entry.virtualTag == pageTag &&
         entry.hostData != null) {
-      final offset = entry.hostOffset +
-          (addr & TlbConstants.pageMask);
+      final pageOffset = addr & TlbConstants.pageMask;
+      final offset = entry.hostOffset + pageOffset;
       final remaining =
-          entry.hostData!.lengthInBytes - offset;
+          TlbConstants.pageSize - pageOffset;
       if (remaining >= _fullInsnSize) {
         return _readInsn32(entry.hostData!, offset);
       }
@@ -174,7 +174,7 @@ class CpuExecutor {
 
       final offset = pageBase + pageOffset;
       final remaining =
-          range.byteData.lengthInBytes - offset;
+          TlbConstants.pageSize - pageOffset;
 
       if (remaining >= _fullInsnSize) {
         return _readInsn32(range.byteData, offset);
@@ -1980,11 +1980,15 @@ class CpuExecutor {
           _IsaBits.u |
           (_mxlRv64 << _mxlShift)
       ..mxl = _mxlRv64
-      ..curXlen = _xlen64;
+      ..curXlen = _xlen64
+      ..mstatus = (_mxlRv64 << _uxlShift) |
+          (_mxlRv64 << _sxlShift);
   }
 
   static const _mxlRv64 = 2;
   static const _mxlShift = 62;
+  static const _uxlShift = 32;
+  static const _sxlShift = 34;
   static const _xlen64 = 64;
 
   static const _noPendingException = -1;
