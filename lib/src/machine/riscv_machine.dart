@@ -36,7 +36,6 @@ class RiscVMachine {
     final clint = Clint(
       setMip: cpu.setMip,
       resetMip: cpu.resetMip,
-      getCycles: () => cpu.cycles,
     );
 
     final htif = Htif(

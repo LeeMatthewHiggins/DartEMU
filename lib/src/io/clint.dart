@@ -4,19 +4,21 @@ class Clint {
   Clint({
     required this.setMip,
     required this.resetMip,
-    required this.getCycles,
-  });
+  }) {
+    _wallClock.start();
+  }
 
   final SetMipCallback setMip;
   final ResetMipCallback resetMip;
-  final int Function() getCycles;
+  final Stopwatch _wallClock = Stopwatch();
 
   int _timecmpLow = 0;
   int _timecmpHigh = 0;
 
   int get timecmp => _timecmpLow | (_timecmpHigh << _wordBits);
 
-  int get rtcTime => getCycles() ~/ _rtcFreqDiv;
+  int get rtcTime =>
+      _wallClock.elapsedMicroseconds * _rtcTicksPerMicrosecond;
 
   int read(int offset, int sizeLog2) {
     if (sizeLog2 == _wordSizeLog2) {
@@ -59,7 +61,7 @@ class Clint {
   static const regionSize = 0x000C0000;
   static const rtcFreq = 10000000;
 
-  static const _rtcFreqDiv = 16;
+  static const _rtcTicksPerMicrosecond = rtcFreq ~/ 1000000;
   static const _wordBits = 32;
   static const _mask32 = 0xFFFFFFFF;
   static const _wordSizeLog2 = 2;

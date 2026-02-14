@@ -4,10 +4,6 @@ import 'dart:typed_data';
 import 'package:dart_emu/src/device/character_device.dart';
 
 class ConsoleAdapter implements CharacterDevice {
-  ConsoleAdapter({Stdout? stdoutOverride})
-      : _stdout = stdoutOverride ?? stdout;
-
-  final Stdout _stdout;
   final List<int> _inputBuffer = [];
 
   void feedInput(List<int> bytes) {
@@ -16,7 +12,7 @@ class ConsoleAdapter implements CharacterDevice {
 
   @override
   void writeData(Uint8List data) {
-    _stdout.add(data);
+    stdout.add(data);
   }
 
   @override

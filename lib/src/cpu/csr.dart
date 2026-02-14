@@ -13,9 +13,9 @@ class CsrHandler {
       _Addr.fcsr =>
         state.fflags | (state.frm << _frmShift),
       _Addr.cycle ||
-      _Addr.mcycle =>
-        state.instructionCounter,
-      _Addr.instret ||
+      _Addr.instret =>
+        _readCounter(csrAddr),
+      _Addr.mcycle ||
       _Addr.minstret =>
         state.instructionCounter,
       _Addr.sstatus => _getMstatus(_Mstatus.sstatusMask),
@@ -41,7 +41,7 @@ class CsrHandler {
       _Addr.mtval => state.mtval,
       _Addr.mip => state.mip,
       _Addr.mhartid => state.mhartid,
-      _ => 0,
+      _ => throw CsrAccessException(csrAddr, state.privilege),
     };
   }
 
@@ -147,6 +147,20 @@ class CsrHandler {
         (state.mstatus & ~mask) | (val & mask);
   }
 
+  int _readCounter(int csrAddr) {
+    final counterBit = 1 << (csrAddr & _counterBitMask);
+    if (state.privilege.value < PrivilegeLevel.machine.value) {
+      final counteren =
+          state.privilege.value < PrivilegeLevel.supervisor.value
+              ? state.scounteren
+              : state.mcounteren;
+      if ((counteren & counterBit) == 0) {
+        throw CsrAccessException(csrAddr, state.privilege);
+      }
+    }
+    return state.instructionCounter;
+  }
+
   void _checkAccess(int csrAddr) {
     final requiredPriv =
         (csrAddr >> _privShift) & _privMask;
@@ -157,6 +171,7 @@ class CsrHandler {
 
   static const _privShift = 8;
   static const _privMask = 3;
+  static const _counterBitMask = 0x1F;
   static const _fflagsMask = 0x1F;
   static const _frmMask = 0x07;
   static const _frmShift = 5;

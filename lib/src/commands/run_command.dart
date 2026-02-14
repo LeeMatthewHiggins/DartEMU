@@ -75,10 +75,39 @@ class RunCommand extends Command<int> {
     ConsoleAdapter consoleAdapter,
   ) async {
     final rawMode = _trySetRawMode();
+    var escapeArmed = false;
 
-    final stdinSub = stdin.listen(consoleAdapter.feedInput);
+    final stdinSub = stdin.listen((bytes) {
+      final filtered = <int>[];
+      for (final b in bytes) {
+        if (escapeArmed) {
+          escapeArmed = false;
+          if (b == _EscapeKey.quit) {
+            machine.cpu.state.shutDown = true;
+            return;
+          }
+          if (b == _EscapeKey.escape) {
+            filtered.add(_EscapeKey.escape);
+            continue;
+          }
+          filtered
+            ..add(_EscapeKey.escape)
+            ..add(b);
+          continue;
+        }
+        if (b == _EscapeKey.escape) {
+          escapeArmed = true;
+          continue;
+        }
+        filtered.add(b);
+      }
+      if (filtered.isNotEmpty) {
+        consoleAdapter.feedInput(filtered);
+      }
+    });
 
     try {
+      _logger.info('Press Ctrl+A x to exit.');
       while (!machine.cpu.state.shutDown) {
         machine.step(_cyclesPerStep);
         await Future<void>.delayed(Duration.zero);
@@ -152,5 +181,10 @@ class RunCommand extends Command<int> {
     );
   }
 
-  static const _cyclesPerStep = 500000;
+  static const _cyclesPerStep = 50000;
+}
+
+class _EscapeKey {
+  static const escape = 0x01;
+  static const quit = 0x78;
 }
