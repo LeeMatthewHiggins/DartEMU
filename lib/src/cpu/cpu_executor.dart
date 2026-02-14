@@ -1322,6 +1322,8 @@ class CpuExecutor {
     } on IllegalAtomicException {
       _raiseIllegalInsn(insn);
       return false;
+    } on _AmoMemoryFaultException {
+      return false;
     }
     state.regs[0] = 0;
     state.pc += instrSize;
@@ -1330,19 +1332,26 @@ class CpuExecutor {
 
   int _amoReadWord(int addr) {
     final val = _memReadU32(addr);
-    if (val == null) return 0;
+    if (val == null) throw const _AmoMemoryFaultException();
     return BitUtils.signExtend32(val);
   }
 
-  int _amoReadDouble(int addr) =>
-      _memReadU64(addr) ?? 0;
+  int _amoReadDouble(int addr) {
+    final val = _memReadU64(addr);
+    if (val == null) throw const _AmoMemoryFaultException();
+    return val;
+  }
 
   void _amoWriteWord(int addr, int value) {
-    _memWriteU32(addr, value);
+    if (!_memWriteU32(addr, value)) {
+      throw const _AmoMemoryFaultException();
+    }
   }
 
   void _amoWriteDouble(int addr, int value) {
-    _memWriteU64(addr, value);
+    if (!_memWriteU64(addr, value)) {
+      throw const _AmoMemoryFaultException();
+    }
   }
 
   bool _fpEnabled() =>
@@ -2164,4 +2173,8 @@ class _FpLoadStoreFunct3 {
 class _FpFmt {
   static const single = 0;
   static const double_ = 1;
+}
+
+class _AmoMemoryFaultException implements Exception {
+  const _AmoMemoryFaultException();
 }

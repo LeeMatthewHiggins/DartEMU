@@ -38,6 +38,7 @@ class RiscVCpuState {
   int nCycles = 0;
   int instructionCounter = 0;
   bool powerDown = false;
+  bool shutDown = false;
   int pendingException = -1;
   int pendingTval = 0;
 

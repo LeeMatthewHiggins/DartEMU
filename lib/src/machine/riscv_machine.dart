@@ -41,7 +41,7 @@ class RiscVMachine {
 
     final htif = Htif(
       console: config.console,
-      onPowerDown: () => cpu.state.powerDown = true,
+      onPowerDown: () => cpu.state.shutDown = true,
     );
 
     memMap
@@ -91,10 +91,32 @@ class RiscVMachine {
   final Clint clint;
   final Htif htif;
   final List<VirtioDevice> virtioDevices = [];
+  VirtioConsoleDevice? _console;
 
   void step(int maxCycles) {
     clint.checkTimer();
+    _pollConsoleInput();
+    if (cpu.state.powerDown) {
+      if ((cpu.state.mip & cpu.state.mie) != 0) {
+        cpu.state.powerDown = false;
+      } else {
+        return;
+      }
+    }
     cpu.execute(maxCycles);
+  }
+
+  void _pollConsoleInput() {
+    final console = _console;
+    if (console == null) return;
+    if (!console.canWriteData) return;
+
+    final input = config.console?.readData(
+      console.writeBufferLength,
+    );
+    if (input == null || input.isEmpty) return;
+
+    console.writeData(input);
   }
 
   void loadBios(Uint8List data) {
@@ -118,12 +140,12 @@ class RiscVMachine {
 
   void _registerVirtioDevices() {
     if (config.console != null) {
-      _addVirtioDevice(
-        VirtioConsoleDevice(
-          memMap: memMap,
-          characterDevice: config.console!,
-        ),
+      final console = VirtioConsoleDevice(
+        memMap: memMap,
+        characterDevice: config.console!,
       );
+      _console = console;
+      _addVirtioDevice(console);
     }
 
     for (final blockDevice in config.blockDevices) {

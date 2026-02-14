@@ -79,7 +79,7 @@ class RunCommand extends Command<int> {
     final stdinSub = stdin.listen(consoleAdapter.feedInput);
 
     try {
-      while (!machine.cpu.powerDown) {
+      while (!machine.cpu.state.shutDown) {
         machine.step(_cyclesPerStep);
         await Future<void>.delayed(Duration.zero);
       }

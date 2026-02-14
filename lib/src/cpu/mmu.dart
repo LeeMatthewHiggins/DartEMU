@@ -15,7 +15,9 @@ class Mmu {
     int virtualAddr,
     MemoryAccessType accessType,
   ) {
-    if (state.privilege == PrivilegeLevel.machine) {
+    final effectivePriv = _effectivePrivilege(accessType);
+
+    if (effectivePriv == PrivilegeLevel.machine) {
       return virtualAddr;
     }
 
@@ -26,8 +28,10 @@ class Mmu {
     }
 
     return switch (satpMode) {
-      _SatpMode.sv39 => _walkSv39(virtualAddr, accessType),
-      _SatpMode.sv48 => _walkSv48(virtualAddr, accessType),
+      _SatpMode.sv39 =>
+        _walkSv39(virtualAddr, accessType, effectivePriv),
+      _SatpMode.sv48 =>
+        _walkSv48(virtualAddr, accessType),
       _ => throw MmuException(
           virtualAddr,
           accessType,
@@ -36,9 +40,23 @@ class Mmu {
     };
   }
 
+  PrivilegeLevel _effectivePrivilege(
+    MemoryAccessType accessType,
+  ) {
+    if (state.privilege == PrivilegeLevel.machine &&
+        accessType != MemoryAccessType.fetch &&
+        (state.mstatus & _Mstatus.mprvMask) != 0) {
+      final mpp =
+          (state.mstatus >> _Mstatus.mppShift) & _Mstatus.privMask;
+      return PrivilegeLevel.fromValue(mpp);
+    }
+    return state.privilege;
+  }
+
   int _walkSv39(
     int virtualAddr,
     MemoryAccessType accessType,
+    PrivilegeLevel effectivePriv,
   ) {
     _validateSv39VirtualAddr(virtualAddr, accessType);
     final rootPpn = state.satp & _SatpFields.ppnMask44;
@@ -61,7 +79,7 @@ class Mmu {
       }
 
       _validateLeafXwr(xwr, virtualAddr, accessType);
-      _checkPrivilege(pte, accessType, virtualAddr);
+      _checkPrivilege(pte, accessType, virtualAddr, effectivePriv);
       _checkPermission(
         xwr,
         accessType,
@@ -160,9 +178,10 @@ class Mmu {
     int pte,
     MemoryAccessType accessType,
     int virtualAddr,
+    PrivilegeLevel effectivePriv,
   ) {
     final isUserPage = (pte & _Pte.userMask) != 0;
-    final priv = state.privilege;
+    final priv = effectivePriv;
 
     if (priv == PrivilegeLevel.supervisor) {
       if (isUserPage &&
@@ -349,6 +368,9 @@ class _Pte {
 }
 
 class _Mstatus {
+  static const mprvMask = 1 << 17;
   static const sumMask = 1 << 18;
   static const mxrMask = 1 << 19;
+  static const mppShift = 11;
+  static const privMask = 0x3;
 }
