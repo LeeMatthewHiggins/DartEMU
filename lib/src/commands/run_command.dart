@@ -74,12 +74,7 @@ class RunCommand extends Command<int> {
     RiscVMachine machine,
     ConsoleAdapter consoleAdapter,
   ) async {
-    final isTerminal = stdin.hasTerminal;
-    if (isTerminal) {
-      stdin
-        ..echoMode = false
-        ..lineMode = false;
-    }
+    final rawMode = _trySetRawMode();
 
     final stdinSub = stdin.listen(consoleAdapter.feedInput);
 
@@ -90,11 +85,31 @@ class RunCommand extends Command<int> {
       }
     } finally {
       await stdinSub.cancel();
-      if (isTerminal) {
-        stdin
-          ..echoMode = true
-          ..lineMode = true;
+      if (rawMode) {
+        _tryRestoreTerminal();
       }
+    }
+  }
+
+  bool _trySetRawMode() {
+    try {
+      if (!stdin.hasTerminal) return false;
+      stdin
+        ..echoMode = false
+        ..lineMode = false;
+      return true;
+    } on StdinException {
+      return false;
+    }
+  }
+
+  void _tryRestoreTerminal() {
+    try {
+      stdin
+        ..echoMode = true
+        ..lineMode = true;
+    } on StdinException {
+      // ignore
     }
   }
 
@@ -122,11 +137,17 @@ class RunCommand extends Command<int> {
       argResults!['memory'] as String,
     );
 
+    final drivePath = argResults!['drive'] as String?;
+    final driveConfigs = <DriveConfig>[
+      if (drivePath != null) DriveConfig(file: drivePath),
+    ];
+
     return MachineConfig(
       memorySizeMb: memorySizeMb,
       biosPath: argResults!['bios'] as String?,
       kernelPath: argResults!['kernel'] as String?,
       cmdLine: argResults!['cmdline'] as String?,
+      driveConfigs: driveConfigs,
       console: consoleAdapter,
     );
   }

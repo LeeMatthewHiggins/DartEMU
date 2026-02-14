@@ -2,6 +2,8 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:dart_emu/src/cpu/cpu_executor.dart';
+import 'package:dart_emu/src/device/file_block_device.dart';
+import 'package:dart_emu/src/device/virtio/virtio_block.dart';
 import 'package:dart_emu/src/device/virtio/virtio_console.dart';
 import 'package:dart_emu/src/device/virtio/virtio_device.dart';
 import 'package:dart_emu/src/io/clint.dart';
@@ -121,6 +123,19 @@ class RiscVMachine {
           memMap: memMap,
           characterDevice: config.console!,
         ),
+      );
+    }
+
+    for (final blockDevice in config.blockDevices) {
+      _addVirtioDevice(
+        VirtioBlockDevice(memMap: memMap, blockDevice: blockDevice),
+      );
+    }
+
+    for (final drive in config.driveConfigs) {
+      final fileBlock = FileBlockDevice.open(drive.file);
+      _addVirtioDevice(
+        VirtioBlockDevice(memMap: memMap, blockDevice: fileBlock),
       );
     }
   }

@@ -44,7 +44,7 @@ class ConfigLoader {
       kernelPath: _resolvePath(_getString(doc, _Keys.kernel), baseDir),
       initrdPath: _resolvePath(_getString(doc, _Keys.initrd), baseDir),
       cmdLine: _getString(doc, _Keys.cmdline),
-      driveConfigs: _parseDrives(doc),
+      driveConfigs: _parseDrives(doc, baseDir),
       filesystemConfigs: _parseFilesystems(doc),
       ethernetConfigs: _parseEthernets(doc),
       rtcLocalTime: _getBool(doc, _Keys.rtcLocalTime) ?? false,
@@ -68,7 +68,7 @@ class ConfigLoader {
     }
   }
 
-  static List<DriveConfig> _parseDrives(YamlMap doc) {
+  static List<DriveConfig> _parseDrives(YamlMap doc, String? baseDir) {
     final drives = <DriveConfig>[];
     for (var i = 0; i < _maxDrives; i++) {
       final key = '${_Keys.drivePrefix}$i';
@@ -78,7 +78,7 @@ class ConfigLoader {
         if (file != null) {
           drives.add(
             DriveConfig(
-              file: file,
+              file: _resolvePath(file, baseDir) ?? file,
               device: driveMap[_Keys.device] as String?,
             ),
           );

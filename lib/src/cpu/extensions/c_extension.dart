@@ -39,6 +39,16 @@ class CExtension {
           rs1: _Reg.sp,
           imm: imm,
         );
+      case _CQ0Funct.fld:
+        final fldImm = _fieldExtract(insn, 10, 3, 5) |
+            _fieldExtract(insn, 5, 6, 7);
+        return _encodeI(
+          opcode: _Op.loadFp,
+          rd: rdPrime,
+          funct3: _F3.fld,
+          rs1: rs1Prime,
+          imm: fldImm,
+        );
       case _CQ0Funct.lw:
         final imm = _fieldExtract(insn, 10, 3, 5) |
             _fieldExtract(insn, 6, 2, 2) |
@@ -70,6 +80,16 @@ class CExtension {
           rs1: rs1Prime,
           rs2: rdPrime,
           imm: imm,
+        );
+      case _CQ0Funct.fsd:
+        final fsdImm = _fieldExtract(insn, 10, 3, 5) |
+            _fieldExtract(insn, 5, 6, 7);
+        return _encodeS(
+          opcode: _Op.storeFp,
+          funct3: _F3.fsd,
+          rs1: rs1Prime,
+          rs2: rdPrime,
+          imm: fsdImm,
         );
       case _CQ0Funct.sd:
         final imm = _fieldExtract(insn, 10, 3, 5) |
@@ -334,6 +354,17 @@ class CExtension {
           rs1: rd,
           imm: shamt,
         );
+      case _CQ2Funct.fldsp:
+        final fldspImm = _fieldExtract(insn, 12, 5, 5) |
+            (rs2 & (_Mask.ldspBits << _Shift.ldspLow)) |
+            _fieldExtract(insn, 2, 6, 8);
+        return _encodeI(
+          opcode: _Op.loadFp,
+          rd: rd,
+          funct3: _F3.fld,
+          rs1: _Reg.sp,
+          imm: fldspImm,
+        );
       case _CQ2Funct.lwsp:
         final imm = _fieldExtract(insn, 12, 5, 5) |
             (rs2 & (_Mask.lwspBits << _Shift.lwspLow)) |
@@ -369,6 +400,16 @@ class CExtension {
           rs1: _Reg.sp,
           rs2: rs2,
           imm: imm,
+        );
+      case _CQ2Funct.fsdsp:
+        final fsdspImm = _fieldExtract(insn, 10, 3, 5) |
+            _fieldExtract(insn, 7, 6, 8);
+        return _encodeS(
+          opcode: _Op.storeFp,
+          funct3: _F3.fsd,
+          rs1: _Reg.sp,
+          rs2: rs2,
+          imm: fsdspImm,
         );
       case _CQ2Funct.sdsp:
         final imm = _fieldExtract(insn, 10, 3, 5) |
@@ -596,33 +637,37 @@ class _EncShift {
 
 class _Op {
   static const load = 0x03;
+  static const loadFp = 0x07;
   static const opImm = 0x13;
+  static const opImm32 = 0x1B;
   static const store = 0x23;
+  static const storeFp = 0x27;
   static const op = 0x33;
   static const lui = 0x37;
   static const op32 = 0x3B;
   static const branch = 0x63;
   static const jalr = 0x67;
   static const jal = 0x6F;
-  static const opImm32 = 0x1B;
 }
 
 class _F3 {
   static const addi = 0;
+  static const addSub = 0;
+  static const jalr = 0;
+  static const beq = 0;
   static const slli = 1;
+  static const bne = 1;
   static const lw = 2;
+  static const sw = 2;
   static const ld = 3;
+  static const sd = 3;
+  static const fld = 3;
+  static const fsd = 3;
   static const xor = 4;
   static const srli = 5;
   static const or = 6;
   static const and = 7;
   static const andi = 7;
-  static const sw = 2;
-  static const sd = 3;
-  static const addSub = 0;
-  static const beq = 0;
-  static const bne = 1;
-  static const jalr = 0;
 }
 
 class _F7 {
@@ -642,8 +687,10 @@ class _Reg {
 
 class _CQ0Funct {
   static const addi4spn = 0;
+  static const fld = 1;
   static const lw = 2;
   static const ld = 3;
+  static const fsd = 5;
   static const sw = 6;
   static const sd = 7;
 }
@@ -661,9 +708,11 @@ class _CQ1Funct {
 
 class _CQ2Funct {
   static const slli = 0;
+  static const fldsp = 1;
   static const lwsp = 2;
   static const ldsp = 3;
   static const jalrMvAddEbreak = 4;
+  static const fsdsp = 5;
   static const swsp = 6;
   static const sdsp = 7;
 }

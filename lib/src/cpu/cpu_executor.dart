@@ -5,6 +5,8 @@ import 'package:dart_emu/src/cpu/csr.dart';
 import 'package:dart_emu/src/cpu/decoder.dart';
 import 'package:dart_emu/src/cpu/exception.dart';
 import 'package:dart_emu/src/cpu/extensions/a_extension.dart';
+import 'package:dart_emu/src/cpu/extensions/d_extension.dart';
+import 'package:dart_emu/src/cpu/extensions/f_extension.dart';
 import 'package:dart_emu/src/cpu/extensions/m_extension.dart';
 import 'package:dart_emu/src/cpu/mmu.dart';
 import 'package:dart_emu/src/cpu/tlb.dart';
@@ -22,6 +24,8 @@ class CpuExecutor {
     exceptionHandler = ExceptionHandler(state: state);
     mmu = Mmu(state: state);
     _aExt = AExtension(state: state);
+    _fExt = FExtension(state: state);
+    _dExt = DExtension(state: state);
     _initMisa();
   }
 
@@ -30,6 +34,8 @@ class CpuExecutor {
   late ExceptionHandler exceptionHandler;
   late Mmu mmu;
   late AExtension _aExt;
+  late FExtension _fExt;
+  late DExtension _dExt;
 
   final MExtension _mExt = MExtension();
 
@@ -248,8 +254,12 @@ class CpuExecutor {
         return _executeBranch(insn, instrSize);
       case _Opcode.load:
         return _executeLoad(insn, instrSize);
+      case _Opcode.loadFp:
+        return _executeLoadFp(insn, instrSize);
       case _Opcode.store:
         return _executeStore(insn, instrSize);
+      case _Opcode.storeFp:
+        return _executeStoreFp(insn, instrSize);
       case _Opcode.opImm:
         return _executeOpImm(insn, instrSize);
       case _Opcode.opImm32:
@@ -264,6 +274,13 @@ class CpuExecutor {
         return _executeMiscMem(insn, instrSize);
       case _Opcode.amo:
         return _executeAmo(insn, instrSize);
+      case _Opcode.fmadd:
+      case _Opcode.fmsub:
+      case _Opcode.fnmsub:
+      case _Opcode.fnmadd:
+        return _executeFusedMulAdd(insn, instrSize, opcode);
+      case _Opcode.opFp:
+        return _executeOpFp(insn, instrSize);
       default:
         if (instrSize == _compressedInsnSize) {
           return _executeCompressed(insn);
@@ -296,8 +313,10 @@ class CpuExecutor {
 
     return switch (funct3) {
       0 => _cAddi4spn(insn, rdPrime),
+      1 => _cFld(insn, rdPrime),
       2 => _cLw(insn, rdPrime),
       3 => _cLd(insn, rdPrime),
+      5 => _cFsd(insn, rdPrime),
       6 => _cSw(insn, rdPrime),
       7 => _cSd(insn, rdPrime),
       _ => _illegalCompressed(insn),
@@ -362,6 +381,39 @@ class CpuExecutor {
         _cField(insn, 5, 6, 7);
     final addr = state.regs[rs1] + imm;
     if (!_memWriteU64(addr, state.regs[rdPrime])) {
+      return false;
+    }
+    state.pc += _compressedInsnSize;
+    return true;
+  }
+
+  bool _cFld(int insn, int rd) {
+    if (!_fpEnabled()) {
+      _raiseIllegalInsn(insn);
+      return false;
+    }
+    final rs1 = ((insn >> 7) & 7) | 8;
+    final imm = _cField(insn, 10, 3, 5) |
+        _cField(insn, 5, 6, 7);
+    final addr = state.regs[rs1] + imm;
+    final val = _memReadU64(addr);
+    if (val == null) return false;
+    state.fpRegs[rd] = val;
+    _markFsDirty();
+    state.pc += _compressedInsnSize;
+    return true;
+  }
+
+  bool _cFsd(int insn, int rs2Prime) {
+    if (!_fpEnabled()) {
+      _raiseIllegalInsn(insn);
+      return false;
+    }
+    final rs1 = ((insn >> 7) & 7) | 8;
+    final imm = _cField(insn, 10, 3, 5) |
+        _cField(insn, 5, 6, 7);
+    final addr = state.regs[rs1] + imm;
+    if (!_memWriteU64(addr, state.fpRegs[rs2Prime])) {
       return false;
     }
     state.pc += _compressedInsnSize;
@@ -555,9 +607,11 @@ class CpuExecutor {
 
     return switch (funct3) {
       0 => _cSlli(insn, rs2),
+      1 => _cFldsp(insn),
       2 => _cLwsp(insn, rs2),
       3 => _cLdsp(insn, rs2),
       4 => _cJrMvAddEbreak(insn, rs2),
+      5 => _cFsdsp(insn, rs2),
       6 => _cSwsp(insn, rs2),
       7 => _cSdsp(insn, rs2),
       _ => _illegalCompressed(insn),
@@ -665,6 +719,40 @@ class CpuExecutor {
         _cField(insn, 7, 6, 8);
     final addr = state.regs[2] + imm;
     if (!_memWriteU64(addr, state.regs[rs2])) {
+      return false;
+    }
+    state.pc += _compressedInsnSize;
+    return true;
+  }
+
+  bool _cFldsp(int insn) {
+    if (!_fpEnabled()) {
+      _raiseIllegalInsn(insn);
+      return false;
+    }
+    final rd = InstructionDecoder.extractRd(insn);
+    final rs2 = (insn >> 2) & _regMask;
+    final imm = _cField(insn, 12, 5, 5) |
+        (rs2 & (3 << 3)) |
+        _cField(insn, 2, 6, 8);
+    final addr = state.regs[2] + imm;
+    final val = _memReadU64(addr);
+    if (val == null) return false;
+    state.fpRegs[rd] = val;
+    _markFsDirty();
+    state.pc += _compressedInsnSize;
+    return true;
+  }
+
+  bool _cFsdsp(int insn, int rs2) {
+    if (!_fpEnabled()) {
+      _raiseIllegalInsn(insn);
+      return false;
+    }
+    final imm = _cField(insn, 10, 3, 5) |
+        _cField(insn, 7, 6, 8);
+    final addr = state.regs[2] + imm;
+    if (!_memWriteU64(addr, state.fpRegs[rs2])) {
       return false;
     }
     state.pc += _compressedInsnSize;
@@ -1257,6 +1345,138 @@ class CpuExecutor {
     _memWriteU64(addr, value);
   }
 
+  bool _fpEnabled() =>
+      (state.mstatus & _MstatusFp.fsMask) != 0;
+
+  void _markFsDirty() {
+    state.mstatus =
+        (state.mstatus & ~_MstatusFp.fsMask) |
+        _MstatusFp.fsDirty;
+  }
+
+  bool _executeLoadFp(int insn, int instrSize) {
+    if (!_fpEnabled()) {
+      _raiseIllegalInsn(insn);
+      return false;
+    }
+    final rd = InstructionDecoder.extractRd(insn);
+    final rs1 = InstructionDecoder.extractRs1(insn);
+    final funct3 =
+        InstructionDecoder.extractFunct3(insn);
+    final imm = InstructionDecoder.extractImmI(insn);
+    final addr = state.regs[rs1] + imm;
+
+    switch (funct3) {
+      case _FpLoadStoreFunct3.word:
+        final val = _memReadU32(addr);
+        if (val == null) return false;
+        state.fpRegs[rd] =
+            (val & _mask32) | _fpNanBoxMask;
+      case _FpLoadStoreFunct3.doubleWord:
+        final val = _memReadU64(addr);
+        if (val == null) return false;
+        state.fpRegs[rd] = val;
+      default:
+        _raiseIllegalInsn(insn);
+        return false;
+    }
+
+    _markFsDirty();
+    state.pc += instrSize;
+    return true;
+  }
+
+  bool _executeStoreFp(int insn, int instrSize) {
+    if (!_fpEnabled()) {
+      _raiseIllegalInsn(insn);
+      return false;
+    }
+    final rs1 = InstructionDecoder.extractRs1(insn);
+    final rs2 = InstructionDecoder.extractRs2(insn);
+    final funct3 =
+        InstructionDecoder.extractFunct3(insn);
+    final imm = InstructionDecoder.extractImmS(insn);
+    final addr = state.regs[rs1] + imm;
+
+    switch (funct3) {
+      case _FpLoadStoreFunct3.word:
+        if (!_memWriteU32(
+          addr,
+          state.fpRegs[rs2] & _mask32,
+        )) {
+          return false;
+        }
+      case _FpLoadStoreFunct3.doubleWord:
+        if (!_memWriteU64(addr, state.fpRegs[rs2])) {
+          return false;
+        }
+      default:
+        _raiseIllegalInsn(insn);
+        return false;
+    }
+
+    state.pc += instrSize;
+    return true;
+  }
+
+  bool _executeFusedMulAdd(
+    int insn,
+    int instrSize,
+    int opcode,
+  ) {
+    if (!_fpEnabled()) {
+      _raiseIllegalInsn(insn);
+      return false;
+    }
+    final fmt =
+        (insn >> _fpFmtShift) & _fpFmtMask;
+
+    try {
+      switch (fmt) {
+        case _FpFmt.single:
+          _fExt.executeFusedMulAdd(insn, opcode);
+        case _FpFmt.double_:
+          _dExt.executeFusedMulAdd(insn, opcode);
+        default:
+          _raiseIllegalInsn(insn);
+          return false;
+      }
+    } on IllegalFpException {
+      _raiseIllegalInsn(insn);
+      return false;
+    }
+
+    state.pc += instrSize;
+    return true;
+  }
+
+  bool _executeOpFp(int insn, int instrSize) {
+    if (!_fpEnabled()) {
+      _raiseIllegalInsn(insn);
+      return false;
+    }
+    final funct7 = insn >>> _funct7Shift;
+    final fmt = funct7 & _fpFmtMask;
+
+    try {
+      switch (fmt) {
+        case _FpFmt.single:
+          _fExt.executeArithmetic(insn);
+        case _FpFmt.double_:
+          _dExt.executeArithmetic(insn);
+        default:
+          _raiseIllegalInsn(insn);
+          return false;
+      }
+    } on IllegalFpException {
+      _raiseIllegalInsn(insn);
+      return false;
+    }
+
+    state.pc += instrSize;
+    return true;
+  }
+
   int? _memReadU8(int addr) {
     final tlbIdx =
         (addr >>> TlbConstants.pageSizeLog2) &
@@ -1754,6 +1974,8 @@ class CpuExecutor {
           _IsaBits.m |
           _IsaBits.a |
           _IsaBits.c |
+          _IsaBits.f |
+          _IsaBits.d |
           _IsaBits.s |
           _IsaBits.u |
           (_mxlRv64 << _mxlShift)
@@ -1806,6 +2028,10 @@ class CpuExecutor {
   static const _wfiExtraBitsMask = 0x00007F80;
   static const _sfenceVmaIdShift = 5;
   static const _sfenceVmaIdValue = 0x09;
+
+  static const _fpNanBoxMask = 0xFFFFFFFF00000000;
+  static const _fpFmtShift = 25;
+  static const _fpFmtMask = 0x03;
 }
 
 class _Opcode {
@@ -1823,6 +2049,13 @@ class _Opcode {
   static const system = 0x73;
   static const miscMem = 0x0F;
   static const amo = 0x2F;
+  static const loadFp = 0x07;
+  static const storeFp = 0x27;
+  static const fmadd = 0x43;
+  static const fmsub = 0x47;
+  static const fnmsub = 0x4B;
+  static const fnmadd = 0x4F;
+  static const opFp = 0x53;
 }
 
 class _LoadFunct3 {
@@ -1908,6 +2141,23 @@ class _IsaBits {
   static const m = 1 << 12;
   static const a = 1 << 0;
   static const c = 1 << 2;
+  static const f = 1 << 5;
+  static const d = 1 << 3;
   static const s = 1 << 18;
   static const u = 1 << 20;
+}
+
+class _MstatusFp {
+  static const fsMask = 0x6000;
+  static const fsDirty = 0x6000;
+}
+
+class _FpLoadStoreFunct3 {
+  static const word = 2;
+  static const doubleWord = 3;
+}
+
+class _FpFmt {
+  static const single = 0;
+  static const double_ = 1;
 }
