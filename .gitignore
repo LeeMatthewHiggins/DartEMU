@@ -13,3 +13,6 @@ coverage/
 
 # Android studio and IntelliJ
 .idea
+
+# Disk images and ROM binaries
+data/*.bin

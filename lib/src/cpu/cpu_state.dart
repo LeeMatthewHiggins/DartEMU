@@ -1,7 +1,7 @@
 import 'dart:typed_data';
 
 import 'package:dart_emu/src/cpu/tlb.dart';
-import 'package:dart_emu/src/ram/phys_memory_map.dart';
+import 'package:dart_emu/src/machine/phys_memory_map.dart';
 
 enum PrivilegeLevel {
   user(0),

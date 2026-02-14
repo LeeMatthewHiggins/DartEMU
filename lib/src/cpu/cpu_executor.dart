@@ -10,8 +10,8 @@ import 'package:dart_emu/src/cpu/extensions/f_extension.dart';
 import 'package:dart_emu/src/cpu/extensions/m_extension.dart';
 import 'package:dart_emu/src/cpu/mmu.dart';
 import 'package:dart_emu/src/cpu/tlb.dart';
-import 'package:dart_emu/src/ram/phys_memory_map.dart';
-import 'package:dart_emu/src/ram/phys_memory_range.dart';
+import 'package:dart_emu/src/machine/phys_memory_map.dart';
+import 'package:dart_emu/src/machine/phys_memory_range.dart';
 import 'package:dart_emu/src/util/bit_utils.dart';
 
 class CpuExecutor {

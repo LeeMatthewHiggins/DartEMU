@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:dart_emu/src/command_runner.dart';
+import 'package:dart_emu/src/cli/command_runner.dart';
 
 Future<void> main(List<String> args) async {
   await _flushThenExit(await DartEmuCommandRunner().run(args));

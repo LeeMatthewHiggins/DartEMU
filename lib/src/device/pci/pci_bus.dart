@@ -1,6 +1,6 @@
 import 'package:dart_emu/src/device/irq_signal.dart';
 import 'package:dart_emu/src/device/pci/pci_device.dart';
-import 'package:dart_emu/src/ram/phys_memory_map.dart';
+import 'package:dart_emu/src/machine/phys_memory_map.dart';
 
 class PciBus {
   PciBus({

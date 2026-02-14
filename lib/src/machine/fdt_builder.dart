@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
-import 'package:dart_emu/src/io/clint.dart';
+import 'package:dart_emu/src/machine/clint.dart';
 import 'package:dart_emu/src/machine/memory_map_layout.dart';
 
 class _FdtTokens {

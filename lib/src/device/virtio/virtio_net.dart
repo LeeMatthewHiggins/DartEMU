@@ -1,6 +1,6 @@
 import 'package:dart_emu/src/device/ethernet_device.dart';
 import 'package:dart_emu/src/device/virtio/virtio_device.dart';
-import 'package:dart_emu/src/ram/phys_memory_map.dart';
+import 'package:dart_emu/src/machine/phys_memory_map.dart';
 
 class VirtioNetDevice extends VirtioDevice {
   VirtioNetDevice({

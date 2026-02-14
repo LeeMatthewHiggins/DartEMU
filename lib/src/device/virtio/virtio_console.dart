@@ -2,7 +2,7 @@ import 'dart:typed_data';
 
 import 'package:dart_emu/src/device/character_device.dart';
 import 'package:dart_emu/src/device/virtio/virtio_device.dart';
-import 'package:dart_emu/src/ram/phys_memory_map.dart';
+import 'package:dart_emu/src/machine/phys_memory_map.dart';
 
 class _ConsoleConst {
   static const deviceIdConsole = 3;

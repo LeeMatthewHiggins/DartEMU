@@ -6,13 +6,13 @@ import 'package:dart_emu/src/device/file_block_device.dart';
 import 'package:dart_emu/src/device/virtio/virtio_block.dart';
 import 'package:dart_emu/src/device/virtio/virtio_console.dart';
 import 'package:dart_emu/src/device/virtio/virtio_device.dart';
-import 'package:dart_emu/src/io/clint.dart';
-import 'package:dart_emu/src/io/htif.dart';
-import 'package:dart_emu/src/io/plic.dart';
+import 'package:dart_emu/src/machine/clint.dart';
 import 'package:dart_emu/src/machine/fdt_builder.dart';
+import 'package:dart_emu/src/machine/htif.dart';
 import 'package:dart_emu/src/machine/machine_config.dart';
 import 'package:dart_emu/src/machine/memory_map_layout.dart';
-import 'package:dart_emu/src/ram/phys_memory_map.dart';
+import 'package:dart_emu/src/machine/phys_memory_map.dart';
+import 'package:dart_emu/src/machine/plic.dart';
 
 class RiscVMachine {
   RiscVMachine._({

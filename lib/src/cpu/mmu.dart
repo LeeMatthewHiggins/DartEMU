@@ -2,7 +2,7 @@ import 'dart:typed_data';
 
 import 'package:dart_emu/src/cpu/cpu_state.dart';
 import 'package:dart_emu/src/cpu/tlb.dart';
-import 'package:dart_emu/src/ram/phys_memory_range.dart';
+import 'package:dart_emu/src/machine/phys_memory_range.dart';
 
 enum MemoryAccessType { fetch, read, write }
 
