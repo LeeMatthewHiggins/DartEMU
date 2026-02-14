@@ -1,0 +1,24 @@
+name: dart_emu_example
+description: Flutter terminal UI for the dart_emu RISC-V emulator.
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.9.2
+
+dependencies:
+  dart_emu:
+    path: ../
+  flutter:
+    sdk: flutter
+  xterm: ^4.0.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  very_good_analysis: ^7.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/

@@ -49,7 +49,7 @@ class RunCommand extends Command<int> {
 
   @override
   Future<int> run() async {
-    final config = _buildConfig();
+    final config = ConfigResolver.resolve(_buildConfig());
     final emulator = Emulator(config);
 
     _logger.info(

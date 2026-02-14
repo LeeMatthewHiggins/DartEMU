@@ -1,5 +1,7 @@
 import 'dart:io';
+import 'dart:typed_data';
 
+import 'package:dart_emu/src/device/file_block_device.dart';
 import 'package:dart_emu/src/machine/machine_config.dart';
 import 'package:yaml/yaml.dart';
 
@@ -168,6 +170,38 @@ class _Keys {
   static const ifname = 'ifname';
   static const rtcLocalTime = 'rtc_local_time';
   static const accel = 'accel';
+}
+
+/// Resolves file-path references in a [MachineConfig] to in-memory data
+/// and concrete block device instances.
+///
+/// This class uses `dart:io` and is intended for CLI or desktop contexts
+/// where file system access is available.
+class ConfigResolver {
+  const ConfigResolver._();
+
+  static MachineConfig resolve(MachineConfig config) {
+    return config.copyWith(
+      biosData: config.biosData ?? _readFileOrNull(config.biosPath),
+      kernelData: config.kernelData ?? _readFileOrNull(config.kernelPath),
+      initrdData: config.initrdData ?? _readFileOrNull(config.initrdPath),
+      blockDevices: [
+        ...config.blockDevices,
+        ...config.driveConfigs.map(
+          (drive) => FileBlockDevice.open(drive.file),
+        ),
+      ],
+    );
+  }
+
+  static Uint8List? _readFileOrNull(String? path) {
+    if (path == null) return null;
+    final file = File(path);
+    if (!file.existsSync()) {
+      throw ConfigException('Image file not found: $path');
+    }
+    return file.readAsBytesSync();
+  }
 }
 
 /// Exception thrown when machine configuration parsing fails.

@@ -1,8 +1,6 @@
-import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:dart_emu/src/cpu/cpu_executor.dart';
-import 'package:dart_emu/src/device/file_block_device.dart';
 import 'package:dart_emu/src/device/virtio/virtio_block.dart';
 import 'package:dart_emu/src/device/virtio/virtio_console.dart';
 import 'package:dart_emu/src/device/virtio/virtio_device.dart';
@@ -157,13 +155,6 @@ class RiscVMachine {
         VirtioBlockDevice(memMap: memMap, blockDevice: blockDevice),
       );
     }
-
-    for (final drive in config.driveConfigs) {
-      final fileBlock = FileBlockDevice.open(drive.file);
-      _addVirtioDevice(
-        VirtioBlockDevice(memMap: memMap, blockDevice: fileBlock),
-      );
-    }
   }
 
   void _addVirtioDevice(VirtioDevice device) {
@@ -185,18 +176,12 @@ class RiscVMachine {
   }
 
   void _loadAndBoot() {
-    final biosData = _resolveImageData(
-      config.biosData,
-      config.biosPath,
-    );
+    final biosData = _resolveImageData(config.biosData);
     if (biosData == null) return;
 
     loadBios(biosData);
 
-    final kernelData = _resolveImageData(
-      config.kernelData,
-      config.kernelPath,
-    );
+    final kernelData = _resolveImageData(config.kernelData);
 
     final kernelOffset =
         (biosData.length + _kernelAlignment - 1) & ~(_kernelAlignment - 1);
@@ -263,21 +248,7 @@ class RiscVMachine {
       );
   }
 
-  Uint8List? _resolveImageData(
-    Uint8List? inMemoryData,
-    String? filePath,
-  ) {
-    if (inMemoryData != null) return inMemoryData;
-    if (filePath == null) return null;
-    final file = File(filePath);
-    if (!file.existsSync()) {
-      throw FileSystemException(
-        'Image file not found',
-        filePath,
-      );
-    }
-    return file.readAsBytesSync();
-  }
+  Uint8List? _resolveImageData(Uint8List? data) => data;
 
   static const _kernelAlignment = 2 * 1024 * 1024;
 }
