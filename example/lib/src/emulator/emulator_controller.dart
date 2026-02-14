@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:dart_emu/dart_emu.dart';
@@ -18,15 +19,20 @@ class _Defaults {
 /// Loads VM images from Flutter assets and provides stream-based I/O
 /// for connecting to a terminal widget.
 class EmulatorController {
+  final StreamController<Uint8List> _outputController =
+      StreamController<Uint8List>.broadcast();
+  final StreamController<EmulatorStatus> _statusController =
+      StreamController<EmulatorStatus>.broadcast();
+
   Emulator? _emulator;
+  StreamSubscription<Uint8List>? _outputSub;
+  StreamSubscription<EmulatorStatus>? _statusSub;
 
   /// Console output from the guest OS.
-  Stream<Uint8List> get output =>
-      _emulator?.output ?? const Stream.empty();
+  Stream<Uint8List> get output => _outputController.stream;
 
   /// Broadcast stream of emulator lifecycle status changes.
-  Stream<EmulatorStatus> get status =>
-      _emulator?.status ?? const Stream.empty();
+  Stream<EmulatorStatus> get status => _statusController.stream;
 
   /// The current lifecycle status.
   EmulatorStatus get currentStatus =>
@@ -53,16 +59,22 @@ class EmulatorController {
       biosData: biosData,
       kernelData: kernelData,
       cmdLine: _Defaults.cmdLine,
-      blockDevices: [MemoryBlockDevice(rootfsData)],
+      blockDevices: [MemoryBlockDevice.fromData(rootfsData)],
     );
 
     _emulator = Emulator(config);
+    _outputSub = _emulator!.output.listen(_outputController.add);
+    _statusSub = _emulator!.status.listen(_statusController.add);
     await _emulator!.start();
   }
 
   /// Disposes all resources and closes streams.
   Future<void> dispose() async {
+    await _outputSub?.cancel();
+    await _statusSub?.cancel();
     await _emulator?.dispose();
     _emulator = null;
+    await _outputController.close();
+    await _statusController.close();
   }
 }
