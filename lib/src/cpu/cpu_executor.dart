@@ -9,7 +9,6 @@ import 'package:dart_emu/src/cpu/extensions/d_extension.dart';
 import 'package:dart_emu/src/cpu/extensions/f_extension.dart';
 import 'package:dart_emu/src/cpu/extensions/m_extension.dart';
 import 'package:dart_emu/src/cpu/mmu.dart';
-import 'package:dart_emu/src/cpu/platform/int64_const.dart';
 import 'package:dart_emu/src/cpu/tlb.dart';
 import 'package:dart_emu/src/machine/machine_config.dart';
 import 'package:dart_emu/src/machine/phys_memory_map.dart';
@@ -406,9 +405,11 @@ class CpuExecutor {
     final imm = _cField(insn, 10, 3, 5) |
         _cField(insn, 5, 6, 7);
     final addr = state.regs[rs1] + imm;
-    final val = _memReadU64(addr);
-    if (val == null) return false;
-    state.fpRegs[rd] = val;
+    final lo = _memReadU32(addr);
+    if (lo == null) return false;
+    final hi = _memReadU32(addr + _wordSize);
+    if (hi == null) return false;
+    state.fpRegs.writePair(rd, lo, hi);
     _markFsDirty();
     state.pc += _compressedInsnSize;
     return true;
@@ -423,7 +424,13 @@ class CpuExecutor {
     final imm = _cField(insn, 10, 3, 5) |
         _cField(insn, 5, 6, 7);
     final addr = state.regs[rs1] + imm;
-    if (!_memWriteU64(addr, state.fpRegs[rs2Prime])) {
+    if (!_memWriteU32(addr, state.fpRegs.readLo(rs2Prime))) {
+      return false;
+    }
+    if (!_memWriteU32(
+      addr + _wordSize,
+      state.fpRegs.readHi(rs2Prime),
+    )) {
       return false;
     }
     state.pc += _compressedInsnSize;
@@ -442,7 +449,7 @@ class CpuExecutor {
     final addr = state.regs[rs1] + imm;
     final val = _memReadU32(addr);
     if (val == null) return false;
-    state.fpRegs[rd] = val | _fpNanBoxMask;
+    state.fpRegs.writeWithNanBox(rd, val & _mask32);
     _markFsDirty();
     state.pc += _compressedInsnSize;
     return true;
@@ -458,7 +465,7 @@ class CpuExecutor {
         _cField(insn, 6, 2, 2) |
         _cField(insn, 5, 6, 6);
     final addr = state.regs[rs1] + imm;
-    if (!_memWriteU32(addr, state.fpRegs[rs2Prime])) {
+    if (!_memWriteU32(addr, state.fpRegs.readLo(rs2Prime))) {
       return false;
     }
     state.pc += _compressedInsnSize;
@@ -787,9 +794,11 @@ class CpuExecutor {
         (rs2 & (3 << 3)) |
         _cField(insn, 2, 6, 8);
     final addr = state.regs[2] + imm;
-    final val = _memReadU64(addr);
-    if (val == null) return false;
-    state.fpRegs[rd] = val;
+    final lo = _memReadU32(addr);
+    if (lo == null) return false;
+    final hi = _memReadU32(addr + _wordSize);
+    if (hi == null) return false;
+    state.fpRegs.writePair(rd, lo, hi);
     _markFsDirty();
     state.pc += _compressedInsnSize;
     return true;
@@ -803,7 +812,13 @@ class CpuExecutor {
     final imm = _cField(insn, 10, 3, 5) |
         _cField(insn, 7, 6, 8);
     final addr = state.regs[2] + imm;
-    if (!_memWriteU64(addr, state.fpRegs[rs2])) {
+    if (!_memWriteU32(addr, state.fpRegs.readLo(rs2))) {
+      return false;
+    }
+    if (!_memWriteU32(
+      addr + _wordSize,
+      state.fpRegs.readHi(rs2),
+    )) {
       return false;
     }
     state.pc += _compressedInsnSize;
@@ -822,7 +837,7 @@ class CpuExecutor {
     final addr = state.regs[2] + imm;
     final val = _memReadU32(addr);
     if (val == null) return false;
-    state.fpRegs[rd] = val | _fpNanBoxMask;
+    state.fpRegs.writeWithNanBox(rd, val & _mask32);
     _markFsDirty();
     state.pc += _compressedInsnSize;
     return true;
@@ -836,7 +851,7 @@ class CpuExecutor {
     final imm = _cField(insn, 9, 2, 5) |
         _cField(insn, 7, 6, 7);
     final addr = state.regs[2] + imm;
-    if (!_memWriteU32(addr, state.fpRegs[rs2])) {
+    if (!_memWriteU32(addr, state.fpRegs.readLo(rs2))) {
       return false;
     }
     state.pc += _compressedInsnSize;
@@ -1463,12 +1478,13 @@ class CpuExecutor {
       case _FpLoadStoreFunct3.word:
         final val = _memReadU32(addr);
         if (val == null) return false;
-        state.fpRegs[rd] =
-            (val & _mask32) | _fpNanBoxMask;
+        state.fpRegs.writeWithNanBox(rd, val & _mask32);
       case _FpLoadStoreFunct3.doubleWord:
-        final val = _memReadU64(addr);
-        if (val == null) return false;
-        state.fpRegs[rd] = val;
+        final lo = _memReadU32(addr);
+        if (lo == null) return false;
+        final hi = _memReadU32(addr + _wordSize);
+        if (hi == null) return false;
+        state.fpRegs.writePair(rd, lo, hi);
       default:
         _raiseIllegalInsn(insn);
         return false;
@@ -1495,12 +1511,21 @@ class CpuExecutor {
       case _FpLoadStoreFunct3.word:
         if (!_memWriteU32(
           addr,
-          state.fpRegs[rs2] & _mask32,
+          state.fpRegs.readLo(rs2),
         )) {
           return false;
         }
       case _FpLoadStoreFunct3.doubleWord:
-        if (!_memWriteU64(addr, state.fpRegs[rs2])) {
+        if (!_memWriteU32(
+          addr,
+          state.fpRegs.readLo(rs2),
+        )) {
+          return false;
+        }
+        if (!_memWriteU32(
+          addr + _wordSize,
+          state.fpRegs.readHi(rs2),
+        )) {
           return false;
         }
       default:
@@ -2159,8 +2184,6 @@ class CpuExecutor {
   static const _wfiExtraBitsMask = 0x00007F80;
   static const _sfenceVmaIdShift = 5;
   static const _sfenceVmaIdValue = 0x09;
-
-  static const _fpNanBoxMask = Int64Const.nanBoxMask;
   static const _fpFmtShift = 25;
   static const _fpFmtMask = 0x03;
 }

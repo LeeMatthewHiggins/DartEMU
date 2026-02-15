@@ -210,7 +210,7 @@ class DExtension {
     int rs2Field,
     RoundingMode rm,
   ) {
-    final val = _bitsToDouble(_readFp(rs1));
+    final val = state.fpRegs.readDouble(rs1);
     final int result;
 
     switch (rs2Field) {
@@ -251,19 +251,15 @@ class DExtension {
         throw const IllegalFpException();
     }
 
-    _writeFp(rd, _doubleToBits(val));
+    state.fpRegs.writeDouble(rd, val);
+    _markFsDirty();
   }
 
   void _executeCvtFromSingle(int rs1, int rd) {
-    final srcBits = state.fpRegs[rs1];
-    final int f32Bits;
-    if ((srcBits & _NanBox.checkMask) == _NanBox.checkMask) {
-      f32Bits = srcBits & _Mask.word;
-    } else {
-      f32Bits = _NanBox.canonicalNaN;
-    }
+    final f32Bits = state.fpRegs.readNanUnboxed(rs1);
     final val = _f32ToDouble(f32Bits);
-    _writeFp(rd, _doubleToBits(val));
+    state.fpRegs.writeDouble(rd, val);
+    _markFsDirty();
   }
 
   void _executeCompare(
@@ -389,24 +385,6 @@ class DExtension {
 
   static int _negateF64(int bits) => bits ^ _Float64.signMask;
 
-  static double _bitsToDouble(int bits64) {
-    _convBuf
-      ..setUint32(0, bits64 & _Mask.word, Endian.little)
-      ..setUint32(
-        _ByteConst.wordBytes,
-        (bits64 >>> _ByteConst.wordBits) & _Mask.word,
-        Endian.little,
-      );
-    return _convBuf.getFloat64(0, Endian.little);
-  }
-
-  static int _doubleToBits(double val) {
-    _convBuf.setFloat64(0, val, Endian.little);
-    final lo = _convBuf.getUint32(0, Endian.little);
-    final hi = _convBuf.getUint32(_ByteConst.wordBytes, Endian.little);
-    return lo | (hi << _ByteConst.wordBits);
-  }
-
   static double _f32ToDouble(int bits32) {
     _convBuf.setUint32(0, bits32 & _Mask.word, Endian.little);
     return _convBuf.getFloat32(0, Endian.little);
@@ -517,11 +495,6 @@ class _Mask {
   static const word = 0xFFFFFFFF;
 }
 
-class _NanBox {
-  static const checkMask = Int64Const.nanBoxMask;
-  static const canonicalNaN = 0x7FC00000;
-}
-
 class _Float64 {
   static const signMask = Int64Const.signBit;
 }
@@ -548,9 +521,4 @@ class _Limits {
 class _Bits {
   static const word = 32;
   static const doubleWord = 64;
-}
-
-class _ByteConst {
-  static const wordBits = 32;
-  static const wordBytes = 4;
 }

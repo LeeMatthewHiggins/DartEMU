@@ -117,16 +117,10 @@ class FExtension {
     _flushFlags();
   }
 
-  int _readFp(int reg) {
-    final val = state.fpRegs[reg];
-    if ((val & _NanBox.checkMask) == _NanBox.checkMask) {
-      return val & _Mask.word;
-    }
-    return _NanBox.canonicalNaN;
-  }
+  int _readFp(int reg) => state.fpRegs.readNanUnboxed(reg);
 
   void _writeFp(int reg, int bits32) {
-    state.fpRegs[reg] = (bits32 & _Mask.word) | _NanBox.boxMask;
+    state.fpRegs.writeWithNanBox(reg, bits32 & _Mask.word);
     _markFsDirty();
   }
 
@@ -224,8 +218,7 @@ class FExtension {
   }
 
   void _executeCvtFromDouble(int rs1, int rd, RoundingMode rm) {
-    final srcBits = state.fpRegs[rs1];
-    final val = _bitsToDouble64(srcBits);
+    final val = state.fpRegs.readDouble(rs1);
     _writeFp(rd, _doubleToF32(val));
   }
 
@@ -348,17 +341,6 @@ class FExtension {
     return _convBuf.getUint32(0, Endian.little);
   }
 
-  static double _bitsToDouble64(int bits64) {
-    _convBuf
-      ..setUint32(0, bits64 & _Mask.word, Endian.little)
-      ..setUint32(
-        _ByteConst.wordBytes,
-        (bits64 >>> _ByteConst.wordBits) & _Mask.word,
-        Endian.little,
-      );
-    return _convBuf.getFloat64(0, Endian.little);
-  }
-
   static final ByteData _convBuf = ByteData(8);
 }
 
@@ -459,12 +441,6 @@ class _Mask {
   static const word = 0xFFFFFFFF;
 }
 
-class _NanBox {
-  static const boxMask = Int64Const.nanBoxMask;
-  static const checkMask = Int64Const.nanBoxMask;
-  static const canonicalNaN = 0x7FC00000;
-}
-
 class _Float32 {
   static const signMask = 0x80000000;
 }
@@ -491,9 +467,4 @@ class _Limits {
 class _Bits {
   static const word = 32;
   static const doubleWord = 64;
-}
-
-class _ByteConst {
-  static const wordBits = 32;
-  static const wordBytes = 4;
 }

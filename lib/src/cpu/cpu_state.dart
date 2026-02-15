@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 
+import 'package:dart_emu/src/cpu/fp_register_file.dart';
 import 'package:dart_emu/src/cpu/platform/int64_const.dart';
 import 'package:dart_emu/src/cpu/tlb.dart';
 import 'package:dart_emu/src/machine/machine_config.dart';
@@ -40,7 +41,7 @@ abstract class RiscVCpuState {
   int get regMask;
 
   List<int> get regs;
-  List<int> get fpRegs;
+  FpRegisterFile get fpRegs;
 
   int pc = 0;
 
@@ -128,7 +129,7 @@ class _CpuState32 extends RiscVCpuState {
   final List<int> regs = Uint32List(_regCount);
 
   @override
-  final List<int> fpRegs = Uint32List(_regCount);
+  final FpRegisterFile fpRegs = FpRegisterFile();
 
   static const _signBit32 = 0x80000000;
   static const _regMask32 = 0xFFFFFFFF;
@@ -153,7 +154,7 @@ class _CpuState64 extends RiscVCpuState {
   final List<int> regs = Int64List(_regCount);
 
   @override
-  final List<int> fpRegs = Int64List(_regCount);
+  final FpRegisterFile fpRegs = FpRegisterFile();
 
   static const _signBit64 = Int64Const.signBit;
   static const _regMask64 = -1;
