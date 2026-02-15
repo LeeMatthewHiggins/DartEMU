@@ -29,7 +29,7 @@ class RiscVMachine {
 
   factory RiscVMachine.fromConfig(MachineConfig config) {
     final memMap = PhysMemoryMap();
-    final cpu = CpuExecutor(memMap: memMap);
+    final cpu = CpuExecutor(memMap: memMap, xlen: config.xlen);
 
     final plic = Plic(
       setMip: cpu.setMip,
@@ -193,6 +193,7 @@ class RiscVMachine {
     final fdt = FdtBuilder().build(
       ramSize: config.memorySizeBytes,
       misa: cpu.state.misa,
+      xlen: config.xlen,
       kernelStart: kernelData != null
           ? MemoryMapLayout.ramBaseAddr + kernelOffset
           : null,
@@ -250,7 +251,12 @@ class RiscVMachine {
 
   Uint8List? _resolveImageData(Uint8List? data) => data;
 
-  static const _kernelAlignment = 2 * 1024 * 1024;
+  int get _kernelAlignment => config.xlen == Xlen.rv32
+      ? _kernelAlign4Mb
+      : _kernelAlign2Mb;
+
+  static const _kernelAlign2Mb = 2 * 1024 * 1024;
+  static const _kernelAlign4Mb = 4 * 1024 * 1024;
 }
 
 class _BootAddr {

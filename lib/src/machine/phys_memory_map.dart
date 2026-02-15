@@ -86,10 +86,10 @@ class PhysMemoryMap {
   int physReadU64(int physAddr) {
     final range = findRange(physAddr);
     if (range is! RamRange) return 0;
-    return range.byteData.getUint64(
-      physAddr - range.addr,
-      Endian.little,
-    );
+    final offset = physAddr - range.addr;
+    final lo = range.byteData.getUint32(offset, Endian.little);
+    final hi = range.byteData.getUint32(offset + _wordBytes, Endian.little);
+    return lo | (hi << _wordBits);
   }
 
   void physWriteU8(int physAddr, int value) {
@@ -117,12 +117,17 @@ class PhysMemoryMap {
   void physWriteU64(int physAddr, int value) {
     final range = findRange(physAddr);
     if (range is! RamRange) return;
-    range.byteData.setUint64(
-      physAddr - range.addr,
-      value,
+    final offset = physAddr - range.addr;
+    range.byteData.setUint32(offset, value & _mask32, Endian.little);
+    range.byteData.setUint32(
+      offset + _wordBytes,
+      (value >> _wordBits) & _mask32,
       Endian.little,
     );
   }
 
   static const maxRanges = 32;
+  static const _wordBits = 32;
+  static const _wordBytes = 4;
+  static const _mask32 = 0xFFFFFFFF;
 }

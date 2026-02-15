@@ -128,7 +128,7 @@ class RunCommand extends Command<int> {
     if (configPath != null) {
       final loaded = ConfigLoader.loadFromFile(configPath);
       return MachineConfig(
-        machineType: loaded.machineType,
+        xlen: loaded.xlen,
         memorySizeMb: loaded.memorySizeMb,
         biosPath: loaded.biosPath,
         kernelPath: loaded.kernelPath,

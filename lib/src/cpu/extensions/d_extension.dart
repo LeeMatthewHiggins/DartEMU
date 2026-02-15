@@ -2,12 +2,18 @@ import 'dart:typed_data';
 
 import 'package:dart_emu/src/cpu/cpu_state.dart';
 import 'package:dart_emu/src/cpu/extensions/f_extension.dart';
+import 'package:dart_emu/src/cpu/platform/int64_const.dart';
 import 'package:dart_emu/src/cpu/softfp/soft_float.dart';
 import 'package:dart_emu/src/cpu/softfp/soft_float64.dart';
 import 'package:dart_emu/src/util/bit_utils.dart';
 
 class DExtension {
-  DExtension({required this.state});
+  factory DExtension({required RiscVCpuState state}) =>
+      state.isRv32
+          ? _DExtension32(state: state)
+          : _DExtension64(state: state);
+
+  DExtension._({required this.state});
 
   final RiscVCpuState state;
   final FpFlagsAccumulator _flags = FpFlagsAccumulator();
@@ -384,13 +390,21 @@ class DExtension {
   static int _negateF64(int bits) => bits ^ _Float64.signMask;
 
   static double _bitsToDouble(int bits64) {
-    _convBuf.setUint64(0, bits64, Endian.little);
+    _convBuf
+      ..setUint32(0, bits64 & _Mask.word, Endian.little)
+      ..setUint32(
+        _ByteConst.wordBytes,
+        (bits64 >>> _ByteConst.wordBits) & _Mask.word,
+        Endian.little,
+      );
     return _convBuf.getFloat64(0, Endian.little);
   }
 
   static int _doubleToBits(double val) {
     _convBuf.setFloat64(0, val, Endian.little);
-    return _convBuf.getUint64(0, Endian.little);
+    final lo = _convBuf.getUint32(0, Endian.little);
+    final hi = _convBuf.getUint32(_ByteConst.wordBytes, Endian.little);
+    return lo | (hi << _ByteConst.wordBits);
   }
 
   static double _f32ToDouble(int bits32) {
@@ -399,6 +413,45 @@ class DExtension {
   }
 
   static final ByteData _convBuf = ByteData(8);
+}
+
+class _DExtension64 extends DExtension {
+  _DExtension64({required super.state}) : super._();
+}
+
+class _DExtension32 extends DExtension {
+  _DExtension32({required super.state}) : super._();
+
+  @override
+  void executeArithmetic(int insn) {
+    final funct7 = insn >>> _Shift.funct7;
+    final funct3 = (insn >> _Shift.funct3) & _Mask.funct3;
+    if (funct7 == _Funct7.mvClassXD &&
+        funct3 == _CmpFunct3.fmvOrClass) {
+      throw const IllegalFpException();
+    }
+    if (funct7 == _Funct7.mvDX) {
+      throw const IllegalFpException();
+    }
+    super.executeArithmetic(insn);
+  }
+
+  @override
+  void _executeCvtToInt(
+    int rs1,
+    int rd,
+    int rs2Field,
+    RoundingMode rm,
+  ) {
+    if (rs2Field >= _CvtRs2.l) throw const IllegalFpException();
+    super._executeCvtToInt(rs1, rd, rs2Field, rm);
+  }
+
+  @override
+  void _executeCvtFromInt(int rs1, int rd, int rs2Field) {
+    if (rs2Field >= _CvtRs2.l) throw const IllegalFpException();
+    super._executeCvtFromInt(rs1, rd, rs2Field);
+  }
 }
 
 class _Funct7 {
@@ -465,12 +518,12 @@ class _Mask {
 }
 
 class _NanBox {
-  static const checkMask = 0xFFFFFFFF00000000;
+  static const checkMask = Int64Const.nanBoxMask;
   static const canonicalNaN = 0x7FC00000;
 }
 
 class _Float64 {
-  static const signMask = 1 << 63;
+  static const signMask = Int64Const.signBit;
 }
 
 class _MstatusFp {
@@ -487,12 +540,17 @@ class _Limits {
   static const maxI32 = 0x7FFFFFFF;
   static const minI32 = -0x80000000;
   static const maxU32 = 0xFFFFFFFF;
-  static const maxI64 = 0x7FFFFFFFFFFFFFFF;
-  static const minI64 = -0x8000000000000000;
+  static const maxI64 = Int64Const.maxSigned;
+  static const minI64 = Int64Const.minSigned;
   static final maxU64Big = BigInt.from(1) << 64;
 }
 
 class _Bits {
   static const word = 32;
   static const doubleWord = 64;
+}
+
+class _ByteConst {
+  static const wordBits = 32;
+  static const wordBytes = 4;
 }

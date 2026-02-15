@@ -1,10 +1,16 @@
 import 'package:dart_emu/src/cpu/cpu_state.dart';
+import 'package:dart_emu/src/cpu/platform/int64_const.dart';
 
 typedef MemoryReadCallback = int Function(int addr);
 typedef MemoryWriteCallback = void Function(int addr, int value);
 
 class AExtension {
-  AExtension({required this.state});
+  factory AExtension({required RiscVCpuState state}) =>
+      state.isRv32
+          ? _AExtension32(state: state)
+          : _AExtension64(state: state);
+
+  AExtension._({required this.state});
 
   final RiscVCpuState state;
 
@@ -230,6 +236,38 @@ class AExtension {
   static const _scFailure = 1;
 }
 
+class _AExtension64 extends AExtension {
+  _AExtension64({required super.state}) : super._();
+}
+
+class _AExtension32 extends AExtension {
+  _AExtension32({required super.state}) : super._();
+
+  @override
+  void executeAtomic({
+    required int funct3,
+    required int funct7,
+    required int rd,
+    required int rs1Val,
+    required int rs2Val,
+    required MemoryReadCallback readWord,
+    required MemoryReadCallback readDouble,
+    required MemoryWriteCallback writeWord,
+    required MemoryWriteCallback writeDouble,
+  }) {
+    if (funct3 != _Width.word) throw const IllegalAtomicException();
+    final funct5 = funct7 >> _Shifts.funct5;
+    _executeWord(
+      funct5: funct5,
+      rd: rd,
+      addr: rs1Val,
+      rs2Val: rs2Val,
+      read: readWord,
+      write: writeWord,
+    );
+  }
+}
+
 class IllegalAtomicException implements Exception {
   const IllegalAtomicException();
 }
@@ -261,5 +299,5 @@ class _Masks {
   static const word = 0xFFFFFFFF;
   static const wordSignBit = 0x80000000;
   static const wordSignExtension = ~word;
-  static const doubleSignBit = 1 << 63;
+  static const doubleSignBit = Int64Const.signBit;
 }

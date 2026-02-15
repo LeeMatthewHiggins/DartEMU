@@ -1,12 +1,18 @@
 import 'dart:typed_data';
 
 import 'package:dart_emu/src/cpu/cpu_state.dart';
+import 'package:dart_emu/src/cpu/platform/int64_const.dart';
 import 'package:dart_emu/src/cpu/softfp/soft_float.dart';
 import 'package:dart_emu/src/cpu/softfp/soft_float32.dart';
 import 'package:dart_emu/src/util/bit_utils.dart';
 
 class FExtension {
-  FExtension({required this.state});
+  factory FExtension({required RiscVCpuState state}) =>
+      state.isRv32
+          ? _FExtension32(state: state)
+          : _FExtension64(state: state);
+
+  FExtension._({required this.state});
 
   final RiscVCpuState state;
   final FpFlagsAccumulator _flags = FpFlagsAccumulator();
@@ -343,11 +349,47 @@ class FExtension {
   }
 
   static double _bitsToDouble64(int bits64) {
-    _convBuf.setUint64(0, bits64, Endian.little);
+    _convBuf
+      ..setUint32(0, bits64 & _Mask.word, Endian.little)
+      ..setUint32(
+        _ByteConst.wordBytes,
+        (bits64 >>> _ByteConst.wordBits) & _Mask.word,
+        Endian.little,
+      );
     return _convBuf.getFloat64(0, Endian.little);
   }
 
   static final ByteData _convBuf = ByteData(8);
+}
+
+class _FExtension64 extends FExtension {
+  _FExtension64({required super.state}) : super._();
+}
+
+class _FExtension32 extends FExtension {
+  _FExtension32({required super.state}) : super._();
+
+  @override
+  void _executeCvtToInt(
+    int rs1,
+    int rd,
+    int rs2Field,
+    RoundingMode rm,
+  ) {
+    if (rs2Field >= _CvtRs2.l) throw const IllegalFpException();
+    super._executeCvtToInt(rs1, rd, rs2Field, rm);
+  }
+
+  @override
+  void _executeCvtFromInt(
+    int rs1,
+    int rd,
+    int rs2Field,
+    RoundingMode rm,
+  ) {
+    if (rs2Field >= _CvtRs2.l) throw const IllegalFpException();
+    super._executeCvtFromInt(rs1, rd, rs2Field, rm);
+  }
 }
 
 class IllegalFpException implements Exception {
@@ -418,8 +460,8 @@ class _Mask {
 }
 
 class _NanBox {
-  static const boxMask = 0xFFFFFFFF00000000;
-  static const checkMask = 0xFFFFFFFF00000000;
+  static const boxMask = Int64Const.nanBoxMask;
+  static const checkMask = Int64Const.nanBoxMask;
   static const canonicalNaN = 0x7FC00000;
 }
 
@@ -441,12 +483,17 @@ class _Limits {
   static const maxI32 = 0x7FFFFFFF;
   static const minI32 = -0x80000000;
   static const maxU32 = 0xFFFFFFFF;
-  static const maxI64 = 0x7FFFFFFFFFFFFFFF;
-  static const minI64 = -0x8000000000000000;
+  static const maxI64 = Int64Const.maxSigned;
+  static const minI64 = Int64Const.minSigned;
   static final maxU64Big = BigInt.from(1) << 64;
 }
 
 class _Bits {
   static const word = 32;
   static const doubleWord = 64;
+}
+
+class _ByteConst {
+  static const wordBits = 32;
+  static const wordBytes = 4;
 }

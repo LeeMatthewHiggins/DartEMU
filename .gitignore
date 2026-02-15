@@ -16,3 +16,4 @@ coverage/
 
 # Generated rootfs disk images (built via tool/image_builder)
 data/rootfs/
+original/

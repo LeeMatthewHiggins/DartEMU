@@ -5,9 +5,22 @@ import 'package:dart_emu/dart_emu.dart';
 import 'package:flutter/services.dart';
 
 class _Assets {
-  static const bios = 'assets/bbl64.bin';
-  static const kernel = 'assets/kernel-riscv64.bin';
-  static const rootfs = 'assets/root-riscv64.bin';
+  static const bios32 = 'assets/bbl32.bin';
+  static const kernel32 = 'assets/kernel-riscv32.bin';
+  static const rootfs32 = 'assets/root-riscv32.bin';
+
+  static const bios64 = 'assets/bbl64.bin';
+  static const kernel64 = 'assets/kernel-riscv64.bin';
+  static const rootfs64 = 'assets/root-riscv64.bin';
+
+  static String bios(Xlen xlen) =>
+      xlen == Xlen.rv32 ? bios32 : bios64;
+
+  static String kernel(Xlen xlen) =>
+      xlen == Xlen.rv32 ? kernel32 : kernel64;
+
+  static String rootfs(Xlen xlen) =>
+      xlen == Xlen.rv32 ? rootfs32 : rootfs64;
 }
 
 class _Defaults {
@@ -38,17 +51,20 @@ class EmulatorController {
   EmulatorStatus get currentStatus =>
       _emulator?.currentStatus ?? EmulatorStatus.idle;
 
+  /// The error that caused an [EmulatorStatus.error] state, if any.
+  Object? get lastError => _emulator?.lastError;
+
   /// Sends terminal input to the guest OS.
   void sendInput(String data) {
     _emulator?.sendInput(utf8.encode(data));
   }
 
   /// Loads VM images from assets and starts the emulation loop.
-  Future<void> start() async {
+  Future<void> start({Xlen xlen = Xlen.rv64}) async {
     final results = await Future.wait([
-      rootBundle.load(_Assets.bios),
-      rootBundle.load(_Assets.kernel),
-      rootBundle.load(_Assets.rootfs),
+      rootBundle.load(_Assets.bios(xlen)),
+      rootBundle.load(_Assets.kernel(xlen)),
+      rootBundle.load(_Assets.rootfs(xlen)),
     ]);
 
     final biosData = results[0].buffer.asUint8List();
@@ -56,6 +72,7 @@ class EmulatorController {
     final rootfsData = results[2].buffer.asUint8List();
 
     final config = MachineConfig(
+      xlen: xlen,
       biosData: biosData,
       kernelData: kernelData,
       cmdLine: _Defaults.cmdLine,

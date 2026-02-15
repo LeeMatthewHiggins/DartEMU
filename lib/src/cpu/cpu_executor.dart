@@ -9,20 +9,31 @@ import 'package:dart_emu/src/cpu/extensions/d_extension.dart';
 import 'package:dart_emu/src/cpu/extensions/f_extension.dart';
 import 'package:dart_emu/src/cpu/extensions/m_extension.dart';
 import 'package:dart_emu/src/cpu/mmu.dart';
+import 'package:dart_emu/src/cpu/platform/int64_const.dart';
 import 'package:dart_emu/src/cpu/tlb.dart';
+import 'package:dart_emu/src/machine/machine_config.dart';
 import 'package:dart_emu/src/machine/phys_memory_map.dart';
 import 'package:dart_emu/src/machine/phys_memory_range.dart';
 import 'package:dart_emu/src/util/bit_utils.dart';
 
 class CpuExecutor {
-  CpuExecutor({required PhysMemoryMap memMap})
-      : state = RiscVCpuState(memMap: memMap),
-        csrHandler = CsrHandler(
-          state: RiscVCpuState(memMap: memMap),
-        ) {
+  factory CpuExecutor({
+    required PhysMemoryMap memMap,
+    Xlen xlen = Xlen.rv64,
+  }) =>
+      switch (xlen) {
+        Xlen.rv32 => _CpuExecutor32(memMap: memMap),
+        Xlen.rv64 => _CpuExecutor64(memMap: memMap),
+      };
+
+  CpuExecutor._({
+    required PhysMemoryMap memMap,
+    required Xlen xlen,
+  }) : state = RiscVCpuState(memMap: memMap, xlen: xlen) {
     csrHandler = CsrHandler(state: state);
     exceptionHandler = ExceptionHandler(state: state);
     mmu = Mmu(state: state);
+    _mExt = MExtension(xlen: xlen);
     _aExt = AExtension(state: state);
     _fExt = FExtension(state: state);
     _dExt = DExtension(state: state);
@@ -33,11 +44,10 @@ class CpuExecutor {
   late CsrHandler csrHandler;
   late ExceptionHandler exceptionHandler;
   late Mmu mmu;
+  late MExtension _mExt;
   late AExtension _aExt;
   late FExtension _fExt;
   late DExtension _dExt;
-
-  final MExtension _mExt = MExtension();
 
   int get cycles => state.instructionCounter;
 
@@ -420,6 +430,41 @@ class CpuExecutor {
     return true;
   }
 
+  bool _cFlw(int insn, int rd) {
+    if (!_fpEnabled()) {
+      _raiseIllegalInsn(insn);
+      return false;
+    }
+    final rs1 = ((insn >> 7) & 7) | 8;
+    final imm = _cField(insn, 10, 3, 5) |
+        _cField(insn, 6, 2, 2) |
+        _cField(insn, 5, 6, 6);
+    final addr = state.regs[rs1] + imm;
+    final val = _memReadU32(addr);
+    if (val == null) return false;
+    state.fpRegs[rd] = val | _fpNanBoxMask;
+    _markFsDirty();
+    state.pc += _compressedInsnSize;
+    return true;
+  }
+
+  bool _cFsw(int insn, int rs2Prime) {
+    if (!_fpEnabled()) {
+      _raiseIllegalInsn(insn);
+      return false;
+    }
+    final rs1 = ((insn >> 7) & 7) | 8;
+    final imm = _cField(insn, 10, 3, 5) |
+        _cField(insn, 6, 2, 2) |
+        _cField(insn, 5, 6, 6);
+    final addr = state.regs[rs1] + imm;
+    if (!_memWriteU32(addr, state.fpRegs[rs2Prime])) {
+      return false;
+    }
+    state.pc += _compressedInsnSize;
+    return true;
+  }
+
   bool _executeCompressedQ1(int insn, int funct3) =>
       switch (funct3) {
         0 => _cAddiNop(insn),
@@ -574,6 +619,12 @@ class CpuExecutor {
         return false;
     }
     state.pc += _compressedInsnSize;
+    return true;
+  }
+
+  bool _cJal(int insn) {
+    _writeReg(_raReg, state.pc + _compressedInsnSize);
+    state.pc += _cJImm(insn);
     return true;
   }
 
@@ -753,6 +804,39 @@ class CpuExecutor {
         _cField(insn, 7, 6, 8);
     final addr = state.regs[2] + imm;
     if (!_memWriteU64(addr, state.fpRegs[rs2])) {
+      return false;
+    }
+    state.pc += _compressedInsnSize;
+    return true;
+  }
+
+  bool _cFlwsp(int insn, int rs2) {
+    if (!_fpEnabled()) {
+      _raiseIllegalInsn(insn);
+      return false;
+    }
+    final rd = InstructionDecoder.extractRd(insn);
+    final imm = _cField(insn, 12, 5, 5) |
+        (rs2 & (7 << 2)) |
+        _cField(insn, 2, 6, 7);
+    final addr = state.regs[2] + imm;
+    final val = _memReadU32(addr);
+    if (val == null) return false;
+    state.fpRegs[rd] = val | _fpNanBoxMask;
+    _markFsDirty();
+    state.pc += _compressedInsnSize;
+    return true;
+  }
+
+  bool _cFswsp(int insn, int rs2) {
+    if (!_fpEnabled()) {
+      _raiseIllegalInsn(insn);
+      return false;
+    }
+    final imm = _cField(insn, 9, 2, 5) |
+        _cField(insn, 7, 6, 7);
+    final addr = state.regs[2] + imm;
+    if (!_memWriteU32(addr, state.fpRegs[rs2])) {
       return false;
     }
     state.pc += _compressedInsnSize;
@@ -1552,8 +1636,11 @@ class CpuExecutor {
         entry.hostData != null) {
       final offset = entry.hostOffset +
           (addr & TlbConstants.pageMask);
-      return entry.hostData!
-          .getUint64(offset, Endian.little);
+      final lo = entry.hostData!
+          .getUint32(offset, Endian.little);
+      final hi = entry.hostData!
+          .getUint32(offset + _wordSize, Endian.little);
+      return lo | (hi << _wordBits);
     }
     return _memReadSlow(addr, _SizeLog2.doubleWord);
   }
@@ -1665,8 +1752,7 @@ class CpuExecutor {
           .getUint16(offset, Endian.little),
       _SizeLog2.word => range.byteData
           .getUint32(offset, Endian.little),
-      _SizeLog2.doubleWord => range.byteData
-          .getUint64(offset, Endian.little),
+      _SizeLog2.doubleWord => _readU64FromRange(range, offset),
       _ => 0,
     };
   }
@@ -1763,7 +1849,12 @@ class CpuExecutor {
       final offset = entry.hostOffset +
           (addr & TlbConstants.pageMask);
       entry.hostData!
-          .setUint64(offset, val, Endian.little);
+          .setUint32(offset, val & _mask32, Endian.little);
+      entry.hostData!.setUint32(
+        offset + _wordSize,
+        (val >> _wordBits) & _mask32,
+        Endian.little,
+      );
       return true;
     }
     return _memWriteSlow(
@@ -1878,9 +1969,26 @@ class CpuExecutor {
         range.byteData
             .setUint32(offset, val, Endian.little);
       case _SizeLog2.doubleWord:
-        range.byteData
-            .setUint64(offset, val, Endian.little);
+        _writeU64ToRange(range, offset, val);
     }
+  }
+
+  static int _readU64FromRange(RamRange range, int offset) {
+    final lo = range.byteData.getUint32(offset, Endian.little);
+    final hi = range.byteData.getUint32(
+      offset + _wordSize,
+      Endian.little,
+    );
+    return lo | (hi << _wordBits);
+  }
+
+  static void _writeU64ToRange(RamRange range, int offset, int val) {
+    range.byteData.setUint32(offset, val & _mask32, Endian.little);
+    range.byteData.setUint32(
+      offset + _wordSize,
+      (val >> _wordBits) & _mask32,
+      Endian.little,
+    );
   }
 
   void _writeToDevice(
@@ -1919,7 +2027,7 @@ class CpuExecutor {
   }
 
   bool _unsignedLessThan(int a, int b) =>
-      (a ^ _signBit) < (b ^ _signBit);
+      (a ^ state.signBit) < (b ^ state.signBit);
 
   int _signExtend8(int value) {
     final masked = value & _byteMask;
@@ -1987,18 +2095,27 @@ class CpuExecutor {
           _IsaBits.d |
           _IsaBits.s |
           _IsaBits.u |
-          (_mxlRv64 << _mxlShift)
+          (_mxlRv64 << _mxlShift64)
       ..mxl = _mxlRv64
-      ..curXlen = _xlen64
+      ..curXlen = state.xlen.value
       ..mstatus = (_mxlRv64 << _uxlShift) |
           (_mxlRv64 << _sxlShift);
   }
 
+  static const _isaExtBits = _IsaBits.i |
+      _IsaBits.m |
+      _IsaBits.a |
+      _IsaBits.c |
+      _IsaBits.f |
+      _IsaBits.d |
+      _IsaBits.s |
+      _IsaBits.u;
+  static const _mxlRv32 = 1;
   static const _mxlRv64 = 2;
-  static const _mxlShift = 62;
+  static const _mxlShift32 = 30;
+  static const _mxlShift64 = 62;
   static const _uxlShift = 32;
   static const _sxlShift = 34;
-  static const _xlen64 = 64;
 
   static const _noPendingException = -1;
   static const _compressedInsnSize = 2;
@@ -2007,6 +2124,7 @@ class CpuExecutor {
   static const _halfWordBits = 16;
   static const _opcodeMask = 0x7F;
   static const _regMask = 0x1F;
+  static const _raReg = 1;
   static const _funct7Shift = 25;
   static const _immIShift = 20;
   static const _immUMask = 0xFFFFF000;
@@ -2015,13 +2133,13 @@ class CpuExecutor {
 
   static const _shamtMask64 = 63;
   static const _shamtMask32 = 31;
+  static const _cShiftBit5 = 0x20;
   static const _sraBit = 0x400;
   static const _subFunct7 = 0x20;
   static const _funct3Width = 3;
   static const _bit30Shift = 30;
   static const _bit30InFunct3 = 1 << 3;
 
-  static const _signBit = 0x8000000000000000;
   static const _mask32 = 0xFFFFFFFF;
   static const _byteMask = 0xFF;
   static const _byteMsb = 0x80;
@@ -2042,9 +2160,359 @@ class CpuExecutor {
   static const _sfenceVmaIdShift = 5;
   static const _sfenceVmaIdValue = 0x09;
 
-  static const _fpNanBoxMask = 0xFFFFFFFF00000000;
+  static const _fpNanBoxMask = Int64Const.nanBoxMask;
   static const _fpFmtShift = 25;
   static const _fpFmtMask = 0x03;
+}
+
+class _CpuExecutor64 extends CpuExecutor {
+  _CpuExecutor64({required super.memMap})
+      : super._(xlen: Xlen.rv64);
+}
+
+class _CpuExecutor32 extends CpuExecutor {
+  _CpuExecutor32({required super.memMap})
+      : super._(xlen: Xlen.rv32);
+
+  static const _xlenBits = 32;
+
+  @override
+  void _initMisa() {
+    state
+      ..misa = CpuExecutor._isaExtBits |
+          (CpuExecutor._mxlRv32 << CpuExecutor._mxlShift32)
+      ..mxl = CpuExecutor._mxlRv32
+      ..curXlen = state.xlen.value;
+  }
+
+  @override
+  bool _unsignedLessThan(int a, int b) =>
+      (a & CpuExecutor._mask32) < (b & CpuExecutor._mask32);
+
+  @override
+  bool _executeBranch(int insn, int instrSize) {
+    final rs1 = InstructionDecoder.extractRs1(insn);
+    final rs2 = InstructionDecoder.extractRs2(insn);
+    final funct3 = InstructionDecoder.extractFunct3(insn);
+    final a = state.regs[rs1];
+    final b = state.regs[rs2];
+
+    bool condition;
+    switch (funct3 >> 1) {
+      case 0:
+        condition = a == b;
+      case 2:
+        condition = a.toSigned(_xlenBits) < b.toSigned(_xlenBits);
+      case 3:
+        condition = _unsignedLessThan(a, b);
+      default:
+        _raiseIllegalInsn(insn);
+        return false;
+    }
+
+    if ((funct3 & 1) != 0) condition = !condition;
+
+    if (condition) {
+      final imm = InstructionDecoder.extractImmB(insn);
+      state.pc += imm;
+    } else {
+      state.pc += instrSize;
+    }
+    return true;
+  }
+
+  @override
+  bool _executeLoad(int insn, int instrSize) {
+    final rd = InstructionDecoder.extractRd(insn);
+    final rs1 = InstructionDecoder.extractRs1(insn);
+    final funct3 =
+        InstructionDecoder.extractFunct3(insn);
+    final imm = InstructionDecoder.extractImmI(insn);
+    final addr = state.regs[rs1] + imm;
+
+    int? val;
+    switch (funct3) {
+      case _LoadFunct3.lb:
+        val = _memReadU8(addr);
+        if (val == null) return false;
+        val = _signExtend8(val);
+      case _LoadFunct3.lh:
+        val = _memReadU16(addr);
+        if (val == null) return false;
+        val = _signExtend16(val);
+      case _LoadFunct3.lw:
+        val = _memReadU32(addr);
+        if (val == null) return false;
+      case _LoadFunct3.lbu:
+        val = _memReadU8(addr);
+        if (val == null) return false;
+      case _LoadFunct3.lhu:
+        val = _memReadU16(addr);
+        if (val == null) return false;
+      default:
+        _raiseIllegalInsn(insn);
+        return false;
+    }
+
+    if (rd != 0) _writeReg(rd, val);
+    state.pc += instrSize;
+    return true;
+  }
+
+  @override
+  bool _executeStore(int insn, int instrSize) {
+    final rs1 = InstructionDecoder.extractRs1(insn);
+    final rs2 = InstructionDecoder.extractRs2(insn);
+    final funct3 =
+        InstructionDecoder.extractFunct3(insn);
+    final imm = InstructionDecoder.extractImmS(insn);
+    final addr = state.regs[rs1] + imm;
+    final val = state.regs[rs2];
+
+    switch (funct3) {
+      case _StoreFunct3.sb:
+        if (!_memWriteU8(addr, val)) return false;
+      case _StoreFunct3.sh:
+        if (!_memWriteU16(addr, val)) return false;
+      case _StoreFunct3.sw:
+        if (!_memWriteU32(addr, val)) return false;
+      default:
+        _raiseIllegalInsn(insn);
+        return false;
+    }
+
+    state.pc += instrSize;
+    return true;
+  }
+
+  @override
+  bool _executeOpImm(int insn, int instrSize) {
+    final rd = InstructionDecoder.extractRd(insn);
+    final rs1 = InstructionDecoder.extractRs1(insn);
+    final funct3 =
+        InstructionDecoder.extractFunct3(insn);
+    final imm = InstructionDecoder.extractImmI(insn);
+    final src = state.regs[rs1];
+
+    int val;
+    switch (funct3) {
+      case _AluFunct3.add:
+        val = src + imm;
+      case _AluFunct3.sll:
+        if ((imm & ~CpuExecutor._shamtMask32) != 0) {
+          _raiseIllegalInsn(insn);
+          return false;
+        }
+        val = src << (imm & CpuExecutor._shamtMask32);
+      case _AluFunct3.slt:
+        val = (src.toSigned(_xlenBits) < imm.toSigned(_xlenBits)) ? 1 : 0;
+      case _AluFunct3.sltu:
+        val = _unsignedLessThan(src, imm) ? 1 : 0;
+      case _AluFunct3.xor:
+        val = src ^ imm;
+      case _AluFunct3.srl:
+        final shamtBits = imm & CpuExecutor._shamtMask32;
+        if ((imm & ~(CpuExecutor._shamtMask32 | CpuExecutor._sraBit)) != 0) {
+          _raiseIllegalInsn(insn);
+          return false;
+        }
+        if ((imm & CpuExecutor._sraBit) != 0) {
+          val = src.toSigned(_xlenBits) >> shamtBits;
+        } else {
+          val = src >>> shamtBits;
+        }
+      case _AluFunct3.or:
+        val = src | imm;
+      case _AluFunct3.and:
+        val = src & imm;
+      default:
+        _raiseIllegalInsn(insn);
+        return false;
+    }
+
+    if (rd != 0) _writeReg(rd, val);
+    state.pc += instrSize;
+    return true;
+  }
+
+  @override
+  bool _executeOpImm32(int insn, int instrSize) {
+    _raiseIllegalInsn(insn);
+    return false;
+  }
+
+  @override
+  bool _executeOp(int insn, int instrSize) {
+    final rd = InstructionDecoder.extractRd(insn);
+    final rs1 = InstructionDecoder.extractRs1(insn);
+    final rs2 = InstructionDecoder.extractRs2(insn);
+    final funct7 = insn >>> CpuExecutor._funct7Shift;
+
+    if (funct7 == _MExtFunct7.muldiv) {
+      final funct3 =
+          InstructionDecoder.extractFunct3(insn);
+      final result = _mExt.executeMulDiv(
+        funct3: funct3,
+        rs1Val: state.regs[rs1],
+        rs2Val: state.regs[rs2],
+        isWord: false,
+      );
+      if (rd != 0) _writeReg(rd, result);
+      state.pc += instrSize;
+      return true;
+    }
+
+    if ((funct7 & ~CpuExecutor._subFunct7) != 0) {
+      _raiseIllegalInsn(insn);
+      return false;
+    }
+
+    final funct3With30 =
+        InstructionDecoder.extractFunct3(insn) |
+        ((insn >>> (CpuExecutor._bit30Shift - CpuExecutor._funct3Width)) &
+            CpuExecutor._bit30InFunct3);
+    final a = state.regs[rs1];
+    final b = state.regs[rs2];
+
+    int val;
+    switch (funct3With30) {
+      case _RegAluFunct.add:
+        val = a + b;
+      case _RegAluFunct.sub:
+        val = a - b;
+      case _RegAluFunct.sll:
+        val = a << (b & CpuExecutor._shamtMask32);
+      case _RegAluFunct.slt:
+        val = (a.toSigned(_xlenBits) < b.toSigned(_xlenBits)) ? 1 : 0;
+      case _RegAluFunct.sltu:
+        val = _unsignedLessThan(a, b) ? 1 : 0;
+      case _RegAluFunct.xor:
+        val = a ^ b;
+      case _RegAluFunct.srl:
+        val = a >>> (b & CpuExecutor._shamtMask32);
+      case _RegAluFunct.sra:
+        val = a.toSigned(_xlenBits) >> (b & CpuExecutor._shamtMask32);
+      case _RegAluFunct.or:
+        val = a | b;
+      case _RegAluFunct.and:
+        val = a & b;
+      default:
+        _raiseIllegalInsn(insn);
+        return false;
+    }
+
+    if (rd != 0) _writeReg(rd, val);
+    state.pc += instrSize;
+    return true;
+  }
+
+  @override
+  bool _executeOp32(int insn, int instrSize) {
+    _raiseIllegalInsn(insn);
+    return false;
+  }
+
+  @override
+  bool _executeCompressedQ0(int insn, int funct3) {
+    final rdPrime = ((insn >> 2) & 7) | 8;
+
+    return switch (funct3) {
+      0 => _cAddi4spn(insn, rdPrime),
+      1 => _cFld(insn, rdPrime),
+      2 => _cLw(insn, rdPrime),
+      3 => _cFlw(insn, rdPrime),
+      5 => _cFsd(insn, rdPrime),
+      6 => _cSw(insn, rdPrime),
+      7 => _cFsw(insn, rdPrime),
+      _ => _illegalCompressed(insn),
+    };
+  }
+
+  @override
+  bool _executeCompressedQ1(int insn, int funct3) =>
+      switch (funct3) {
+        0 => _cAddiNop(insn),
+        1 => _cJal(insn),
+        2 => _cLi(insn),
+        3 => _cLuiAddi16sp(insn),
+        4 => _cArith(insn),
+        5 => _cJ(insn),
+        6 => _cBeqz(insn),
+        7 => _cBnez(insn),
+        _ => _illegalCompressed(insn),
+      };
+
+  @override
+  bool _executeCompressedQ2(int insn, int funct3) {
+    final rs2 = (insn >> 2) & CpuExecutor._regMask;
+
+    return switch (funct3) {
+      0 => _cSlli(insn, rs2),
+      1 => _cFldsp(insn),
+      2 => _cLwsp(insn, rs2),
+      3 => _cFlwsp(insn, rs2),
+      4 => _cJrMvAddEbreak(insn, rs2),
+      5 => _cFsdsp(insn, rs2),
+      6 => _cSwsp(insn, rs2),
+      7 => _cFswsp(insn, rs2),
+      _ => _illegalCompressed(insn),
+    };
+  }
+
+  @override
+  bool _cShift(int insn, int rd, int isArith) {
+    final imm = _cField(insn, 12, 5, 5) |
+        _cField(insn, 2, 0, 4);
+    if ((imm & CpuExecutor._cShiftBit5) != 0) {
+      _raiseIllegalInsn(insn);
+      return false;
+    }
+    if (isArith == 0) {
+      _writeReg(rd, state.regs[rd] >>> imm);
+    } else {
+      _writeReg(rd, state.regs[rd].toSigned(_xlenBits) >> imm);
+    }
+    state.pc += CpuExecutor._compressedInsnSize;
+    return true;
+  }
+
+  @override
+  bool _cSlli(int insn, int rs2) {
+    final rd = InstructionDecoder.extractRd(insn);
+    final imm = _cField(insn, 12, 5, 5) | rs2;
+    if ((imm & CpuExecutor._cShiftBit5) != 0) {
+      _raiseIllegalInsn(insn);
+      return false;
+    }
+    if (rd != 0) {
+      _writeReg(rd, state.regs[rd] << imm);
+    }
+    state.pc += CpuExecutor._compressedInsnSize;
+    return true;
+  }
+
+  @override
+  bool _cRegArith(int insn, int rd) {
+    final rs2 = ((insn >> 2) & 7) | 8;
+    final subOp =
+        ((insn >> 5) & 3) | ((insn >> (12 - 2)) & 4);
+
+    switch (subOp) {
+      case 0:
+        _writeReg(rd, state.regs[rd] - state.regs[rs2]);
+      case 1:
+        _writeReg(rd, state.regs[rd] ^ state.regs[rs2]);
+      case 2:
+        _writeReg(rd, state.regs[rd] | state.regs[rs2]);
+      case 3:
+        _writeReg(rd, state.regs[rd] & state.regs[rs2]);
+      default:
+        _raiseIllegalInsn(insn);
+        return false;
+    }
+    state.pc += CpuExecutor._compressedInsnSize;
+    return true;
+  }
 }
 
 class _Opcode {

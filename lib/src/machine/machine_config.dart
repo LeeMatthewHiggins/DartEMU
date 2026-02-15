@@ -4,13 +4,24 @@ import 'package:dart_emu/src/device/block_device.dart';
 import 'package:dart_emu/src/device/character_device.dart';
 import 'package:dart_emu/src/device/ethernet_device.dart';
 
+/// Register width for the RISC-V CPU.
+enum Xlen {
+  rv32(32),
+  rv64(64);
+
+  const Xlen(this.value);
+
+  /// The register width in bits.
+  final int value;
+}
+
 /// Configuration for a RISC-V virtual machine instance.
 ///
 /// Supports both file-path based loading (for CLI) and in-memory
 /// byte data (for Flutter or embedded use).
 class MachineConfig {
   MachineConfig({
-    this.machineType = defaultMachineType,
+    this.xlen = Xlen.rv64,
     this.memorySizeMb = defaultMemorySizeMb,
     this.console,
     this.blockDevices = const [],
@@ -29,8 +40,13 @@ class MachineConfig {
     this.accel,
   });
 
-  final String machineType;
+  final Xlen xlen;
   final int memorySizeMb;
+
+  String get machineType => switch (xlen) {
+        Xlen.rv32 => 'riscv32',
+        Xlen.rv64 => 'riscv64',
+      };
 
   final CharacterDevice? console;
   final List<BlockDevice> blockDevices;
@@ -53,7 +69,7 @@ class MachineConfig {
   int get memorySizeBytes => memorySizeMb * _bytesPerMb;
 
   MachineConfig copyWith({
-    String? machineType,
+    Xlen? xlen,
     int? memorySizeMb,
     CharacterDevice? console,
     List<BlockDevice>? blockDevices,
@@ -72,7 +88,7 @@ class MachineConfig {
     String? accel,
   }) {
     return MachineConfig(
-      machineType: machineType ?? this.machineType,
+      xlen: xlen ?? this.xlen,
       memorySizeMb: memorySizeMb ?? this.memorySizeMb,
       console: console ?? this.console,
       blockDevices: blockDevices ?? this.blockDevices,
@@ -95,6 +111,7 @@ class MachineConfig {
   static const _bytesPerMb = 1024 * 1024;
   static const defaultMemorySizeMb = 256;
   static const defaultMachineType = 'riscv64';
+  static const defaultXlen = Xlen.rv64;
 }
 
 /// Configuration for a VirtIO 9P shared filesystem.

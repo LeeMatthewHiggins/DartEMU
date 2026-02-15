@@ -7,8 +7,9 @@ class ExceptionHandler {
   final RiscVCpuState state;
 
   void raiseException(int cause, int tval) {
-    final isInterrupt = (cause & _Cause.interruptBit) != 0;
-    final exceptionCode = cause & ~_Cause.interruptBit;
+    final interruptBit = state.signBit;
+    final isInterrupt = (cause & interruptBit) != 0;
+    final exceptionCode = cause & ~interruptBit;
 
     final deleg = isInterrupt ? state.mideleg : state.medeleg;
     final delegToSupervisor =
@@ -87,7 +88,7 @@ class ExceptionHandler {
     final mask = state.mip & state.mie;
     if (mask == 0) return;
     final irq = BitUtils.ctz32(mask);
-    raiseException(irq | _Cause.interruptBit, 0);
+    raiseException(irq | state.signBit, 0);
   }
 
   void _trapToMachine(int cause, int tval) {
@@ -130,10 +131,6 @@ class ExceptionHandler {
     state.pc = state.stvec;
     state.flushTlb();
   }
-}
-
-class _Cause {
-  static const interruptBit = 1 << 63;
 }
 
 class _Mstatus {

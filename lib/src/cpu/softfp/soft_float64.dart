@@ -1,19 +1,28 @@
 import 'dart:math' as math;
 import 'dart:typed_data';
 
+import 'package:dart_emu/src/cpu/platform/int64_const.dart';
 import 'package:dart_emu/src/cpu/softfp/soft_float.dart';
 
 final ByteData _scratch = ByteData(8);
 
 double _toDouble(int bits64) {
-  _scratch.setUint64(0, bits64, Endian.little);
+  _scratch
+    ..setUint32(0, bits64 & _mask32, Endian.little)
+    ..setUint32(_wordBytes, (bits64 >>> _wordBits) & _mask32, Endian.little);
   return _scratch.getFloat64(0, Endian.little);
 }
 
 int _fromDouble(double val) {
   _scratch.setFloat64(0, val, Endian.little);
-  return _scratch.getUint64(0, Endian.little);
+  final lo = _scratch.getUint32(0, Endian.little);
+  final hi = _scratch.getUint32(_wordBytes, Endian.little);
+  return lo | (hi << _wordBits);
 }
+
+const _wordBits = 32;
+const _wordBytes = 4;
+const _mask32 = 0xFFFFFFFF;
 
 bool _isNaN(int bits) {
   final exp = (bits & _Float64Bits.expMask) >>> _Float64Bits.expShift;
@@ -202,13 +211,13 @@ class SoftFloat64 {
 }
 
 class _Float64Bits {
-  static const signMask = 1 << 63;
-  static const expMask = 0x7FF0000000000000;
-  static const mantMask = 0x000FFFFFFFFFFFFF;
-  static const qNanBit = 0x0008000000000000;
+  static const signMask = Int64Const.signBit;
+  static const expMask = Int64Const.f64ExpMask;
+  static const mantMask = Int64Const.f64MantMask;
+  static const qNanBit = Int64Const.f64QNanBit;
   static const expShift = 52;
   static const biasedExpMax = 0x7FF;
-  static const canonicalNaN = 0x7FF8000000000000;
+  static const canonicalNaN = Int64Const.f64CanonicalNaN;
 }
 
 class _FClass {

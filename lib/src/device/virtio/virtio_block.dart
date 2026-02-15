@@ -62,7 +62,15 @@ class VirtioBlockDevice extends VirtioDevice {
 
     final view = ByteData.sublistView(header);
     final type = view.getUint32(0, Endian.little);
-    final sectorNum = view.getUint64(8, Endian.little);
+    final sectorLo = view.getUint32(
+      _HeaderOffset.sectorLow,
+      Endian.little,
+    );
+    final sectorHi = view.getUint32(
+      _HeaderOffset.sectorHigh,
+      Endian.little,
+    );
+    final sectorNum = sectorLo | (sectorHi << _wordBits);
 
     final status = _handleRequest(
       type: type,
@@ -176,8 +184,21 @@ class VirtioBlockDevice extends VirtioDevice {
   }
 
   void _writeCapacity() {
-    configSpace.buffer
-        .asByteData(configSpace.offsetInBytes)
-        .setUint64(0, blockDevice.sectorCount, Endian.little);
+    configSpace.buffer.asByteData(configSpace.offsetInBytes)
+      ..setUint32(0, blockDevice.sectorCount & _mask32, Endian.little)
+      ..setUint32(
+        _wordBytes,
+        (blockDevice.sectorCount >> _wordBits) & _mask32,
+        Endian.little,
+      );
   }
+
+  static const _wordBits = 32;
+  static const _wordBytes = 4;
+  static const _mask32 = 0xFFFFFFFF;
+}
+
+class _HeaderOffset {
+  static const sectorLow = 8;
+  static const sectorHigh = 12;
 }

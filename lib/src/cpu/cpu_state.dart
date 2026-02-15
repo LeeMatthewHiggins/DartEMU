@@ -1,6 +1,8 @@
 import 'dart:typed_data';
 
+import 'package:dart_emu/src/cpu/platform/int64_const.dart';
 import 'package:dart_emu/src/cpu/tlb.dart';
+import 'package:dart_emu/src/machine/machine_config.dart';
 import 'package:dart_emu/src/machine/phys_memory_map.dart';
 
 enum PrivilegeLevel {
@@ -16,21 +18,36 @@ enum PrivilegeLevel {
       PrivilegeLevel.values.firstWhere((e) => e.value == v);
 }
 
-class RiscVCpuState {
-  RiscVCpuState({required this.memMap}) {
+abstract class RiscVCpuState {
+  factory RiscVCpuState({
+    required PhysMemoryMap memMap,
+    Xlen xlen = Xlen.rv64,
+  }) =>
+      switch (xlen) {
+        Xlen.rv32 => _CpuState32(memMap: memMap),
+        Xlen.rv64 => _CpuState64(memMap: memMap),
+      };
+
+  RiscVCpuState._({required this.memMap}) {
     regs[0] = 0;
   }
 
   final PhysMemoryMap memMap;
 
+  Xlen get xlen;
+  bool get isRv32;
+  int get signBit;
+  int get regMask;
+
+  List<int> get regs;
+  List<int> get fpRegs;
+
   int pc = 0;
-  final Int64List regs = Int64List(_regCount);
-  final Int64List fpRegs = Int64List(_regCount);
 
   int fflags = 0;
   int frm = 0;
 
-  int curXlen = _defaultXlen;
+  late int curXlen = xlen.value;
   PrivilegeLevel privilege = PrivilegeLevel.machine;
   int fs = 0;
   int mxl = 0;
@@ -90,7 +107,56 @@ class RiscVCpuState {
   void setMip(int mask) => mip |= mask;
 
   void resetMip(int mask) => mip &= ~mask;
-
-  static const _regCount = 32;
-  static const _defaultXlen = 64;
 }
+
+class _CpuState32 extends RiscVCpuState {
+  _CpuState32({required super.memMap}) : super._();
+
+  @override
+  Xlen get xlen => Xlen.rv32;
+
+  @override
+  bool get isRv32 => true;
+
+  @override
+  int get signBit => _signBit32;
+
+  @override
+  int get regMask => _regMask32;
+
+  @override
+  final List<int> regs = Uint32List(_regCount);
+
+  @override
+  final List<int> fpRegs = Uint32List(_regCount);
+
+  static const _signBit32 = 0x80000000;
+  static const _regMask32 = 0xFFFFFFFF;
+}
+
+class _CpuState64 extends RiscVCpuState {
+  _CpuState64({required super.memMap}) : super._();
+
+  @override
+  Xlen get xlen => Xlen.rv64;
+
+  @override
+  bool get isRv32 => false;
+
+  @override
+  int get signBit => _signBit64;
+
+  @override
+  int get regMask => _regMask64;
+
+  @override
+  final List<int> regs = Int64List(_regCount);
+
+  @override
+  final List<int> fpRegs = Int64List(_regCount);
+
+  static const _signBit64 = Int64Const.signBit;
+  static const _regMask64 = -1;
+}
+
+const _regCount = 32;

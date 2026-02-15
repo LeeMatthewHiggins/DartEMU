@@ -25,13 +25,9 @@ class BitUtils {
 
   static int clz64(int value) {
     if (value == 0) return 64;
-    var count = 0;
-    var v = value;
-    while ((v & _bit63) == 0) {
-      count++;
-      v <<= 1;
-    }
-    return count;
+    final hi = (value >> _wordBits) & _mask32;
+    if (hi != 0) return clz32(hi);
+    return _wordBits + clz32(value & _mask32);
   }
 
   static int signExtend32(int value) {
@@ -44,6 +40,6 @@ class BitUtils {
 
   static const int _mask32 = 0xFFFFFFFF;
   static const int _bit31 = 1 << 31;
-  static const int _bit63 = 1 << 63;
+  static const int _wordBits = 32;
   static const int _upperBits = ~_mask32;
 }

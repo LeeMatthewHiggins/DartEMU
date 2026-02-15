@@ -1,4 +1,5 @@
 import 'package:dart_emu/src/cpu/cpu_state.dart';
+import 'package:dart_emu/src/cpu/platform/int64_const.dart';
 
 class CsrHandler {
   CsrHandler({required this.state});
@@ -15,10 +16,16 @@ class CsrHandler {
       _Addr.cycle ||
       _Addr.instret =>
         _readCounter(csrAddr),
+      _Addr.cycleh ||
+      _Addr.instreth =>
+        _readCounterHigh(csrAddr),
       _Addr.mcycle ||
       _Addr.minstret =>
         state.instructionCounter,
-      _Addr.sstatus => _getMstatus(_Mstatus.sstatusMask),
+      _Addr.mcycleh ||
+      _Addr.minstreth =>
+        _readMCounterHigh(),
+      _Addr.sstatus => _getMstatus(_sstatusMask),
       _Addr.sie => state.mie & state.mideleg,
       _Addr.stvec => state.stvec,
       _Addr.scounteren => state.scounteren,
@@ -57,8 +64,8 @@ class CsrHandler {
         state.frm = (value >> _frmShift) & _frmMask;
       case _Addr.sstatus:
         _setMstatus(
-          (state.mstatus & ~_Mstatus.sstatusMask) |
-              (value & _Mstatus.sstatusMask),
+          (state.mstatus & ~_sstatusMask) |
+              (value & _sstatusMask),
         );
       case _Addr.sie:
         state.mie = (state.mie & ~state.mideleg) |
@@ -115,7 +122,7 @@ class CsrHandler {
     final xsDirty =
         (val & _Mstatus.xsMask) == _Mstatus.xsMask;
     if (fsDirty || xsDirty) {
-      val |= _Mstatus.sdBit;
+      val |= _sdBit;
     }
     return val;
   }
@@ -132,15 +139,17 @@ class CsrHandler {
     }
 
     var mask = _Mstatus.writeMask;
-    final uxl =
-        (val >> _Mstatus.uxlShift) & _Mstatus.xlMask;
-    if (uxl >= 1 && uxl <= _mxlRv64) {
-      mask |= _Mstatus.uxlMask;
-    }
-    final sxl =
-        (val >> _Mstatus.sxlShift) & _Mstatus.xlMask;
-    if (sxl >= 1 && sxl <= _mxlRv64) {
-      mask |= _Mstatus.sxlMask;
+    if (!state.isRv32) {
+      final uxl =
+          (val >> _Mstatus.uxlShift) & _Mstatus.xlMask;
+      if (uxl >= 1 && uxl <= _mxlRv64) {
+        mask |= _Mstatus.uxlMask;
+      }
+      final sxl =
+          (val >> _Mstatus.sxlShift) & _Mstatus.xlMask;
+      if (sxl >= 1 && sxl <= _mxlRv64) {
+        mask |= _Mstatus.sxlMask;
+      }
     }
 
     state.mstatus =
@@ -161,6 +170,33 @@ class CsrHandler {
     return state.instructionCounter;
   }
 
+  int _readCounterHigh(int csrAddr) {
+    if (!state.isRv32) {
+      throw CsrAccessException(csrAddr, state.privilege);
+    }
+    final lowAddr = csrAddr - _counterHighOffset;
+    final counterBit = 1 << (lowAddr & _counterBitMask);
+    if (state.privilege.value < PrivilegeLevel.machine.value) {
+      final counteren =
+          state.privilege.value < PrivilegeLevel.supervisor.value
+              ? state.scounteren
+              : state.mcounteren;
+      if ((counteren & counterBit) == 0) {
+        throw CsrAccessException(csrAddr, state.privilege);
+      }
+    }
+    return (state.instructionCounter >> _counterHighShift) &
+        _counterHighMask;
+  }
+
+  int _readMCounterHigh() {
+    if (!state.isRv32) {
+      throw CsrAccessException(0, state.privilege);
+    }
+    return (state.instructionCounter >> _counterHighShift) &
+        _counterHighMask;
+  }
+
   void _checkAccess(int csrAddr) {
     final requiredPriv =
         (csrAddr >> _privShift) & _privMask;
@@ -169,9 +205,20 @@ class CsrHandler {
     }
   }
 
+  int get _sdBit => state.isRv32
+      ? _Mstatus.sdBit32
+      : _Mstatus.sdBit64;
+
+  int get _sstatusMask => state.isRv32
+      ? _Mstatus.sstatusMask32
+      : _Mstatus.sstatusMask64;
+
   static const _privShift = 8;
   static const _privMask = 3;
   static const _counterBitMask = 0x1F;
+  static const _counterHighOffset = 0x80;
+  static const _counterHighShift = 32;
+  static const _counterHighMask = 0xFFFFFFFF;
   static const _fflagsMask = 0x1F;
   static const _frmMask = 0x07;
   static const _frmShift = 5;
@@ -196,6 +243,8 @@ class _Addr {
   static const fcsr = 0x003;
   static const cycle = 0xC00;
   static const instret = 0xC02;
+  static const cycleh = 0xC80;
+  static const instreth = 0xC82;
   static const sstatus = 0x100;
   static const sie = 0x104;
   static const stvec = 0x105;
@@ -220,6 +269,8 @@ class _Addr {
   static const mip = 0x344;
   static const mcycle = 0xB00;
   static const minstret = 0xB02;
+  static const mcycleh = 0xB80;
+  static const minstreth = 0xB82;
   static const mhartid = 0xF14;
 }
 
@@ -244,9 +295,10 @@ class _Mstatus {
   static const uxlMask = 3 << 32;
   static const sxlMask = 3 << 34;
 
-  static const sdBit = 1 << 63;
+  static const sdBit32 = 1 << 31;
+  static const sdBit64 = Int64Const.signBit;
 
-  static const sstatusMask = uieBit |
+  static const _sstatusMaskBase = uieBit |
       sieBit |
       upieBit |
       spieBit |
@@ -254,8 +306,10 @@ class _Mstatus {
       fsMask |
       xsMask |
       sumBit |
-      mxrBit |
-      uxlMask;
+      mxrBit;
+
+  static const sstatusMask32 = _sstatusMaskBase;
+  static const sstatusMask64 = _sstatusMaskBase | uxlMask;
 
   static const writeMask = uieBit |
       sieBit |

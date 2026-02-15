@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:dart_emu/src/machine/clint.dart';
+import 'package:dart_emu/src/machine/machine_config.dart';
 import 'package:dart_emu/src/machine/memory_map_layout.dart';
 
 class _FdtTokens {
@@ -37,6 +38,7 @@ class _DeviceTree {
   static const clintCompatible = 'riscv,clint0';
   static const plicCompatible = 'riscv,plic0';
   static const virtioCompatible = 'virtio,mmio';
+  static const mmuTypeSv32 = 'riscv,sv32';
   static const mmuTypeSv48 = 'riscv,sv48';
   static const addressCells = 2;
   static const sizeCells = 2;
@@ -45,7 +47,8 @@ class _DeviceTree {
   static const interruptCells = 1;
   static const clockFrequency = 2000000000;
   static const plicMaxDevices = 31;
-  static const isaPrefix = 'rv64';
+  static const isaPrefixRv32 = 'rv32';
+  static const isaPrefixRv64 = 'rv64';
   static const isaLetterBase = 0x61;
   static const isaLetterCount = 26;
 }
@@ -65,6 +68,7 @@ class FdtBuilder {
   Uint8List build({
     required int ramSize,
     required int misa,
+    required Xlen xlen,
     int? kernelStart,
     int? kernelSize,
     int? initrdStart,
@@ -75,6 +79,7 @@ class FdtBuilder {
     return buildMachineFdt(
       ramSize: ramSize,
       misa: misa,
+      xlen: xlen,
       kernelStart: kernelStart,
       kernelSize: kernelSize,
       initrdStart: initrdStart,
@@ -189,6 +194,7 @@ class FdtBuilder {
   Uint8List buildMachineFdt({
     required int ramSize,
     required int misa,
+    required Xlen xlen,
     int? kernelStart,
     int? kernelSize,
     int? initrdStart,
@@ -204,7 +210,7 @@ class FdtBuilder {
     propStr('compatible', _DeviceTree.rootCompatible);
     propStr('model', _DeviceTree.rootModel);
 
-    _buildCpuNodes(misa, currentPhandle);
+    _buildCpuNodes(misa, currentPhandle, xlen);
     final intcPhandle = currentPhandle;
     currentPhandle++;
 
@@ -230,7 +236,12 @@ class FdtBuilder {
     return finish();
   }
 
-  void _buildCpuNodes(int misa, int intcPhandle) {
+  void _buildCpuNodes(int misa, int intcPhandle, Xlen xlen) {
+    final mmuType = switch (xlen) {
+      Xlen.rv32 => _DeviceTree.mmuTypeSv32,
+      Xlen.rv64 => _DeviceTree.mmuTypeSv48,
+    };
+
     beginNode('cpus');
     propU32('#address-cells', _DeviceTree.cpuAddressCells);
     propU32('#size-cells', _DeviceTree.cpuSizeCells);
@@ -241,8 +252,8 @@ class FdtBuilder {
     propU32('reg', 0);
     propStr('status', _DeviceTree.cpuStatus);
     propStr('compatible', _DeviceTree.cpuCompatible);
-    propStr('riscv,isa', _buildIsaString(misa));
-    propStr('mmu-type', _DeviceTree.mmuTypeSv48);
+    propStr('riscv,isa', _buildIsaString(misa, xlen));
+    propStr('mmu-type', mmuType);
     propU32('clock-frequency', _DeviceTree.clockFrequency);
 
     beginNode('interrupt-controller');
@@ -366,8 +377,12 @@ class FdtBuilder {
     endNode();
   }
 
-  String _buildIsaString(int misa) {
-    final buffer = StringBuffer(_DeviceTree.isaPrefix);
+  String _buildIsaString(int misa, Xlen xlen) {
+    final isaPrefix = switch (xlen) {
+      Xlen.rv32 => _DeviceTree.isaPrefixRv32,
+      Xlen.rv64 => _DeviceTree.isaPrefixRv64,
+    };
+    final buffer = StringBuffer(isaPrefix);
     for (var i = 0; i < _DeviceTree.isaLetterCount; i++) {
       if ((misa & (1 << i)) != 0) {
         buffer.writeCharCode(_DeviceTree.isaLetterBase + i);

@@ -35,13 +35,14 @@ class ConfigLoader {
   static MachineConfig _parseConfig(YamlMap doc, String? baseDir) {
     _validateVersion(doc);
 
-    final machineType = _getString(doc, _Keys.machine) ??
+    final machineStr = _getString(doc, _Keys.machine) ??
         MachineConfig.defaultMachineType;
+    final xlen = _parseXlen(machineStr);
     final memorySizeMb = _getInt(doc, _Keys.memorySize) ??
         MachineConfig.defaultMemorySizeMb;
 
     return MachineConfig(
-      machineType: machineType,
+      xlen: xlen,
       memorySizeMb: memorySizeMb,
       biosPath: _resolvePath(_getString(doc, _Keys.bios), baseDir),
       kernelPath: _resolvePath(_getString(doc, _Keys.kernel), baseDir),
@@ -144,6 +145,14 @@ class ConfigLoader {
   static bool? _getBool(YamlMap map, String key) {
     final value = map[key];
     return value is bool ? value : null;
+  }
+
+  static Xlen _parseXlen(String machineStr) {
+    return switch (machineStr) {
+      'riscv32' => Xlen.rv32,
+      'riscv64' => Xlen.rv64,
+      _ => throw ConfigException('Unsupported machine type: $machineStr'),
+    };
   }
 
   static const _supportedVersion = 1;
