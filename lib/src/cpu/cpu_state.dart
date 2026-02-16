@@ -84,6 +84,8 @@ abstract class RiscVCpuState {
 
   int loadReservation = -1;
 
+  int Function() rtcTimeRead = () => 0;
+
   final List<TlbEntry> tlbRead = List.generate(
     TlbConstants.size,
     (_) => TlbEntry(),

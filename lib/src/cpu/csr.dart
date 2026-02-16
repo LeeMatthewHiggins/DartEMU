@@ -16,9 +16,13 @@ class CsrHandler {
       _Addr.cycle ||
       _Addr.instret =>
         _readCounter(csrAddr),
+      _Addr.time =>
+        _readTime(),
       _Addr.cycleh ||
       _Addr.instreth =>
         _readCounterHigh(csrAddr),
+      _Addr.timeh =>
+        _readTimeHigh(),
       _Addr.mcycle ||
       _Addr.minstret =>
         state.instructionCounter,
@@ -156,7 +160,7 @@ class CsrHandler {
         (state.mstatus & ~mask) | (val & mask);
   }
 
-  int _readCounter(int csrAddr) {
+  void _checkCounterAccess(int csrAddr) {
     final counterBit = 1 << (csrAddr & _counterBitMask);
     if (state.privilege.value < PrivilegeLevel.machine.value) {
       final counteren =
@@ -167,7 +171,26 @@ class CsrHandler {
         throw CsrAccessException(csrAddr, state.privilege);
       }
     }
+  }
+
+  int _readCounter(int csrAddr) {
+    _checkCounterAccess(csrAddr);
     return state.instructionCounter;
+  }
+
+  int _readTime() {
+    _checkCounterAccess(_Addr.time);
+    final rtcTime = state.rtcTimeRead();
+    return rtcTime & _counterHighMask;
+  }
+
+  int _readTimeHigh() {
+    if (!state.isRv32) {
+      throw CsrAccessException(_Addr.timeh, state.privilege);
+    }
+    _checkCounterAccess(_Addr.time);
+    return (state.rtcTimeRead() >> _counterHighShift) &
+        _counterHighMask;
   }
 
   int _readCounterHigh(int csrAddr) {
@@ -242,8 +265,10 @@ class _Addr {
   static const frm = 0x002;
   static const fcsr = 0x003;
   static const cycle = 0xC00;
+  static const time = 0xC01;
   static const instret = 0xC02;
   static const cycleh = 0xC80;
+  static const timeh = 0xC81;
   static const instreth = 0xC82;
   static const sstatus = 0x100;
   static const sie = 0x104;

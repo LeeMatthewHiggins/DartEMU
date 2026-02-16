@@ -41,6 +41,8 @@ class RiscVMachine {
       resetMip: cpu.resetMip,
     );
 
+    cpu.state.rtcTimeRead = () => clint.rtcTime;
+
     final htif = Htif(
       console: config.console,
       onPowerDown: () => cpu.state.shutDown = true,
