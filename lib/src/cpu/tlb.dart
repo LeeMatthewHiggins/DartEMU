@@ -2,16 +2,17 @@ import 'dart:typed_data';
 
 class TlbEntry {
   int virtualTag = _invalidTag;
-  ByteData? hostData;
+  ByteData hostData = _emptyData;
   int hostOffset = 0;
 
   void invalidate() {
     virtualTag = _invalidTag;
-    hostData = null;
+    hostData = _emptyData;
     hostOffset = 0;
   }
 
   static const _invalidTag = -1;
+  static final ByteData _emptyData = ByteData(0);
 }
 
 class TlbConstants {

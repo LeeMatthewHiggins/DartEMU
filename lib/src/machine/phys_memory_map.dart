@@ -18,7 +18,7 @@ class PhysMemoryMap {
   RamRange registerRam({required int addr, required int size}) {
     final data = Uint8List(size);
     final range = RamRange(addr: addr, originalSize: size, data: data);
-    _ranges.add(range);
+    _insertSorted(range);
     return range;
   }
 
@@ -34,19 +34,34 @@ class PhysMemoryMap {
       readFunc: readFunc,
       writeFunc: writeFunc,
     );
-    _ranges.add(range);
+    _insertSorted(range);
     return range;
   }
 
   PhysMemoryRange? findRange(int physAddr) {
-    for (final range in _ranges) {
-      if (range.isEnabled &&
-          physAddr >= range.addr &&
-          physAddr < range.addr + range.size) {
-        return range;
+    var lo = 0;
+    var hi = _ranges.length - 1;
+    while (lo <= hi) {
+      final mid = (lo + hi) >>> 1;
+      final range = _ranges[mid];
+      if (physAddr < range.addr) {
+        hi = mid - 1;
+      } else if (physAddr >= range.addr + range.originalSize) {
+        lo = mid + 1;
+      } else {
+        if (range.isEnabled) return range;
+        return null;
       }
     }
     return null;
+  }
+
+  void _insertSorted(PhysMemoryRange range) {
+    var i = 0;
+    while (i < _ranges.length && _ranges[i].addr < range.addr) {
+      i++;
+    }
+    _ranges.insert(i, range);
   }
 
   Uint8List? getRamPointer(int physAddr) {

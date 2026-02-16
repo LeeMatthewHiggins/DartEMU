@@ -19,7 +19,7 @@ class StreamConsoleDevice implements CharacterDevice {
   @override
   void writeData(Uint8List data) {
     if (!_outputController.isClosed) {
-      _outputController.add(Uint8List.fromList(data));
+      _outputController.add(data);
     }
   }
 

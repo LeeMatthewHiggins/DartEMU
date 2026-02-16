@@ -33,7 +33,8 @@ class RamRange extends PhysMemoryRange {
   final Uint8List data;
   final DirtyBits dirtyBits;
 
-  ByteData get byteData => ByteData.view(data.buffer, data.offsetInBytes);
+  late final ByteData byteData =
+      ByteData.view(data.buffer, data.offsetInBytes);
 }
 
 class DeviceRange extends PhysMemoryRange {

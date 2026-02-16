@@ -125,17 +125,16 @@ class CpuExecutor {
     final pageTag = addr & ~TlbConstants.pageMask;
     final entry = state.tlbCode[tlbIdx];
 
-    if (entry.virtualTag == pageTag &&
-        entry.hostData != null) {
+    if (entry.virtualTag == pageTag) {
       final pageOffset = addr & TlbConstants.pageMask;
       final offset = entry.hostOffset + pageOffset;
       final remaining =
           TlbConstants.pageSize - pageOffset;
       if (remaining >= _fullInsnSize) {
-        return _readInsn32(entry.hostData!, offset);
+        return _readInsn32(entry.hostData, offset);
       }
       if (remaining >= _compressedInsnSize) {
-        final low = entry.hostData!
+        final low = entry.hostData
             .getUint16(offset, Endian.little);
         if ((low & _compressedMask) != _compressedMask) {
           return low;
@@ -1602,11 +1601,10 @@ class CpuExecutor {
     final pageTag = addr & ~TlbConstants.pageMask;
     final entry = state.tlbRead[tlbIdx];
 
-    if (entry.virtualTag == pageTag &&
-        entry.hostData != null) {
+    if (entry.virtualTag == pageTag) {
       final offset = entry.hostOffset +
           (addr & TlbConstants.pageMask);
-      return entry.hostData!.getUint8(offset);
+      return entry.hostData.getUint8(offset);
     }
     return _memReadSlow(addr, _SizeLog2.byte);
   }
@@ -1620,11 +1618,10 @@ class CpuExecutor {
             ~(_halfWordSize - 1));
     final entry = state.tlbRead[tlbIdx];
 
-    if (entry.virtualTag == alignedTag &&
-        entry.hostData != null) {
+    if (entry.virtualTag == alignedTag) {
       final offset = entry.hostOffset +
           (addr & TlbConstants.pageMask);
-      return entry.hostData!
+      return entry.hostData
           .getUint16(offset, Endian.little);
     }
     return _memReadSlow(addr, _SizeLog2.halfWord);
@@ -1638,11 +1635,10 @@ class CpuExecutor {
         ~(TlbConstants.pageMask & ~(_wordSize - 1));
     final entry = state.tlbRead[tlbIdx];
 
-    if (entry.virtualTag == alignedTag &&
-        entry.hostData != null) {
+    if (entry.virtualTag == alignedTag) {
       final offset = entry.hostOffset +
           (addr & TlbConstants.pageMask);
-      return entry.hostData!
+      return entry.hostData
           .getUint32(offset, Endian.little);
     }
     return _memReadSlow(addr, _SizeLog2.word);
@@ -1657,13 +1653,12 @@ class CpuExecutor {
             ~(_doubleWordSize - 1));
     final entry = state.tlbRead[tlbIdx];
 
-    if (entry.virtualTag == alignedTag &&
-        entry.hostData != null) {
+    if (entry.virtualTag == alignedTag) {
       final offset = entry.hostOffset +
           (addr & TlbConstants.pageMask);
-      final lo = entry.hostData!
+      final lo = entry.hostData
           .getUint32(offset, Endian.little);
-      final hi = entry.hostData!
+      final hi = entry.hostData
           .getUint32(offset + _wordSize, Endian.little);
       return lo | (hi << _wordBits);
     }
@@ -1807,11 +1802,10 @@ class CpuExecutor {
     final pageTag = addr & ~TlbConstants.pageMask;
     final entry = state.tlbWrite[tlbIdx];
 
-    if (entry.virtualTag == pageTag &&
-        entry.hostData != null) {
+    if (entry.virtualTag == pageTag) {
       final offset = entry.hostOffset +
           (addr & TlbConstants.pageMask);
-      entry.hostData!.setUint8(offset, val);
+      entry.hostData.setUint8(offset, val);
       return true;
     }
     return _memWriteSlow(addr, val, _SizeLog2.byte);
@@ -1826,11 +1820,10 @@ class CpuExecutor {
             ~(_halfWordSize - 1));
     final entry = state.tlbWrite[tlbIdx];
 
-    if (entry.virtualTag == alignedTag &&
-        entry.hostData != null) {
+    if (entry.virtualTag == alignedTag) {
       final offset = entry.hostOffset +
           (addr & TlbConstants.pageMask);
-      entry.hostData!
+      entry.hostData
           .setUint16(offset, val, Endian.little);
       return true;
     }
@@ -1849,11 +1842,10 @@ class CpuExecutor {
         ~(TlbConstants.pageMask & ~(_wordSize - 1));
     final entry = state.tlbWrite[tlbIdx];
 
-    if (entry.virtualTag == alignedTag &&
-        entry.hostData != null) {
+    if (entry.virtualTag == alignedTag) {
       final offset = entry.hostOffset +
           (addr & TlbConstants.pageMask);
-      entry.hostData!
+      entry.hostData
           .setUint32(offset, val, Endian.little);
       return true;
     }
@@ -1869,13 +1861,12 @@ class CpuExecutor {
             ~(_doubleWordSize - 1));
     final entry = state.tlbWrite[tlbIdx];
 
-    if (entry.virtualTag == alignedTag &&
-        entry.hostData != null) {
+    if (entry.virtualTag == alignedTag) {
       final offset = entry.hostOffset +
           (addr & TlbConstants.pageMask);
-      entry.hostData!
+      entry.hostData
           .setUint32(offset, val & _mask32, Endian.little);
-      entry.hostData!.setUint32(
+      entry.hostData.setUint32(
         offset + _wordSize,
         (val >> _wordBits) & _mask32,
         Endian.little,
@@ -2040,8 +2031,7 @@ class CpuExecutor {
   }
 
   void _writeReg(int rd, int value) {
-    state.regs[rd] = value;
-    state.regs[0] = 0;
+    if (rd != 0) state.regs[rd] = value;
   }
 
   void _raiseIllegalInsn(int insn) {

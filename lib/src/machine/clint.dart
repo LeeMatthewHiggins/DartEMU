@@ -52,7 +52,8 @@ class Clint {
   }
 
   void checkTimer() {
-    if (rtcTime >= timecmp) {
+    final time = rtcTime;
+    if (time >= (_timecmpLow | (_timecmpHigh << _wordBits))) {
       setMip(_MipBits.mtip);
     }
   }
