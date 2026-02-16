@@ -1,8 +1,8 @@
 name: dart_emu
 description: >-
-  A RISC-V system emulator ported from TinyEMU. Boots Linux with
-  stream-based I/O for embedding in CLI and Flutter applications.
-version: 0.1.0
+  A RISC-V system emulator (RV64 and RV32) ported from TinyEMU. Boots Linux
+  with stream-based I/O for CLI, Flutter, and web applications.
+version: 0.2.0
 repository: https://github.com/LeeMatthewHiggins/DartEMU
 topics:
   - emulator

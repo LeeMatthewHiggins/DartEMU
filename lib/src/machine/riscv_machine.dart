@@ -12,7 +12,7 @@ import 'package:dart_emu/src/machine/memory_map_layout.dart';
 import 'package:dart_emu/src/machine/phys_memory_map.dart';
 import 'package:dart_emu/src/machine/plic.dart';
 
-/// A RISC-V 64-bit virtual machine.
+/// A RISC-V virtual machine supporting both RV64 and RV32.
 ///
 /// Construct via [RiscVMachine.fromConfig]. For most use cases, prefer
 /// the higher-level `Emulator` facade which manages the execution loop

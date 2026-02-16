@@ -1,8 +1,9 @@
-/// A RISC-V system emulator ported from TinyEMU.
+/// A RISC-V system emulator (RV64 and RV32) ported from TinyEMU.
 ///
-/// This library is platform-independent and does not depend on `dart:io`.
-/// For file-based configuration loading and block devices, use
-/// `package:dart_emu/dart_emu_io.dart` instead.
+/// Use `Xlen.rv32` for web-compatible 32-bit mode or `Xlen.rv64` for
+/// 64-bit mode. This library is platform-independent and does not depend
+/// on `dart:io`. For file-based configuration loading and block devices,
+/// use `package:dart_emu/dart_emu_io.dart` instead.
 library;
 
 export 'src/cpu/cpu_executor.dart';

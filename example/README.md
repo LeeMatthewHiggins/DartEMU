@@ -1,16 +1,33 @@
-# dart_emu_example
+# DartEMU Flutter Example
 
-A new Flutter project.
+A Flutter application that boots a RISC-V 32-bit Linux system using the
+`dart_emu` package. Runs on all Flutter platforms including web.
 
-## Getting Started
+## Running
 
-This project is a starting point for a Flutter application.
+```sh
+flutter run
+```
 
-A few resources to get you started if this is your first Flutter project:
+For web:
 
-- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
+```sh
+flutter build web --release
+```
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+## Boot Images
+
+The example loads RV32 boot images from `assets/`:
+
+- `bbl32.bin` — OpenSBI firmware
+- `kernel-riscv32.bin` — Linux kernel
+- `root-riscv32.bin` — Root filesystem (ext2)
+
+These must be placed in the `assets/` directory before building.
+
+## Architecture
+
+- `EmulatorController` — Loads assets, creates `MachineConfig` with
+  `Xlen.rv32`, and manages the `Emulator` lifecycle
+- `TerminalScreen` — Displays emulator output in a terminal widget and
+  forwards keyboard input to the guest OS
