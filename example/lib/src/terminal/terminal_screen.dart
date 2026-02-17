@@ -37,14 +37,10 @@ class _TerminalScreenState extends State<TerminalScreen>
 
   late final double _charWidthAtReference = _measureCharWidth();
 
-  /// `identical(0, 0.0)` is true only in dart2js where int and double
-  /// share the same JS number representation.
-  static const bool _isJsRuntime = identical(0, 0.0);
-
   @override
   void initState() {
     super.initState();
-    if (_isJsRuntime) {
+    if (kIsWeb) {
       _launchEmulator(Xlen.rv32);
     }
   }

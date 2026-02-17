@@ -2205,6 +2205,69 @@ class CpuExecutor {
 class _CpuExecutor64 extends CpuExecutor {
   _CpuExecutor64({required super.memMap})
       : super._(xlen: Xlen.rv64);
+
+  @override
+  bool _executeInstruction(int insn, int instrSize) {
+    final opcode = insn & CpuExecutor._opcodeMask;
+
+    switch (opcode) {
+      case _Opcode.load:
+        final funct3 = (insn >> 12) & 7;
+        if (funct3 == _LoadFunct3.ld) {
+          final rd =
+              (insn >> 7) & CpuExecutor._regMask;
+          final rs1 =
+              (insn >> 15) & CpuExecutor._regMask;
+          final imm =
+              InstructionDecoder.extractImmI(insn);
+          final addr = state.regs[rs1] + imm;
+          final val = _memReadU64(addr);
+          if (state.pendingException >= 0) return false;
+          if (rd != 0) state.regs[rd] = val;
+          state.pc += instrSize;
+          return true;
+        }
+        return _executeLoad(insn, instrSize);
+      case _Opcode.store:
+        final funct3 = (insn >> 12) & 7;
+        if (funct3 == _StoreFunct3.sd) {
+          final rs1 =
+              (insn >> 15) & CpuExecutor._regMask;
+          final rs2 =
+              (insn >> 20) & CpuExecutor._regMask;
+          final imm =
+              InstructionDecoder.extractImmS(insn);
+          final addr = state.regs[rs1] + imm;
+          if (!_memWriteU64(addr, state.regs[rs2])) {
+            return false;
+          }
+          state.pc += instrSize;
+          return true;
+        }
+        return _executeStore(insn, instrSize);
+      case _Opcode.opImm:
+        final funct3 = (insn >> 12) & 7;
+        if (funct3 == _AluFunct3.add) {
+          final rd =
+              (insn >> 7) & CpuExecutor._regMask;
+          if (rd != 0) {
+            final rs1 =
+                (insn >> 15) & CpuExecutor._regMask;
+            final imm =
+                InstructionDecoder.extractImmI(insn);
+            state.regs[rd] = state.regs[rs1] + imm;
+          }
+          state.pc += instrSize;
+          return true;
+        }
+        return _executeOpImm(insn, instrSize);
+      default:
+        return super._executeInstruction(
+          insn,
+          instrSize,
+        );
+    }
+  }
 }
 
 class _CpuExecutor32 extends CpuExecutor {
