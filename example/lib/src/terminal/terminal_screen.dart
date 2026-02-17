@@ -1,7 +1,5 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:ui' as ui;
-
 import 'package:dart_emu/dart_emu.dart';
 import 'package:dart_emu_example/src/emulator/emulator_controller.dart';
 import 'package:flutter/foundation.dart';
@@ -13,13 +11,33 @@ class _TerminalLayout {
   static const referenceFontSize = 16.0;
   static const minFontSize = 8.0;
   static const maxFontSize = 24.0;
-  static const fontFamily = 'monospace';
+  static const fontFamily = 'Menlo';
+  static const fontFamilyFallback = [
+    'Consolas',
+    'DejaVu Sans Mono',
+    'Liberation Mono',
+    'monospace',
+  ];
+}
+
+class _ErrorLayout {
+  static const padding = 24.0;
 }
 
 /// Displays the RISC-V emulator output in an interactive terminal.
 class TerminalScreen extends StatefulWidget {
-  /// Creates the terminal screen.
-  const TerminalScreen({super.key});
+  /// Creates the terminal screen for the given [config].
+  const TerminalScreen({
+    required this.config,
+    this.onStopped,
+    super.key,
+  });
+
+  /// The resolved machine configuration to boot.
+  final MachineConfig config;
+
+  /// Called when the guest OS shuts down or reboots.
+  final VoidCallback? onStopped;
 
   @override
   State<TerminalScreen> createState() => _TerminalScreenState();
@@ -33,53 +51,56 @@ class _TerminalScreenState extends State<TerminalScreen>
   StreamSubscription<List<int>>? _outputSub;
   StreamSubscription<EmulatorStatus>? _statusSub;
   EmulatorStatus _status = EmulatorStatus.idle;
-  Xlen? _selectedXlen;
 
   late final double _charWidthAtReference = _measureCharWidth();
 
   @override
   void initState() {
     super.initState();
-    if (kIsWeb) {
-      _launchEmulator(Xlen.rv32);
-    }
+    _launchEmulator();
   }
 
-  void _launchEmulator(Xlen xlen) {
-    setState(() {
-      _selectedXlen = xlen;
-      _status = EmulatorStatus.idle;
-    });
-
+  void _launchEmulator() {
     _controller = EmulatorController(vsync: this);
     _terminal.onOutput = _controller!.sendInput;
-    _startEmulator(xlen);
+    _startEmulator();
   }
 
-  Future<void> _startEmulator(Xlen xlen) async {
+  Future<void> _startEmulator() async {
     _statusSub = _controller!.status.listen((status) {
-      if (mounted) setState(() => _status = status);
+      if (!mounted) return;
+      setState(() => _status = status);
+      if (status == EmulatorStatus.stopped) {
+        widget.onStopped?.call();
+      }
     });
 
     _outputSub = _controller!.output.listen((bytes) {
       _terminal.write(utf8.decode(bytes, allowMalformed: true));
     });
 
-    await _controller!.start(xlen: xlen);
+    final hasPreloadedData = widget.config.biosData != null;
+    if (hasPreloadedData) {
+      await _controller!.startWithConfig(widget.config);
+    } else {
+      await _controller!.start(xlen: widget.config.xlen);
+    }
   }
 
   double _measureCharWidth() {
-    final builder = ui.ParagraphBuilder(
-      ui.ParagraphStyle(
-        fontFamily: _TerminalLayout.fontFamily,
-        fontSize: _TerminalLayout.referenceFontSize,
+    final painter = TextPainter(
+      text: const TextSpan(
+        text: 'W',
+        style: TextStyle(
+          fontFamily: _TerminalLayout.fontFamily,
+          fontFamilyFallback: _TerminalLayout.fontFamilyFallback,
+          fontSize: _TerminalLayout.referenceFontSize,
+        ),
       ),
-    )..addText('W');
+      textDirection: TextDirection.ltr,
+    )..layout();
 
-    final paragraph = builder.build()
-      ..layout(const ui.ParagraphConstraints(width: double.infinity));
-
-    return paragraph.maxIntrinsicWidth;
+    return painter.width;
   }
 
   double _fontSizeForWidth(double availableWidth) {
@@ -102,62 +123,8 @@ class _TerminalScreenState extends State<TerminalScreen>
 
   @override
   Widget build(BuildContext context) {
-    if (_selectedXlen == null) {
-      return _buildChooser();
-    }
-    return _buildTerminal();
-  }
-
-  Widget _buildChooser() {
     return Scaffold(
       backgroundColor: Colors.black,
-      appBar: AppBar(
-        title: const Text('DartEMU'),
-        backgroundColor: Colors.grey.shade900,
-        foregroundColor: Colors.white,
-      ),
-      body: Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              'Select architecture',
-              style: Theme.of(context)
-                  .textTheme
-                  .headlineSmall
-                  ?.copyWith(color: Colors.white),
-            ),
-            const SizedBox(height: _ChooserLayout.spacing),
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                _ArchCard(
-                  label: 'RISC-V 64-bit',
-                  subtitle: 'RV64IMAFDC',
-                  onTap: () => _launchEmulator(Xlen.rv64),
-                ),
-                const SizedBox(width: _ChooserLayout.spacing),
-                _ArchCard(
-                  label: 'RISC-V 32-bit',
-                  subtitle: 'RV32IMAFDC',
-                  onTap: () => _launchEmulator(Xlen.rv32),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildTerminal() {
-    return Scaffold(
-      backgroundColor: Colors.black,
-      appBar: AppBar(
-        title: Text(_appBarTitle),
-        backgroundColor: Colors.grey.shade900,
-        foregroundColor: Colors.white,
-      ),
       body: LayoutBuilder(
         builder: (context, constraints) {
           final fontSize = _fontSizeForWidth(constraints.maxWidth);
@@ -184,7 +151,12 @@ class _TerminalScreenState extends State<TerminalScreen>
                 _terminal,
                 autofocus: true,
                 hardwareKeyboardOnly: _isDesktopPlatform,
-                textStyle: TerminalStyle(fontSize: fontSize),
+                textStyle: TerminalStyle(
+                  fontSize: fontSize,
+                  fontFamily: _TerminalLayout.fontFamily,
+                  fontFamilyFallback:
+                      _TerminalLayout.fontFamilyFallback,
+                ),
               ),
           };
         },
@@ -200,79 +172,4 @@ class _TerminalScreenState extends State<TerminalScreen>
         _ => false,
       };
 
-  String get _appBarTitle {
-    final arch = switch (_selectedXlen) {
-      Xlen.rv32 => 'RV32',
-      Xlen.rv64 => 'RV64',
-      null => '',
-    };
-
-    return switch (_status) {
-      EmulatorStatus.idle => 'DartEMU $arch',
-      EmulatorStatus.starting => 'DartEMU $arch — Booting...',
-      EmulatorStatus.running => 'DartEMU $arch — Running',
-      EmulatorStatus.stopped => 'DartEMU $arch — Stopped',
-      EmulatorStatus.error => 'DartEMU $arch — Error',
-    };
-  }
-}
-
-class _ErrorLayout {
-  static const padding = 24.0;
-}
-
-class _ChooserLayout {
-  static const spacing = 24.0;
-  static const cardWidth = 180.0;
-  static const cardPadding = 24.0;
-  static const subtitleSpacing = 8.0;
-}
-
-class _ArchCard extends StatelessWidget {
-  const _ArchCard({
-    required this.label,
-    required this.subtitle,
-    required this.onTap,
-  });
-
-  final String label;
-  final String subtitle;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      width: _ChooserLayout.cardWidth,
-      child: Card(
-        color: Colors.grey.shade900,
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(12),
-          child: Padding(
-            padding: const EdgeInsets.all(_ChooserLayout.cardPadding),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  label,
-                  style: Theme.of(context)
-                      .textTheme
-                      .titleMedium
-                      ?.copyWith(color: Colors.white),
-                ),
-                const SizedBox(height: _ChooserLayout.subtitleSpacing),
-                Text(
-                  subtitle,
-                  style: Theme.of(context)
-                      .textTheme
-                      .bodySmall
-                      ?.copyWith(color: Colors.grey),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
 }

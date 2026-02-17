@@ -3,35 +3,44 @@ set -e
 
 ALPINE_VERSION="${ALPINE_VERSION:-latest-stable}"
 IMAGE_VARIANT="${IMAGE_VARIANT:-minimal}"
+ARCH="${ARCH:-riscv64}"
 OUTPUT_DIR="/output"
 WORK_DIR="/tmp/image-build"
 MOUNT_DIR="${WORK_DIR}/rootfs"
 MIRROR="https://dl-cdn.alpinelinux.org/alpine"
 
+case "${ARCH}" in
+  riscv64|riscv32) ;;
+  *) echo "ERROR: Unsupported architecture: ${ARCH}" && exit 1 ;;
+esac
+
 case "${IMAGE_VARIANT}" in
   dev)
     IMAGE_SIZE_MB="${IMAGE_SIZE_MB:-512}"
-    OUTPUT_FILE="${OUTPUT_DIR}/alpine-riscv64-dev-rootfs.bin"
+    OUTPUT_FILE="${OUTPUT_DIR}/alpine-${ARCH}-dev-rootfs.bin"
     ;;
   *)
     IMAGE_SIZE_MB="${IMAGE_SIZE_MB:-256}"
-    OUTPUT_FILE="${OUTPUT_DIR}/alpine-riscv64-rootfs.bin"
+    OUTPUT_FILE="${OUTPUT_DIR}/alpine-${ARCH}-rootfs.bin"
     ;;
 esac
 
 mkdir -p "${WORK_DIR}" "${MOUNT_DIR}" "${OUTPUT_DIR}"
 
-echo "==> Building ${IMAGE_VARIANT} image (${IMAGE_SIZE_MB}MB)..."
-echo "==> Resolving Alpine riscv64 minirootfs URL..."
+echo "==> Building ${IMAGE_VARIANT} image for ${ARCH} (${IMAGE_SIZE_MB}MB)..."
+echo "==> Resolving Alpine ${ARCH} minirootfs URL..."
 
-RELEASE_DIR="${MIRROR}/${ALPINE_VERSION}/releases/riscv64"
+RELEASE_DIR="${MIRROR}/${ALPINE_VERSION}/releases/${ARCH}"
 TARBALL_NAME=$(wget -qO- "${RELEASE_DIR}/" \
-  | grep -oE 'alpine-minirootfs-[0-9]+\.[0-9]+\.[0-9]+-riscv64\.tar\.gz' \
+  | grep -oE "alpine-minirootfs-[0-9]+\.[0-9]+\.[0-9]+-${ARCH}\.tar\.gz" \
   | sort -V \
   | tail -1)
 
 if [ -z "${TARBALL_NAME}" ]; then
-  echo "ERROR: Could not find Alpine riscv64 minirootfs tarball at ${RELEASE_DIR}/"
+  echo "ERROR: Could not find Alpine ${ARCH} minirootfs tarball at ${RELEASE_DIR}/"
+  echo "       Alpine may not provide official ${ARCH} releases."
+  echo "       For riscv32, consider using the Buildroot-based builder instead:"
+  echo "         tool/image_builder/build_buildroot.sh [minimal|dev]"
   exit 1
 fi
 
@@ -57,11 +66,11 @@ mkdir -p \
   "${MOUNT_DIR}/tmp"
 
 if [ "${IMAGE_VARIANT}" = "dev" ]; then
-  echo "==> Installing dev packages (riscv64)..."
+  echo "==> Installing dev packages (${ARCH})..."
   apk -X "${MIRROR}/${ALPINE_VERSION}/main" \
       -X "${MIRROR}/${ALPINE_VERSION}/community" \
       --root "${MOUNT_DIR}" \
-      --arch riscv64 \
+      --arch "${ARCH}" \
       --keys-dir /etc/apk/keys \
       --no-cache \
       --initdb \
@@ -79,7 +88,7 @@ if [ "${IMAGE_VARIANT}" = "dev" ]; then
 fi
 
 echo "==> Writing /init..."
-cat > "${MOUNT_DIR}/init" << 'INIT_EOF'
+cat > "${MOUNT_DIR}/init" << INIT_EOF
 #!/bin/sh
 mount -t proc proc /proc
 mount -t sysfs sys /sys
@@ -92,7 +101,7 @@ export TERM=vt100
 hostname dartemu
 
 echo
-echo "  Alpine Linux (riscv64) on dartEMU"
+echo "  Alpine Linux (${ARCH}) on dartEMU"
 echo
 
 if [ -x /sbin/init ]; then
@@ -156,7 +165,7 @@ IMAGE_BYTES=$(stat -c %s "${OUTPUT_FILE}" 2>/dev/null || stat -f %z "${OUTPUT_FI
 IMAGE_MB=$((IMAGE_BYTES / 1048576))
 
 echo
-echo "==> Done! (${IMAGE_VARIANT})"
+echo "==> Done! (${ARCH} ${IMAGE_VARIANT})"
 echo "    Image: ${OUTPUT_FILE}"
 echo "    Size:  ${IMAGE_MB}MB"
 echo "    Alpine: ${TARBALL_NAME}"

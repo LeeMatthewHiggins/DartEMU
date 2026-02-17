@@ -66,7 +66,7 @@ class EmulatorController {
     _emulator?.sendInput(utf8.encode(data));
   }
 
-  /// Loads VM images from assets and starts the emulation loop.
+  /// Loads VM images from bundled assets and starts emulation.
   Future<void> start({Xlen xlen = Xlen.rv64}) async {
     final results = await Future.wait([
       rootBundle.load(_Assets.bios(xlen)),
@@ -86,6 +86,11 @@ class EmulatorController {
       blockDevices: [MemoryBlockDevice.fromData(rootfsData)],
     );
 
+    await startWithConfig(config);
+  }
+
+  /// Starts emulation from a pre-resolved [MachineConfig].
+  Future<void> startWithConfig(MachineConfig config) async {
     _emulator = Emulator(config);
     _outputSub = _emulator!.output.listen(_outputController.add);
     _statusSub = _emulator!.status.listen((status) {
