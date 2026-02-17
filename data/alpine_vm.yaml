@@ -6,3 +6,5 @@ kernel: kernel-riscv64.bin
 cmdline: "console=hvc0 root=/dev/vda rw init=/init loglevel=7 earlyprintk"
 drive0:
   file: rootfs/alpine-riscv64-rootfs.bin
+eth0:
+  driver: user

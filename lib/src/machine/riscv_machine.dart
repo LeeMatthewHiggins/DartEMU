@@ -4,6 +4,7 @@ import 'package:dart_emu/src/cpu/cpu_executor.dart';
 import 'package:dart_emu/src/device/virtio/virtio_block.dart';
 import 'package:dart_emu/src/device/virtio/virtio_console.dart';
 import 'package:dart_emu/src/device/virtio/virtio_device.dart';
+import 'package:dart_emu/src/device/virtio/virtio_net.dart';
 import 'package:dart_emu/src/machine/clint.dart';
 import 'package:dart_emu/src/machine/fdt_builder.dart';
 import 'package:dart_emu/src/machine/htif.dart';
@@ -96,10 +97,12 @@ class RiscVMachine {
   final Htif htif;
   final List<VirtioDevice> virtioDevices = [];
   VirtioConsoleDevice? _console;
+  final List<VirtioNetDevice> _netDevices = [];
 
   void step(int maxCycles) {
     clint.checkTimer();
     _pollConsoleInput();
+    _pollNetworkInput();
     if (cpu.state.powerDown) {
       if ((cpu.state.mip & cpu.state.mie) != 0) {
         cpu.state.powerDown = false;
@@ -121,6 +124,17 @@ class RiscVMachine {
     if (input == null || input.isEmpty) return;
 
     console.writeData(input);
+  }
+
+  void _pollNetworkInput() {
+    for (final netDevice in _netDevices) {
+      final eth = netDevice.ethernetDevice..poll();
+      while (netDevice.canReceivePacket && eth.canDeviceWritePacket()) {
+        final frame = eth.readPacket();
+        if (frame == null) break;
+        netDevice.receivePacket(frame);
+      }
+    }
   }
 
   void loadBios(Uint8List data) {
@@ -156,6 +170,15 @@ class RiscVMachine {
       _addVirtioDevice(
         VirtioBlockDevice(memMap: memMap, blockDevice: blockDevice),
       );
+    }
+
+    for (final ethDevice in config.ethDevices) {
+      final netDevice = VirtioNetDevice(
+        memMap: memMap,
+        ethernetDevice: ethDevice,
+      );
+      _netDevices.add(netDevice);
+      _addVirtioDevice(netDevice);
     }
   }
 

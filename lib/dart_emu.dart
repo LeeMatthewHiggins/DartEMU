@@ -23,3 +23,4 @@ export 'src/machine/phys_memory_map.dart';
 export 'src/machine/phys_memory_range.dart';
 export 'src/machine/plic.dart';
 export 'src/machine/riscv_machine.dart';
+export 'src/net/user_net_device.dart';

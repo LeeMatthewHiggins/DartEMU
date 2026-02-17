@@ -1,8 +1,10 @@
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:dart_emu/src/device/ethernet_device.dart';
 import 'package:dart_emu/src/device/file_block_device.dart';
 import 'package:dart_emu/src/machine/machine_config.dart';
+import 'package:dart_emu/src/net/user_net_device.dart';
 import 'package:yaml/yaml.dart';
 
 /// Loads [MachineConfig] from YAML configuration files or strings.
@@ -200,7 +202,20 @@ class ConfigResolver {
           (drive) => FileBlockDevice.open(drive.file),
         ),
       ],
+      ethDevices: [
+        ...config.ethDevices,
+        ...config.ethernetConfigs.map(_resolveEthernet),
+      ],
     );
+  }
+
+  static EthernetDevice _resolveEthernet(EthernetConfig eth) {
+    return switch (eth.driver) {
+      'user' => UserNetDevice(),
+      _ => throw ConfigException(
+          'Unsupported ethernet driver: ${eth.driver}',
+        ),
+    };
   }
 
   static Uint8List? _readFileOrNull(String? path) {
