@@ -37,6 +37,7 @@ class CpuExecutor {
     _fExt = FExtension(state: state);
     _dExt = DExtension(state: state);
     _initMisa();
+    state.onTlbFlush = _invalidateCodeCache;
   }
 
   final RiscVCpuState state;
@@ -48,9 +49,21 @@ class CpuExecutor {
   late FExtension _fExt;
   late DExtension _dExt;
 
+  ByteData _codeData = _emptyByteData;
+  int _codeBase = 0;
+  int _codeEnd = 0;
+  int _codePageTag = _invalidCodeTag;
+
+  static final ByteData _emptyByteData = ByteData(0);
+  static const _invalidCodeTag = -1;
+
   int get cycles => state.instructionCounter;
 
   bool get powerDown => state.powerDown;
+
+  void _invalidateCodeCache() {
+    _codePageTag = _invalidCodeTag;
+  }
 
   /// Executes up to [maxCycles] instructions.
   void execute(int maxCycles) {
@@ -77,7 +90,7 @@ class CpuExecutor {
       }
 
       final insn = _fetchInstruction();
-      if (insn == null) {
+      if (state.pendingException >= 0) {
         _handlePendingException(counterTarget);
         return;
       }
@@ -117,24 +130,19 @@ class CpuExecutor {
         counterTarget - state.nCycles;
   }
 
-  int? _fetchInstruction() {
+  int _fetchInstruction() {
     final addr = state.pc;
-    final tlbIdx =
-        (addr >>> TlbConstants.pageSizeLog2) &
-        TlbConstants.indexMask;
     final pageTag = addr & ~TlbConstants.pageMask;
-    final entry = state.tlbCode[tlbIdx];
 
-    if (entry.virtualTag == pageTag) {
-      final pageOffset = addr & TlbConstants.pageMask;
-      final offset = entry.hostOffset + pageOffset;
-      final remaining =
-          TlbConstants.pageSize - pageOffset;
+    if (pageTag == _codePageTag) {
+      final offset =
+          _codeBase + (addr & TlbConstants.pageMask);
+      final remaining = _codeEnd - offset;
       if (remaining >= _fullInsnSize) {
-        return _readInsn32(entry.hostData, offset);
+        return _readInsn32(_codeData, offset);
       }
       if (remaining >= _compressedInsnSize) {
-        final low = entry.hostData
+        final low = _codeData
             .getUint16(offset, Endian.little);
         if ((low & _compressedMask) != _compressedMask) {
           return low;
@@ -143,7 +151,24 @@ class CpuExecutor {
       }
     }
 
-    return _fetchSlow(addr);
+    return _fetchSlowAndCache(addr);
+  }
+
+  int _fetchSlowAndCache(int addr) {
+    final result = _fetchSlow(addr);
+    if (state.pendingException >= 0) return 0;
+
+    final tlbIdx =
+        (addr >>> TlbConstants.pageSizeLog2) &
+        TlbConstants.indexMask;
+    final entry = state.tlbCode[tlbIdx];
+    _codeData = entry.hostData;
+    _codeBase = entry.hostOffset;
+    _codeEnd =
+        entry.hostOffset + TlbConstants.pageSize;
+    _codePageTag = entry.virtualTag;
+
+    return result;
   }
 
   int _readInsn32(ByteData data, int offset) {
@@ -156,7 +181,7 @@ class CpuExecutor {
     return low | (high << _halfWordBits);
   }
 
-  int? _fetchSlow(int addr) {
+  int _fetchSlow(int addr) {
     try {
       final physAddr =
           mmu.translate(addr, MemoryAccessType.fetch);
@@ -165,7 +190,7 @@ class CpuExecutor {
         state
           ..pendingException = _Exception.faultFetch
           ..pendingTval = addr;
-        return null;
+        return 0;
       }
 
       final pageOffset = addr & TlbConstants.pageMask;
@@ -200,16 +225,16 @@ class CpuExecutor {
       state
         ..pendingException = _Exception.faultFetch
         ..pendingTval = addr;
-      return null;
+      return 0;
     } on MmuException catch (e) {
       state
         ..pendingException = e.causeCode
         ..pendingTval = e.virtualAddr;
-      return null;
+      return 0;
     }
   }
 
-  int? _fetchCrossPage(int addr, int lowHalf) {
+  int _fetchCrossPage(int addr, int lowHalf) {
     try {
       final nextAddr = addr + _compressedInsnSize;
       final physAddr = mmu.translate(
@@ -221,7 +246,7 @@ class CpuExecutor {
         state
           ..pendingException = _Exception.faultFetch
           ..pendingTval = nextAddr;
-        return null;
+        return 0;
       }
       final offset = physAddr - range.addr;
       final high = range.byteData
@@ -231,7 +256,7 @@ class CpuExecutor {
       state
         ..pendingException = e.causeCode
         ..pendingTval = e.virtualAddr;
-      return null;
+      return 0;
     }
   }
 
@@ -251,14 +276,53 @@ class CpuExecutor {
 
     switch (opcode) {
       case _Opcode.lui:
-        return _executeLui(insn, instrSize);
+        final rd = (insn >> 7) & _regMask;
+        if (rd != 0) {
+          state.regs[rd] =
+              BitUtils.signExtend32(insn & _immUMask);
+        }
+        state.pc += instrSize;
+        return true;
       case _Opcode.auipc:
-        return _executeAuipc(insn, instrSize);
+        final rd = (insn >> 7) & _regMask;
+        if (rd != 0) {
+          state.regs[rd] = state.pc +
+              BitUtils.signExtend32(insn & _immUMask);
+        }
+        state.pc += instrSize;
+        return true;
       case _Opcode.jal:
-        return _executeJal(insn);
+        final rd = (insn >> 7) & _regMask;
+        if (rd != 0) {
+          state.regs[rd] = state.pc + _fullInsnSize;
+        }
+        state.pc +=
+            InstructionDecoder.extractImmJ(insn);
+        return true;
       case _Opcode.jalr:
-        return _executeJalr(insn);
+        final rd = (insn >> 7) & _regMask;
+        final rs1 = (insn >> 15) & _regMask;
+        final imm = InstructionDecoder.extractImmI(insn);
+        final returnAddr = state.pc + _fullInsnSize;
+        state.pc = (state.regs[rs1] + imm) & ~1;
+        if (rd != 0) state.regs[rd] = returnAddr;
+        return true;
       case _Opcode.branch:
+        final funct3 = (insn >> 12) & 7;
+        if (funct3 <= 1) {
+          final rs1 = (insn >> 15) & _regMask;
+          final rs2 = (insn >> 20) & _regMask;
+          final eq =
+              state.regs[rs1] == state.regs[rs2];
+          final taken = funct3 == 0 ? eq : !eq;
+          if (taken) {
+            state.pc +=
+                InstructionDecoder.extractImmB(insn);
+          } else {
+            state.pc += instrSize;
+          }
+          return true;
+        }
         return _executeBranch(insn, instrSize);
       case _Opcode.load:
         return _executeLoad(insn, instrSize);
@@ -352,7 +416,7 @@ class CpuExecutor {
         _cField(insn, 5, 6, 6);
     final addr = state.regs[rs1] + imm;
     final val = _memReadU32(addr);
-    if (val == null) return false;
+    if (state.pendingException >= 0) return false;
     _writeReg(rd, BitUtils.signExtend32(val));
     state.pc += _compressedInsnSize;
     return true;
@@ -364,7 +428,7 @@ class CpuExecutor {
         _cField(insn, 5, 6, 7);
     final addr = state.regs[rs1] + imm;
     final val = _memReadU64(addr);
-    if (val == null) return false;
+    if (state.pendingException >= 0) return false;
     _writeReg(rd, val);
     state.pc += _compressedInsnSize;
     return true;
@@ -405,9 +469,9 @@ class CpuExecutor {
         _cField(insn, 5, 6, 7);
     final addr = state.regs[rs1] + imm;
     final lo = _memReadU32(addr);
-    if (lo == null) return false;
+    if (state.pendingException >= 0) return false;
     final hi = _memReadU32(addr + _wordSize);
-    if (hi == null) return false;
+    if (state.pendingException >= 0) return false;
     state.fpRegs.writePair(rd, lo, hi);
     _markFsDirty();
     state.pc += _compressedInsnSize;
@@ -447,7 +511,7 @@ class CpuExecutor {
         _cField(insn, 5, 6, 6);
     final addr = state.regs[rs1] + imm;
     final val = _memReadU32(addr);
-    if (val == null) return false;
+    if (state.pendingException >= 0) return false;
     state.fpRegs.writeWithNanBox(rd, val & _mask32);
     _markFsDirty();
     state.pc += _compressedInsnSize;
@@ -692,7 +756,7 @@ class CpuExecutor {
         _cField(insn, 2, 6, 7);
     final addr = state.regs[2] + imm;
     final val = _memReadU32(addr);
-    if (val == null) return false;
+    if (state.pendingException >= 0) return false;
     if (rd != 0) {
       _writeReg(rd, BitUtils.signExtend32(val));
     }
@@ -707,7 +771,7 @@ class CpuExecutor {
         _cField(insn, 2, 6, 8);
     final addr = state.regs[2] + imm;
     final val = _memReadU64(addr);
-    if (val == null) return false;
+    if (state.pendingException >= 0) return false;
     if (rd != 0) {
       _writeReg(rd, val);
     }
@@ -794,9 +858,9 @@ class CpuExecutor {
         _cField(insn, 2, 6, 8);
     final addr = state.regs[2] + imm;
     final lo = _memReadU32(addr);
-    if (lo == null) return false;
+    if (state.pendingException >= 0) return false;
     final hi = _memReadU32(addr + _wordSize);
-    if (hi == null) return false;
+    if (state.pendingException >= 0) return false;
     state.fpRegs.writePair(rd, lo, hi);
     _markFsDirty();
     state.pc += _compressedInsnSize;
@@ -835,7 +899,7 @@ class CpuExecutor {
         _cField(insn, 2, 6, 7);
     final addr = state.regs[2] + imm;
     final val = _memReadU32(addr);
-    if (val == null) return false;
+    if (state.pendingException >= 0) return false;
     state.fpRegs.writeWithNanBox(rd, val & _mask32);
     _markFsDirty();
     state.pc += _compressedInsnSize;
@@ -854,53 +918,6 @@ class CpuExecutor {
       return false;
     }
     state.pc += _compressedInsnSize;
-    return true;
-  }
-
-  bool _executeLui(int insn, int instrSize) {
-    final rd = InstructionDecoder.extractRd(insn);
-    if (rd != 0) {
-      _writeReg(
-        rd,
-        BitUtils.signExtend32(insn & _immUMask),
-      );
-    }
-    state.pc += instrSize;
-    return true;
-  }
-
-  bool _executeAuipc(int insn, int instrSize) {
-    final rd = InstructionDecoder.extractRd(insn);
-    if (rd != 0) {
-      _writeReg(
-        rd,
-        state.pc +
-            BitUtils.signExtend32(insn & _immUMask),
-      );
-    }
-    state.pc += instrSize;
-    return true;
-  }
-
-  bool _executeJal(int insn) {
-    final rd = InstructionDecoder.extractRd(insn);
-    final imm = InstructionDecoder.extractImmJ(insn);
-    if (rd != 0) {
-      _writeReg(rd, state.pc + _fullInsnSize);
-    }
-    state.pc += imm;
-    return true;
-  }
-
-  bool _executeJalr(int insn) {
-    final rd = InstructionDecoder.extractRd(insn);
-    final rs1 = InstructionDecoder.extractRs1(insn);
-    final imm = InstructionDecoder.extractImmI(insn);
-    final returnAddr = state.pc + _fullInsnSize;
-    state.pc = (state.regs[rs1] + imm) & ~1;
-    if (rd != 0) {
-      _writeReg(rd, returnAddr);
-    }
     return true;
   }
 
@@ -944,32 +961,32 @@ class CpuExecutor {
     final imm = InstructionDecoder.extractImmI(insn);
     final addr = state.regs[rs1] + imm;
 
-    int? val;
+    int val;
     switch (funct3) {
       case _LoadFunct3.lb:
         val = _memReadU8(addr);
-        if (val == null) return false;
+        if (state.pendingException >= 0) return false;
         val = _signExtend8(val);
       case _LoadFunct3.lh:
         val = _memReadU16(addr);
-        if (val == null) return false;
+        if (state.pendingException >= 0) return false;
         val = _signExtend16(val);
       case _LoadFunct3.lw:
         val = _memReadU32(addr);
-        if (val == null) return false;
+        if (state.pendingException >= 0) return false;
         val = BitUtils.signExtend32(val);
       case _LoadFunct3.ld:
         val = _memReadU64(addr);
-        if (val == null) return false;
+        if (state.pendingException >= 0) return false;
       case _LoadFunct3.lbu:
         val = _memReadU8(addr);
-        if (val == null) return false;
+        if (state.pendingException >= 0) return false;
       case _LoadFunct3.lhu:
         val = _memReadU16(addr);
-        if (val == null) return false;
+        if (state.pendingException >= 0) return false;
       case _LoadFunct3.lwu:
         val = _memReadU32(addr);
-        if (val == null) return false;
+        if (state.pendingException >= 0) return false;
         val = val & _mask32;
       default:
         _raiseIllegalInsn(insn);
@@ -1387,7 +1404,10 @@ class CpuExecutor {
         InstructionDecoder.extractFunct3(insn);
     switch (funct3) {
       case _FenceFunct3.fence:
+        state.pc += instrSize;
+        return true;
       case _FenceFunct3.fenceI:
+        _invalidateCodeCache();
         state.pc += instrSize;
         return true;
       default:
@@ -1430,13 +1450,17 @@ class CpuExecutor {
 
   int _amoReadWord(int addr) {
     final val = _memReadU32(addr);
-    if (val == null) throw const _AmoMemoryFaultException();
+    if (state.pendingException >= 0) {
+      throw const _AmoMemoryFaultException();
+    }
     return BitUtils.signExtend32(val);
   }
 
   int _amoReadDouble(int addr) {
     final val = _memReadU64(addr);
-    if (val == null) throw const _AmoMemoryFaultException();
+    if (state.pendingException >= 0) {
+      throw const _AmoMemoryFaultException();
+    }
     return val;
   }
 
@@ -1476,13 +1500,13 @@ class CpuExecutor {
     switch (funct3) {
       case _FpLoadStoreFunct3.word:
         final val = _memReadU32(addr);
-        if (val == null) return false;
+        if (state.pendingException >= 0) return false;
         state.fpRegs.writeWithNanBox(rd, val & _mask32);
       case _FpLoadStoreFunct3.doubleWord:
         final lo = _memReadU32(addr);
-        if (lo == null) return false;
+        if (state.pendingException >= 0) return false;
         final hi = _memReadU32(addr + _wordSize);
-        if (hi == null) return false;
+        if (state.pendingException >= 0) return false;
         state.fpRegs.writePair(rd, lo, hi);
       default:
         _raiseIllegalInsn(insn);
@@ -1594,7 +1618,7 @@ class CpuExecutor {
     return true;
   }
 
-  int? _memReadU8(int addr) {
+  int _memReadU8(int addr) {
     final tlbIdx =
         (addr >>> TlbConstants.pageSizeLog2) &
         TlbConstants.indexMask;
@@ -1609,7 +1633,7 @@ class CpuExecutor {
     return _memReadSlow(addr, _SizeLog2.byte);
   }
 
-  int? _memReadU16(int addr) {
+  int _memReadU16(int addr) {
     final tlbIdx =
         (addr >>> TlbConstants.pageSizeLog2) &
         TlbConstants.indexMask;
@@ -1627,7 +1651,7 @@ class CpuExecutor {
     return _memReadSlow(addr, _SizeLog2.halfWord);
   }
 
-  int? _memReadU32(int addr) {
+  int _memReadU32(int addr) {
     final tlbIdx =
         (addr >>> TlbConstants.pageSizeLog2) &
         TlbConstants.indexMask;
@@ -1644,7 +1668,7 @@ class CpuExecutor {
     return _memReadSlow(addr, _SizeLog2.word);
   }
 
-  int? _memReadU64(int addr) {
+  int _memReadU64(int addr) {
     final tlbIdx =
         (addr >>> TlbConstants.pageSizeLog2) &
         TlbConstants.indexMask;
@@ -1665,7 +1689,7 @@ class CpuExecutor {
     return _memReadSlow(addr, _SizeLog2.doubleWord);
   }
 
-  int? _memReadSlow(int addr, int sizeLog2) {
+  int _memReadSlow(int addr, int sizeLog2) {
     final size = 1 << sizeLog2;
     final alignment = addr & (size - 1);
     if (alignment != 0) {
@@ -1700,25 +1724,25 @@ class CpuExecutor {
       state
         ..pendingException = e.causeCode
         ..pendingTval = e.virtualAddr;
-      return null;
+      return 0;
     }
   }
 
-  int? _memReadUnaligned(int addr, int sizeLog2) {
+  int _memReadUnaligned(int addr, int sizeLog2) {
     switch (sizeLog2) {
       case _SizeLog2.halfWord:
         final b0 = _memReadU8(addr);
-        if (b0 == null) return null;
+        if (state.pendingException >= 0) return 0;
         final b1 = _memReadU8(addr + 1);
-        if (b1 == null) return null;
+        if (state.pendingException >= 0) return 0;
         return b0 | (b1 << _bitsPerByte);
       case _SizeLog2.word:
         final aligned = addr & ~(_wordSize - 1);
         final al = addr & (_wordSize - 1);
         final v0 = _memReadU32(aligned);
-        if (v0 == null) return null;
+        if (state.pendingException >= 0) return 0;
         final v1 = _memReadU32(aligned + _wordSize);
-        if (v1 == null) return null;
+        if (state.pendingException >= 0) return 0;
         return ((v0 & _mask32) >>>
                 (al * _bitsPerByte)) |
             ((v1 & _mask32) <<
@@ -1728,16 +1752,16 @@ class CpuExecutor {
             addr & ~(_doubleWordSize - 1);
         final al = addr & (_doubleWordSize - 1);
         final v0 = _memReadU64(aligned);
-        if (v0 == null) return null;
+        if (state.pendingException >= 0) return 0;
         final v1 =
             _memReadU64(aligned + _doubleWordSize);
-        if (v1 == null) return null;
+        if (state.pendingException >= 0) return 0;
         return (v0 >>> (al * _bitsPerByte)) |
             (v1 <<
                 (_doubleWordBits -
                     al * _bitsPerByte));
       default:
-        return null;
+        return 0;
     }
   }
 
@@ -2190,6 +2214,124 @@ class _CpuExecutor32 extends CpuExecutor {
   static const _xlenBits = 32;
 
   @override
+  bool _executeInstruction(int insn, int instrSize) {
+    final opcode = insn & CpuExecutor._opcodeMask;
+
+    switch (opcode) {
+      case _Opcode.lui:
+        final rd = (insn >> 7) & CpuExecutor._regMask;
+        if (rd != 0) {
+          state.regs[rd] =
+              BitUtils.signExtend32(insn & CpuExecutor._immUMask);
+        }
+        state.pc += instrSize;
+        return true;
+      case _Opcode.auipc:
+        final rd = (insn >> 7) & CpuExecutor._regMask;
+        if (rd != 0) {
+          state.regs[rd] = state.pc +
+              BitUtils.signExtend32(insn & CpuExecutor._immUMask);
+        }
+        state.pc += instrSize;
+        return true;
+      case _Opcode.jal:
+        final rd = (insn >> 7) & CpuExecutor._regMask;
+        if (rd != 0) {
+          state.regs[rd] =
+              state.pc + CpuExecutor._fullInsnSize;
+        }
+        state.pc +=
+            InstructionDecoder.extractImmJ(insn);
+        return true;
+      case _Opcode.jalr:
+        final rd = (insn >> 7) & CpuExecutor._regMask;
+        final rs1 =
+            (insn >> 15) & CpuExecutor._regMask;
+        final imm =
+            InstructionDecoder.extractImmI(insn);
+        final returnAddr =
+            state.pc + CpuExecutor._fullInsnSize;
+        state.pc = (state.regs[rs1] + imm) & ~1;
+        if (rd != 0) state.regs[rd] = returnAddr;
+        return true;
+      case _Opcode.branch:
+        final funct3 = (insn >> 12) & 7;
+        if (funct3 <= 1) {
+          final rs1 =
+              (insn >> 15) & CpuExecutor._regMask;
+          final rs2 =
+              (insn >> 20) & CpuExecutor._regMask;
+          final eq =
+              state.regs[rs1] == state.regs[rs2];
+          final taken = funct3 == 0 ? eq : !eq;
+          if (taken) {
+            state.pc +=
+                InstructionDecoder.extractImmB(insn);
+          } else {
+            state.pc += instrSize;
+          }
+          return true;
+        }
+        return _executeBranch(insn, instrSize);
+      case _Opcode.load:
+        final funct3 = (insn >> 12) & 7;
+        if (funct3 == _LoadFunct3.lw) {
+          final rd =
+              (insn >> 7) & CpuExecutor._regMask;
+          final rs1 =
+              (insn >> 15) & CpuExecutor._regMask;
+          final imm =
+              InstructionDecoder.extractImmI(insn);
+          final addr = state.regs[rs1] + imm;
+          final val = _memReadU32(addr);
+          if (state.pendingException >= 0) return false;
+          if (rd != 0) state.regs[rd] = val;
+          state.pc += instrSize;
+          return true;
+        }
+        return _executeLoad(insn, instrSize);
+      case _Opcode.store:
+        final funct3 = (insn >> 12) & 7;
+        if (funct3 == _StoreFunct3.sw) {
+          final rs1 =
+              (insn >> 15) & CpuExecutor._regMask;
+          final rs2 =
+              (insn >> 20) & CpuExecutor._regMask;
+          final imm =
+              InstructionDecoder.extractImmS(insn);
+          final addr = state.regs[rs1] + imm;
+          if (!_memWriteU32(addr, state.regs[rs2])) {
+            return false;
+          }
+          state.pc += instrSize;
+          return true;
+        }
+        return _executeStore(insn, instrSize);
+      case _Opcode.opImm:
+        final funct3 = (insn >> 12) & 7;
+        if (funct3 == _AluFunct3.add) {
+          final rd =
+              (insn >> 7) & CpuExecutor._regMask;
+          if (rd != 0) {
+            final rs1 =
+                (insn >> 15) & CpuExecutor._regMask;
+            final imm =
+                InstructionDecoder.extractImmI(insn);
+            state.regs[rd] = state.regs[rs1] + imm;
+          }
+          state.pc += instrSize;
+          return true;
+        }
+        return _executeOpImm(insn, instrSize);
+      default:
+        return super._executeInstruction(
+          insn,
+          instrSize,
+        );
+    }
+  }
+
+  @override
   void _initMisa() {
     state
       ..misa = CpuExecutor._isaExtBits |
@@ -2243,25 +2385,25 @@ class _CpuExecutor32 extends CpuExecutor {
     final imm = InstructionDecoder.extractImmI(insn);
     final addr = state.regs[rs1] + imm;
 
-    int? val;
+    int val;
     switch (funct3) {
       case _LoadFunct3.lb:
         val = _memReadU8(addr);
-        if (val == null) return false;
+        if (state.pendingException >= 0) return false;
         val = _signExtend8(val);
       case _LoadFunct3.lh:
         val = _memReadU16(addr);
-        if (val == null) return false;
+        if (state.pendingException >= 0) return false;
         val = _signExtend16(val);
       case _LoadFunct3.lw:
         val = _memReadU32(addr);
-        if (val == null) return false;
+        if (state.pendingException >= 0) return false;
       case _LoadFunct3.lbu:
         val = _memReadU8(addr);
-        if (val == null) return false;
+        if (state.pendingException >= 0) return false;
       case _LoadFunct3.lhu:
         val = _memReadU16(addr);
-        if (val == null) return false;
+        if (state.pendingException >= 0) return false;
       default:
         _raiseIllegalInsn(insn);
         return false;

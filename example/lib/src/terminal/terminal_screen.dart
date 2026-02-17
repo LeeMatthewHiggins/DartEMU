@@ -25,7 +25,8 @@ class TerminalScreen extends StatefulWidget {
   State<TerminalScreen> createState() => _TerminalScreenState();
 }
 
-class _TerminalScreenState extends State<TerminalScreen> {
+class _TerminalScreenState extends State<TerminalScreen>
+    with TickerProviderStateMixin {
   final _terminal = Terminal(maxLines: 10000);
 
   EmulatorController? _controller;
@@ -36,10 +37,14 @@ class _TerminalScreenState extends State<TerminalScreen> {
 
   late final double _charWidthAtReference = _measureCharWidth();
 
+  /// `identical(0, 0.0)` is true only in dart2js where int and double
+  /// share the same JS number representation.
+  static const bool _isJsRuntime = identical(0, 0.0);
+
   @override
   void initState() {
     super.initState();
-    if (kIsWeb) {
+    if (_isJsRuntime) {
       _launchEmulator(Xlen.rv32);
     }
   }
@@ -50,7 +55,7 @@ class _TerminalScreenState extends State<TerminalScreen> {
       _status = EmulatorStatus.idle;
     });
 
-    _controller = EmulatorController();
+    _controller = EmulatorController(vsync: this);
     _terminal.onOutput = _controller!.sendInput;
     _startEmulator(xlen);
   }

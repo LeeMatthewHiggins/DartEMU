@@ -23,6 +23,32 @@
       "program": "lib/main.dart",
       "cwd": "${workspaceFolder}/example",
       "flutterMode": "release"
+    },
+    {
+      "name": "Example App (WASM)",
+      "request": "launch",
+      "type": "dart",
+      "program": "lib/main.dart",
+      "cwd": "${workspaceFolder}/example",
+      "args": ["--wasm"]
+    },
+    {
+      "name": "Example App (WASM Profile)",
+      "request": "launch",
+      "type": "dart",
+      "program": "lib/main.dart",
+      "cwd": "${workspaceFolder}/example",
+      "flutterMode": "profile",
+      "args": ["--wasm"]
+    },
+    {
+      "name": "Example App (WASM Release)",
+      "request": "launch",
+      "type": "dart",
+      "program": "lib/main.dart",
+      "cwd": "${workspaceFolder}/example",
+      "flutterMode": "release",
+      "args": ["--wasm"]
     }
   ]
 }

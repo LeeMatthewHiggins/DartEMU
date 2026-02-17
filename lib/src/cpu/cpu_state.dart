@@ -85,6 +85,7 @@ abstract class RiscVCpuState {
   int loadReservation = -1;
 
   int Function() rtcTimeRead = () => 0;
+  void Function()? onTlbFlush;
 
   final List<TlbEntry> tlbRead = List.generate(
     TlbConstants.size,
@@ -105,6 +106,7 @@ abstract class RiscVCpuState {
       tlbWrite[i].invalidate();
       tlbCode[i].invalidate();
     }
+    onTlbFlush?.call();
   }
 
   void setMip(int mask) => mip |= mask;
