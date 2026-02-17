@@ -40,6 +40,7 @@ class _AppState extends State<App> {
     if (_demoXlen != null) {
       return TerminalScreen(
         config: MachineConfig(xlen: _demoXlen!),
+        useBundledDemoAssets: true,
         onStopped: _reset,
       );
     }

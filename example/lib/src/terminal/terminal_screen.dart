@@ -29,12 +29,16 @@ class TerminalScreen extends StatefulWidget {
   /// Creates the terminal screen for the given [config].
   const TerminalScreen({
     required this.config,
+    this.useBundledDemoAssets = false,
     this.onStopped,
     super.key,
   });
 
   /// The resolved machine configuration to boot.
   final MachineConfig config;
+
+  /// If true, boot built-in bundled demo assets for this config's architecture.
+  final bool useBundledDemoAssets;
 
   /// Called when the guest OS shuts down or reboots.
   final VoidCallback? onStopped;
@@ -79,11 +83,10 @@ class _TerminalScreenState extends State<TerminalScreen>
       _terminal.write(utf8.decode(bytes, allowMalformed: true));
     });
 
-    final hasPreloadedData = widget.config.biosData != null;
-    if (hasPreloadedData) {
-      await _controller!.startWithConfig(widget.config);
-    } else {
+    if (widget.useBundledDemoAssets) {
       await _controller!.start(xlen: widget.config.xlen);
+    } else {
+      await _controller!.startWithConfig(widget.config);
     }
   }
 
@@ -104,7 +107,8 @@ class _TerminalScreenState extends State<TerminalScreen>
   }
 
   double _fontSizeForWidth(double availableWidth) {
-    final scaleFactor = availableWidth /
+    final scaleFactor =
+        availableWidth /
         (_TerminalLayout.standardColumns * _charWidthAtReference);
     final fontSize = _TerminalLayout.referenceFontSize * scaleFactor;
     return fontSize.clamp(
@@ -130,34 +134,31 @@ class _TerminalScreenState extends State<TerminalScreen>
           final fontSize = _fontSizeForWidth(constraints.maxWidth);
 
           return switch (_status) {
-            EmulatorStatus.idle ||
-            EmulatorStatus.starting =>
-              const Center(child: CircularProgressIndicator()),
+            EmulatorStatus.idle || EmulatorStatus.starting => const Center(
+              child: CircularProgressIndicator(),
+            ),
             EmulatorStatus.error => Center(
-                child: Padding(
-                  padding: const EdgeInsets.all(_ErrorLayout.padding),
-                  child: SelectableText(
-                    'Emulator error:\n${_controller?.lastError}',
-                    style: const TextStyle(
-                      color: Colors.red,
-                      fontFamily: _TerminalLayout.fontFamily,
-                    ),
+              child: Padding(
+                padding: const EdgeInsets.all(_ErrorLayout.padding),
+                child: SelectableText(
+                  'Emulator error:\n${_controller?.lastError}',
+                  style: const TextStyle(
+                    color: Colors.red,
+                    fontFamily: _TerminalLayout.fontFamily,
                   ),
                 ),
               ),
-            EmulatorStatus.running ||
-            EmulatorStatus.stopped =>
-              TerminalView(
-                _terminal,
-                autofocus: true,
-                hardwareKeyboardOnly: _isDesktopPlatform,
-                textStyle: TerminalStyle(
-                  fontSize: fontSize,
-                  fontFamily: _TerminalLayout.fontFamily,
-                  fontFamilyFallback:
-                      _TerminalLayout.fontFamilyFallback,
-                ),
+            ),
+            EmulatorStatus.running || EmulatorStatus.stopped => TerminalView(
+              _terminal,
+              autofocus: true,
+              hardwareKeyboardOnly: _isDesktopPlatform,
+              textStyle: TerminalStyle(
+                fontSize: fontSize,
+                fontFamily: _TerminalLayout.fontFamily,
+                fontFamilyFallback: _TerminalLayout.fontFamilyFallback,
               ),
+            ),
           };
         },
       ),
@@ -165,11 +166,9 @@ class _TerminalScreenState extends State<TerminalScreen>
   }
 
   bool get _isDesktopPlatform => switch (defaultTargetPlatform) {
-        TargetPlatform.macOS ||
-        TargetPlatform.linux ||
-        TargetPlatform.windows =>
-          true,
-        _ => false,
-      };
-
+    TargetPlatform.macOS ||
+    TargetPlatform.linux ||
+    TargetPlatform.windows => true,
+    _ => false,
+  };
 }

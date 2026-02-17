@@ -47,12 +47,19 @@ case "${IMAGE_VARIANT}" in
   *)    IMAGE_FILE="alpine-${ARCH}-rootfs.bin" ;;
 esac
 
+case "${ARCH}:${IMAGE_VARIANT}" in
+  riscv32:dev) CONFIG_FILE="alpine_dev_vm_rv32.yaml" ;;
+  riscv32:*) CONFIG_FILE="alpine_vm_rv32.yaml" ;;
+  riscv64:dev) CONFIG_FILE="alpine_dev_vm.yaml" ;;
+  *) CONFIG_FILE="alpine_vm.yaml" ;;
+esac
+
 if [ -f "${ROOTFS_DIR}/${IMAGE_FILE}" ]; then
   echo
   echo "Image ready at: ${ROOTFS_DIR}/${IMAGE_FILE}"
   echo
   echo "Run with:"
-  echo "  dart run bin/dart_emu.dart run --config data/alpine_vm.yaml"
+  echo "  dart run bin/dart_emu.dart run --config data/${CONFIG_FILE}"
 else
   echo "ERROR: Image was not created."
   exit 1

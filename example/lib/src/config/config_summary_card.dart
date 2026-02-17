@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:dart_emu/dart_emu.dart';
 import 'package:flutter/material.dart';
 
@@ -36,14 +38,8 @@ class ConfigSummaryCard extends StatelessWidget {
             ),
             const SizedBox(height: _Layout.spacing),
             _DetailRow(label: 'Memory', value: '${config.memorySizeMb} MB'),
-            _DetailRow(
-              label: 'Drives',
-              value: _driveCount.toString(),
-            ),
-            _DetailRow(
-              label: 'Network',
-              value: _networkSummary,
-            ),
+            _DetailRow(label: 'Drives', value: _driveCount.toString()),
+            _DetailRow(label: 'Network', value: _networkSummary),
           ],
         ),
       ),
@@ -51,12 +47,13 @@ class ConfigSummaryCard extends StatelessWidget {
   }
 
   int get _driveCount =>
-      config.blockDevices.length + config.driveConfigs.length;
+      math.max(config.blockDevices.length, config.driveConfigs.length);
 
   String get _networkSummary {
-    final resolved = config.ethDevices.length;
-    final configured = config.ethernetConfigs.length;
-    final total = resolved + configured;
+    final total = math.max(
+      config.ethDevices.length,
+      config.ethernetConfigs.length,
+    );
     if (total == 0) return 'None';
     return '$total interface${total > 1 ? 's' : ''}';
   }
