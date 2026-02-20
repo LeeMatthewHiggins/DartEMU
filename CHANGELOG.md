@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.3.0
+
+- User-mode networking with DNS, DHCP, TCP/UDP proxy via `UserNetDevice`
+- Networking enabled by default on all VM images and demo boot
+- Config file picker with drag-and-drop and ZIP bundle loading
+- RV32 Buildroot image builder with TCC (Tiny C Compiler) for dev images
+- `?boot=32` / `?boot=64` URL parameter to skip config picker on web
+- Firebase Hosting deployment with GitHub Actions CI/CD
+- Auto-DHCP in guest init scripts for immediate network on boot
+
 ## 0.2.0
 
 - RV32IMAFDC support via `Xlen.rv32` configuration

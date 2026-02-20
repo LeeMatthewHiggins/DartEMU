@@ -13,9 +13,10 @@ for embedding in CLI, Flutter, and web applications.
 - SV39 (RV64) and SV32 (RV32) virtual memory with hardware page table walking
 - RV32 runs on all Dart platforms including web (no 64-bit integer dependency)
 - VirtIO console, block device, and network device
+- User-mode networking with DNS, DHCP, and TCP/UDP proxy
 - Stream-based facade for platform-agnostic embedding
 - Lifecycle status tracking via `EmulatorStatus`
-- YAML-based machine configuration
+- YAML-based machine configuration with ZIP bundle support
 - Supports both file-path and in-memory BIOS/kernel loading
 
 ## Library Usage
@@ -29,6 +30,7 @@ final config = MachineConfig(
   kernelData: kernelBytes, // Uint8List
   cmdLine: 'console=hvc0 root=/dev/vda rw',
   blockDevices: [MemoryBlockDevice.fromData(rootfsBytes)],
+  ethDevices: [UserNetDevice()], // user-mode networking
 );
 
 final emulator = Emulator(config);
@@ -61,6 +63,7 @@ final config = MachineConfig(
   kernelData: kernelBytes,
   cmdLine: 'console=hvc0 root=/dev/vda rw',
   blockDevices: [MemoryBlockDevice.fromData(rootfsBytes)],
+  ethDevices: [UserNetDevice()],
 );
 
 final emulator = Emulator(config);
@@ -77,7 +80,7 @@ emulator.start(); // runs in the event loop
 ```
 
 See the [example](example/) directory for a complete Flutter app with a
-terminal UI that boots RV32 Linux on all platforms including web.
+terminal UI, config picker, and ZIP bundle loading.
 
 ## CLI Usage
 
@@ -113,18 +116,32 @@ cd example
 flutter build web --release
 ```
 
-## Building a Root Filesystem
+To skip the config picker and boot the demo directly, add `?boot=32` to the
+URL.
 
-A Docker-based image builder is included for creating Alpine Linux root
-filesystem images:
+## Building Root Filesystems
+
+Docker-based image builders are included for creating rootfs images.
+
+**RV64 (Alpine Linux):**
 
 ```sh
-# Minimal image (256MB)
-tool/image_builder/build.sh
-
-# Development image with gcc, make, git, nano (512MB)
-tool/image_builder/build.sh dev
+tool/image_builder/build.sh riscv64           # minimal (256MB)
+tool/image_builder/build.sh riscv64 dev       # with gcc, make, git, nano (512MB)
 ```
+
+**RV32 (Buildroot + musl):**
+
+```sh
+tool/image_builder/build_buildroot.sh         # minimal (256MB)
+tool/image_builder/build_buildroot.sh dev     # with tcc, make, git, nano (512MB)
+```
+
+The RV32 dev image includes TCC (Tiny C Compiler) instead of GCC for
+practical compile times inside the emulator.
+
+Images are packaged as ZIP bundles in `data/` that the Flutter app can load
+via drag-and-drop or file picker.
 
 ## Configuration
 
@@ -139,6 +156,8 @@ kernel: kernel-riscv64.bin
 cmdline: "console=hvc0 root=/dev/vda rw"
 drive0:
   file: rootfs/alpine-riscv64-rootfs.bin
+eth0:
+  driver: user
 ```
 
 For RV32:
@@ -151,7 +170,9 @@ bios: bbl32.bin
 kernel: kernel-riscv32.bin
 cmdline: "console=hvc0 root=/dev/vda rw"
 drive0:
-  file: rootfs/root-riscv32.bin
+  file: rootfs/alpine-riscv32-rootfs.bin
+eth0:
+  driver: user
 ```
 
 [license_badge]: https://img.shields.io/badge/license-MIT-blue.svg

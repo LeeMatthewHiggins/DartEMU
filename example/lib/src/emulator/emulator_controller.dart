@@ -84,6 +84,7 @@ class EmulatorController {
       kernelData: kernelData,
       cmdLine: _Defaults.cmdLine,
       blockDevices: [MemoryBlockDevice.fromData(rootfsData)],
+      ethDevices: [UserNetDevice()],
     );
 
     await startWithConfig(config);

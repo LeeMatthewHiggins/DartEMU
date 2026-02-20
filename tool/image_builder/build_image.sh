@@ -115,6 +115,7 @@ chmod +x "${MOUNT_DIR}/init"
 echo "==> Writing /etc/inittab..."
 cat > "${MOUNT_DIR}/etc/inittab" << 'INITTAB_EOF'
 ::sysinit:/bin/hostname dartemu
+::sysinit:/bin/sh -c 'ifconfig eth0 up 2>/dev/null && udhcpc -i eth0 -q -s /usr/share/udhcpc/default.script 2>/dev/null &'
 hvc0::respawn:/sbin/getty -L 115200 hvc0 vt100
 ::shutdown:/bin/umount -a -r
 INITTAB_EOF
@@ -134,8 +135,8 @@ cat > "${MOUNT_DIR}/etc/hosts" << 'HOSTS_EOF'
 HOSTS_EOF
 
 cat > "${MOUNT_DIR}/etc/resolv.conf" << 'RESOLV_EOF'
+nameserver 10.0.2.3
 nameserver 8.8.8.8
-nameserver 1.1.1.1
 RESOLV_EOF
 
 echo "==> Setting root account (no password)..."

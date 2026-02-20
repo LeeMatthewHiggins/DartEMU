@@ -6,7 +6,14 @@ import 'package:flutter/material.dart';
 /// Root application widget for the DartEMU terminal UI.
 class App extends StatefulWidget {
   /// Creates the application.
-  const App({super.key});
+  ///
+  /// When [bootXlen] is provided, the config picker is skipped and the
+  /// bundled demo boots immediately. Use `?boot=32` or `?boot=64` in the
+  /// URL on web.
+  const App({this.bootXlen, super.key});
+
+  /// If set, skip the config picker and boot this architecture directly.
+  final Xlen? bootXlen;
 
   @override
   State<App> createState() => _AppState();
@@ -14,7 +21,7 @@ class App extends StatefulWidget {
 
 class _AppState extends State<App> {
   MachineConfig? _config;
-  Xlen? _demoXlen;
+  late Xlen? _demoXlen = widget.bootXlen;
 
   @override
   Widget build(BuildContext context) {
