@@ -1,6 +1,10 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:ui' as ui;
+
 import 'package:dart_emu/dart_emu.dart';
+import 'package:dart_emu_example/src/crt/crt_effect.dart';
+import 'package:dart_emu_example/src/crt/crt_effect_widget.dart';
 import 'package:dart_emu_example/src/emulator/emulator_controller.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -24,12 +28,24 @@ class _ErrorLayout {
   static const padding = 24.0;
 }
 
+class _CrtToggleLayout {
+  static const right = 8.0;
+  static const top = 8.0;
+  static const iconSize = 18.0;
+  static const fontSize = 12.0;
+  static const horizontalPadding = 10.0;
+  static const verticalPadding = 6.0;
+  static const borderRadius = 16.0;
+  static const backgroundOpacity = 0.7;
+}
+
 /// Displays the RISC-V emulator output in an interactive terminal.
 class TerminalScreen extends StatefulWidget {
   /// Creates the terminal screen for the given [config].
   const TerminalScreen({
     required this.config,
     this.useBundledDemoAssets = false,
+    this.initialCrtEffect,
     this.onStopped,
     super.key,
   });
@@ -39,6 +55,9 @@ class TerminalScreen extends StatefulWidget {
 
   /// If true, boot built-in bundled demo assets for this config's architecture.
   final bool useBundledDemoAssets;
+
+  /// If set, start with this CRT effect mode instead of off.
+  final CrtEffect? initialCrtEffect;
 
   /// Called when the guest OS shuts down or reboots.
   final VoidCallback? onStopped;
@@ -56,12 +75,32 @@ class _TerminalScreenState extends State<TerminalScreen>
   StreamSubscription<EmulatorStatus>? _statusSub;
   EmulatorStatus _status = EmulatorStatus.idle;
 
+  ui.FragmentShader? _crtShader;
+  late CrtEffect _crtEffect = widget.initialCrtEffect ?? CrtEffect.none;
+
   late final double _charWidthAtReference = _measureCharWidth();
 
   @override
   void initState() {
     super.initState();
     _launchEmulator();
+    _loadShader();
+  }
+
+  Future<void> _loadShader() async {
+    try {
+      final program = await ui.FragmentProgram.fromAsset('shaders/crt.frag');
+      if (!mounted) return;
+      setState(() => _crtShader = program.fragmentShader());
+    } catch (e) {
+      debugPrint('Failed to load CRT shader: $e');
+    }
+  }
+
+  void _toggleCrtEffect() {
+    setState(() {
+      _crtEffect = _crtEffect.next();
+    });
   }
 
   void _launchEmulator() {
@@ -149,18 +188,67 @@ class _TerminalScreenState extends State<TerminalScreen>
                 ),
               ),
             ),
-            EmulatorStatus.running || EmulatorStatus.stopped => TerminalView(
-              _terminal,
-              autofocus: true,
-              hardwareKeyboardOnly: _isDesktopPlatform,
-              textStyle: TerminalStyle(
-                fontSize: fontSize,
-                fontFamily: _TerminalLayout.fontFamily,
-                fontFamilyFallback: _TerminalLayout.fontFamilyFallback,
-              ),
+            EmulatorStatus.running || EmulatorStatus.stopped => Stack(
+              children: [
+                CrtEffectWidget(
+                  shader: _crtShader,
+                  effect: _crtEffect,
+                  child: TerminalView(
+                    _terminal,
+                    autofocus: true,
+                    hardwareKeyboardOnly: _isDesktopPlatform,
+                    textStyle: TerminalStyle(
+                      fontSize: fontSize,
+                      fontFamily: _TerminalLayout.fontFamily,
+                      fontFamilyFallback: _TerminalLayout.fontFamilyFallback,
+                    ),
+                  ),
+                ),
+                if (_crtShader != null) _buildCrtToggle(),
+              ],
             ),
           };
         },
+      ),
+    );
+  }
+
+  Widget _buildCrtToggle() {
+    return Positioned(
+      right: _CrtToggleLayout.right,
+      top: _CrtToggleLayout.top,
+      child: GestureDetector(
+        onTap: _toggleCrtEffect,
+        child: Container(
+          padding: const EdgeInsets.symmetric(
+            horizontal: _CrtToggleLayout.horizontalPadding,
+            vertical: _CrtToggleLayout.verticalPadding,
+          ),
+          decoration: BoxDecoration(
+            color: Colors.black.withValues(alpha: _CrtToggleLayout.backgroundOpacity),
+            borderRadius: BorderRadius.circular(
+              _CrtToggleLayout.borderRadius,
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(
+                Icons.tv,
+                color: Colors.white70,
+                size: _CrtToggleLayout.iconSize,
+              ),
+              const SizedBox(width: 4),
+              Text(
+                'CRT: ${_crtEffect.label}',
+                style: const TextStyle(
+                  color: Colors.white70,
+                  fontSize: _CrtToggleLayout.fontSize,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

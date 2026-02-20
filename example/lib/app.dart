@@ -1,5 +1,6 @@
 import 'package:dart_emu/dart_emu.dart';
 import 'package:dart_emu_example/src/config/config_picker_screen.dart';
+import 'package:dart_emu_example/src/crt/crt_effect.dart';
 import 'package:dart_emu_example/src/terminal/terminal_screen.dart';
 import 'package:flutter/material.dart';
 
@@ -9,11 +10,14 @@ class App extends StatefulWidget {
   ///
   /// When [bootXlen] is provided, the config picker is skipped and the
   /// bundled demo boots immediately. Use `?boot=32` or `?boot=64` in the
-  /// URL on web.
-  const App({this.bootXlen, super.key});
+  /// URL on web. Use `?crt=full|flat|glass|off` to set the CRT effect.
+  const App({this.bootXlen, this.initialCrtEffect, super.key});
 
   /// If set, skip the config picker and boot this architecture directly.
   final Xlen? bootXlen;
+
+  /// If set, start the terminal with this CRT effect mode.
+  final CrtEffect? initialCrtEffect;
 
   @override
   State<App> createState() => _AppState();
@@ -42,12 +46,17 @@ class _AppState extends State<App> {
 
   Widget _buildHome() {
     if (_config != null) {
-      return TerminalScreen(config: _config!, onStopped: _reset);
+      return TerminalScreen(
+        config: _config!,
+        initialCrtEffect: widget.initialCrtEffect,
+        onStopped: _reset,
+      );
     }
     if (_demoXlen != null) {
       return TerminalScreen(
         config: MachineConfig(xlen: _demoXlen!),
         useBundledDemoAssets: true,
+        initialCrtEffect: widget.initialCrtEffect,
         onStopped: _reset,
       );
     }
