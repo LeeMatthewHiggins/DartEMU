@@ -47,6 +47,7 @@ cat > "${BUSYBOX_FRAGMENT}" << 'FRAG_EOF'
 # CONFIG_UBIRMVOL is not set
 # CONFIG_UBIRSVOL is not set
 # CONFIG_UBIUPDATEVOL is not set
+CONFIG_STATIC=y
 FRAG_EOF
 
 cat > .config << DEFCONFIG_EOF
@@ -355,11 +356,27 @@ export HOME=/root
 export TERM=vt100
 PROFILE_EOF
 
-echo "==> Unmounting image..."
+if [ "${IMAGE_VARIANT}" = "dev" ]; then
+  MINIMAL_IMG="${OUTPUT_DIR}/alpine-riscv32-rootfs.bin"
+  MINIMAL_MNT="/tmp/minimal-mount"
+  if [ -f "${MINIMAL_IMG}" ]; then
+    echo "==> Replacing busybox with stripped minimal build..."
+    mkdir -p "${MINIMAL_MNT}"
+    mount -o loop,ro "${MINIMAL_IMG}" "${MINIMAL_MNT}"
+    cp "${MINIMAL_MNT}/bin/busybox" "${MOUNT_DIR}/bin/busybox"
+    chmod 4755 "${MOUNT_DIR}/bin/busybox"
+    umount "${MINIMAL_MNT}"
+    echo "    busybox: $(stat -c %s "${MOUNT_DIR}/bin/busybox") bytes (from minimal image)"
+  fi
+fi
+
+echo "==> Syncing and unmounting image..."
+sync
 umount "${MOUNT_DIR}"
+sync
 
 echo "==> Checking filesystem..."
-e2fsck -y -f "${OUTPUT_FILE}" || true
+e2fsck -p -f "${OUTPUT_FILE}" || true
 
 IMAGE_BYTES=$(stat -c %s "${OUTPUT_FILE}" 2>/dev/null || stat -f %z "${OUTPUT_FILE}")
 IMAGE_MB=$((IMAGE_BYTES / 1048576))
