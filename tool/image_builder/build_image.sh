@@ -115,7 +115,7 @@ chmod +x "${MOUNT_DIR}/init"
 echo "==> Writing /etc/inittab..."
 cat > "${MOUNT_DIR}/etc/inittab" << 'INITTAB_EOF'
 ::sysinit:/bin/hostname dartemu
-::sysinit:/bin/sh -c 'ifconfig eth0 up 2>/dev/null && udhcpc -i eth0 -q -s /usr/share/udhcpc/default.script 2>/dev/null &'
+::sysinit:/bin/sh -c 'ifconfig eth0 10.0.2.15 netmask 255.255.255.0 up 2>/dev/null && route add default gw 10.0.2.2 2>/dev/null'
 hvc0::respawn:/sbin/getty -L 115200 hvc0 vt100
 ::shutdown:/bin/umount -a -r
 INITTAB_EOF

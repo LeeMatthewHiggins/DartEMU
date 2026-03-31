@@ -1,14 +1,26 @@
 {
   "hosting": {
     "public": "build/web",
-    "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      "**/node_modules/**"
+    ],
     "rewrites": [
-      { "source": "**", "destination": "/index.html" }
+      {
+        "source": "**",
+        "destination": "/index.html"
+      }
     ],
     "headers": [
       {
         "source": "**/*.wasm",
-        "headers": [{ "key": "Content-Type", "value": "application/wasm" }]
+        "headers": [
+          {
+            "key": "Content-Type",
+            "value": "application/wasm"
+          }
+        ]
       },
       {
         "source": "assets/**",
