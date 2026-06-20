@@ -12,7 +12,7 @@ The whole thing is written in Dart. No C, no native code, no foreign function ca
 
 If you're going to simulate a processor, you need a blueprint. Most processor designs are proprietary — x86 (the architecture behind Intel and AMD chips) is buried under decades of licensing and complexity. Arm, which powers most phones, requires fees to use. Their documentation is extensive but gatekept.
 
-RISC-V is the open-source alternative. The entire specification is freely published, clearly written, and designed to be simple. The base instruction set has around 40 instructions — compare that to the thousands in x86. Features are added through optional extensions: one for multiplication, one for atomic operations, one for floating-point maths, and so on. Each extension is a self-contained chapter in the spec.
+RISC-V is the open source alternative. The entire specification is freely published, clearly written, and designed to be simple. The base instruction set has around 40 instructions — compare that to the thousands in x86. Features are added through optional extensions: one for multiplication, one for atomic operations, one for floating-point maths, and so on. Each extension is a self-contained chapter in the spec.
 
 This modularity is what makes RISC-V ideal for a project like this. You can start with the bare minimum — read an instruction, decode it, execute it — and gradually add capabilities until Linux boots. The spec tells you exactly what each instruction should do and what should happen when something goes wrong. There are no hidden behaviours to reverse-engineer. It's an architecture designed to be implemented, not just used.
 
