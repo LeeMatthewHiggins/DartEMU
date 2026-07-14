@@ -119,6 +119,22 @@ flutter build web --release
 To skip the config picker and boot the demo directly, add `?boot=32` to the
 URL.
 
+## Benchmarking
+
+A guest-workload benchmark measures emulation throughput (wall time,
+retired instructions, and MIPS) for boot and a set of CPU-bound guest
+workloads. It boots from an in-memory copy of the rootfs, so the asset
+images are never modified.
+
+```sh
+dart tool/bench/bench.dart                    # RV32, 3 runs
+dart tool/bench/bench.dart --xlen rv64        # RV64
+dart tool/bench/bench.dart --runs 5 --json    # machine-readable output
+```
+
+Compare before/after when making performance changes; the `best` column
+is the least noisy.
+
 ## Building Root Filesystems
 
 Docker-based image builders are included for creating rootfs images.
