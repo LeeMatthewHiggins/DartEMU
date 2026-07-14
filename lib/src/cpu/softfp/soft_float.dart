@@ -8,8 +8,7 @@ enum RoundingMode {
   const RoundingMode(this.value);
   final int value;
 
-  static RoundingMode fromValue(int v) =>
-      RoundingMode.values.firstWhere((e) => e.value == v);
+  static RoundingMode fromValue(int v) => RoundingMode.values[v];
 }
 
 class FpFlags {

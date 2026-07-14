@@ -15,8 +15,7 @@ enum PrivilegeLevel {
   const PrivilegeLevel(this.value);
   final int value;
 
-  static PrivilegeLevel fromValue(int v) =>
-      PrivilegeLevel.values.firstWhere((e) => e.value == v);
+  static PrivilegeLevel fromValue(int v) => PrivilegeLevel.values[v];
 }
 
 abstract class RiscVCpuState {
@@ -90,14 +89,17 @@ abstract class RiscVCpuState {
   final List<TlbEntry> tlbRead = List.generate(
     TlbConstants.size,
     (_) => TlbEntry(),
+    growable: false,
   );
   final List<TlbEntry> tlbWrite = List.generate(
     TlbConstants.size,
     (_) => TlbEntry(),
+    growable: false,
   );
   final List<TlbEntry> tlbCode = List.generate(
     TlbConstants.size,
     (_) => TlbEntry(),
+    growable: false,
   );
 
   void flushTlb() {

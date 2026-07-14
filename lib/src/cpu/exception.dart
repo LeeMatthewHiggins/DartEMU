@@ -36,9 +36,8 @@ class ExceptionHandler {
     state.mstatus &= ~(_Mstatus.privMask <<
         _Mstatus.mppShift);
 
-    state.privilege = PrivilegeLevel.fromValue(mpp);
+    _setPrivilege(PrivilegeLevel.fromValue(mpp));
     state.pc = state.mepc;
-    state.flushTlb();
   }
 
   void handleSret() {
@@ -52,9 +51,8 @@ class ExceptionHandler {
     state.mstatus |= 1 << _Mstatus.spieShift;
     state.mstatus &= ~(1 << _Mstatus.sppShift);
 
-    state.privilege = PrivilegeLevel.fromValue(spp);
+    _setPrivilege(PrivilegeLevel.fromValue(spp));
     state.pc = state.sepc;
-    state.flushTlb();
   }
 
   bool hasPendingInterrupt() {
@@ -106,9 +104,8 @@ class ExceptionHandler {
         (prevIe << _Mstatus.mpieShift);
     state.mstatus &= ~(1 << _Mstatus.mieShift);
 
-    state.privilege = PrivilegeLevel.machine;
+    _setPrivilege(PrivilegeLevel.machine);
     state.pc = state.mtvec;
-    state.flushTlb();
   }
 
   void _trapToSupervisor(int cause, int tval) {
@@ -127,9 +124,19 @@ class ExceptionHandler {
         (prevIe << _Mstatus.spieShift);
     state.mstatus &= ~(1 << _Mstatus.sieShift);
 
-    state.privilege = PrivilegeLevel.supervisor;
+    _setPrivilege(PrivilegeLevel.supervisor);
     state.pc = state.stvec;
-    state.flushTlb();
+  }
+
+  /// Changes privilege level, flushing the TLB only when translation
+  /// context can differ: the level actually changed, or MPRV is active
+  /// (M-mode data accesses translate using MPP, which traps modify).
+  void _setPrivilege(PrivilegeLevel newPriv) {
+    if (newPriv != state.privilege ||
+        (state.mstatus & _Mstatus.mprvMask) != 0) {
+      state.flushTlb();
+    }
+    state.privilege = newPriv;
   }
 }
 
@@ -141,4 +148,5 @@ class _Mstatus {
   static const sppShift = 8;
   static const mppShift = 11;
   static const privMask = 3;
+  static const mprvMask = 1 << 17;
 }

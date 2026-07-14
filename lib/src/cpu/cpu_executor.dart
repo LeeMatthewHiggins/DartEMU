@@ -107,6 +107,8 @@ class CpuExecutor {
         _handlePendingException(counterTarget);
         return;
       }
+
+      if (state.powerDown) break;
     }
 
     _syncCounter(counterTarget);
@@ -172,13 +174,11 @@ class CpuExecutor {
   }
 
   int _readInsn32(ByteData data, int offset) {
-    final low = data.getUint16(offset, Endian.little);
-    if ((low & _compressedMask) != _compressedMask) {
-      return low;
+    final word = data.getUint32(offset, Endian.little);
+    if ((word & _compressedMask) != _compressedMask) {
+      return word & _halfWordMask;
     }
-    final high =
-        data.getUint16(offset + 2, Endian.little);
-    return low | (high << _halfWordBits);
+    return word;
   }
 
   int _fetchSlow(int addr) {
@@ -1314,8 +1314,6 @@ class CpuExecutor {
         }
         if ((state.mip & state.mie) == 0) {
           state.powerDown = true;
-          state.pc += instrSize;
-          return true;
         }
         state.pc += instrSize;
         return true;
@@ -1334,7 +1332,12 @@ class CpuExecutor {
           if (rs1 == 0) {
             state.flushTlb();
           } else {
-            state.flushTlb();
+            final vaddr = state.regs[rs1];
+            mmu.flushTlbPage(vaddr);
+            if ((vaddr & ~TlbConstants.pageMask) ==
+                _codePageTag) {
+              _invalidateCodeCache();
+            }
           }
           state.pc += instrSize;
           return true;
