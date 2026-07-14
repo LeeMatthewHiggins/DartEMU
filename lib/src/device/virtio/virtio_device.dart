@@ -2,10 +2,8 @@ import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:dart_emu/src/device/irq_signal.dart';
-import 'package:dart_emu/src/device/pci/pci_device.dart';
 import 'package:dart_emu/src/device/virtio/virtio_queue.dart';
 import 'package:dart_emu/src/machine/phys_memory_map.dart';
-import 'package:dart_emu/src/machine/phys_memory_range.dart';
 
 class _MmioOffset {
   static const magicValue = 0x000;
@@ -58,8 +56,6 @@ abstract class VirtioDevice {
         configSpace = Uint8List(VirtioQueueConstants.maxConfigSpaceSize);
 
   final PhysMemoryMap memMap;
-  DeviceRange? memRange;
-  PciDevice? pciDevice;
   IrqSignal? irq;
 
   int intStatus = 0;

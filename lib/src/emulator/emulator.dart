@@ -14,7 +14,7 @@ import 'package:dart_emu/src/machine/riscv_machine.dart';
 /// Two execution modes are supported:
 /// - **Loop mode** via [start]: runs an internal async loop, suitable for CLI.
 /// - **Frame mode** via [init] + [stepFor]: caller drives execution per frame,
-///   suitable for Flutter with a [Ticker].
+///   suitable for Flutter with a `Ticker`.
 class Emulator {
   /// Creates an emulator with the given [config].
   ///
@@ -51,7 +51,7 @@ class Emulator {
   /// Initialises the virtual machine without starting execution.
   ///
   /// After this returns with [currentStatus] == [EmulatorStatus.running],
-  /// call [stepFor] repeatedly (e.g. from a [Ticker]) to drive execution.
+  /// call [stepFor] repeatedly (e.g. from a `Ticker`) to drive execution.
   Future<void> init() async {
     if (_currentStatus != EmulatorStatus.idle) {
       throw StateError(
