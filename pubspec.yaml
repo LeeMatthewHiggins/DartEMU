@@ -19,7 +19,7 @@ dependencies:
 
 dev_dependencies:
   test: ^1.25.0
-  very_good_analysis: ^7.0.0
+  very_good_analysis: ">=7.0.0 <11.0.0"
 
 executables:
   dart_emu:
