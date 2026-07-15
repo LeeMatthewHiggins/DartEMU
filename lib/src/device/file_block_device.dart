@@ -5,10 +5,8 @@ import 'package:dart_emu/src/device/block_device.dart';
 
 /// A [BlockDevice] backed by a file on disk.
 class FileBlockDevice implements BlockDevice {
-  FileBlockDevice({
-    required RandomAccessFile file,
-    required this.sectorCount,
-  }) : _file = file;
+  FileBlockDevice({required RandomAccessFile file, required this.sectorCount})
+    : _file = file;
 
   factory FileBlockDevice.open(String path, {bool readOnly = false}) {
     final file = File(path);

@@ -24,10 +24,7 @@ class _Status {
 }
 
 class VirtioBlockDevice extends VirtioDevice {
-  VirtioBlockDevice({
-    required super.memMap,
-    required this.blockDevice,
-  }) {
+  VirtioBlockDevice({required super.memMap, required this.blockDevice}) {
     _writeCapacity();
   }
 
@@ -43,33 +40,16 @@ class VirtioBlockDevice extends VirtioDevice {
   int get deviceFeatures => 0;
 
   @override
-  int onDeviceReceive(
-    int queueIdx,
-    int descIdx,
-    int readSize,
-    int writeSize,
-  ) {
+  int onDeviceReceive(int queueIdx, int descIdx, int readSize, int writeSize) {
     if (queueIdx != _VirtioBlk.requestQueueIdx) return 0;
 
     final header = Uint8List(_VirtioBlk.headerSize);
-    memcpyFromQueue(
-      header,
-      queueIdx,
-      descIdx,
-      0,
-      _VirtioBlk.headerSize,
-    );
+    memcpyFromQueue(header, queueIdx, descIdx, 0, _VirtioBlk.headerSize);
 
     final view = ByteData.sublistView(header);
     final type = view.getUint32(0, Endian.little);
-    final sectorLo = view.getUint32(
-      _HeaderOffset.sectorLow,
-      Endian.little,
-    );
-    final sectorHi = view.getUint32(
-      _HeaderOffset.sectorHigh,
-      Endian.little,
-    );
+    final sectorLo = view.getUint32(_HeaderOffset.sectorLow, Endian.little);
+    final sectorHi = view.getUint32(_HeaderOffset.sectorHigh, Endian.little);
     final sectorNum = sectorLo | (sectorHi << _wordBits);
 
     final status = _handleRequest(
@@ -144,13 +124,7 @@ class VirtioBlockDevice extends VirtioDevice {
       return _Status.ioErr;
     }
 
-    memcpyToQueue(
-      queueIdx,
-      descIdx,
-      0,
-      buffer,
-      dataSize,
-    );
+    memcpyToQueue(queueIdx, descIdx, 0, buffer, dataSize);
     return _Status.ok;
   }
 
@@ -166,13 +140,7 @@ class VirtioBlockDevice extends VirtioDevice {
     final sectorCount = dataSize ~/ BlockDevice.sectorSize;
     final buffer = Uint8List(dataSize);
 
-    memcpyFromQueue(
-      buffer,
-      queueIdx,
-      descIdx,
-      _VirtioBlk.headerSize,
-      dataSize,
-    );
+    memcpyFromQueue(buffer, queueIdx, descIdx, _VirtioBlk.headerSize, dataSize);
 
     try {
       blockDevice.writeSectors(sectorNum, buffer, sectorCount);

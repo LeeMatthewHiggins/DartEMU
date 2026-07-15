@@ -225,10 +225,10 @@ class _TerminalScreenState extends State<TerminalScreen>
             vertical: _CrtToggleLayout.verticalPadding,
           ),
           decoration: BoxDecoration(
-            color: Colors.black.withValues(alpha: _CrtToggleLayout.backgroundOpacity),
-            borderRadius: BorderRadius.circular(
-              _CrtToggleLayout.borderRadius,
+            color: Colors.black.withValues(
+              alpha: _CrtToggleLayout.backgroundOpacity,
             ),
+            borderRadius: BorderRadius.circular(_CrtToggleLayout.borderRadius),
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,

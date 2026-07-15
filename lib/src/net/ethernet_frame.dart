@@ -17,11 +17,7 @@ class EthernetFrame {
     final view = ByteData.sublistView(data);
     return EthernetFrame(
       destinationMac: Uint8List.sublistView(data, 0, _macLength),
-      sourceMac: Uint8List.sublistView(
-        data,
-        _macLength,
-        _macLength * 2,
-      ),
+      sourceMac: Uint8List.sublistView(data, _macLength, _macLength * 2),
       etherType: view.getUint16(_etherTypeOffset),
       payload: Uint8List.sublistView(data, headerSize),
     );

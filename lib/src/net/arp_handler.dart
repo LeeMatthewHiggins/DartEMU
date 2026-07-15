@@ -8,10 +8,7 @@ import 'package:dart_emu/src/net/net_const.dart';
 /// Responds to any ARP request for an IP on the 10.0.2.x subnet
 /// with the gateway MAC address.
 class ArpHandler {
-  const ArpHandler({
-    required this.gatewayMac,
-    required this.gatewayIp,
-  });
+  const ArpHandler({required this.gatewayMac, required this.gatewayIp});
 
   final Uint8List gatewayMac;
   final Uint8List gatewayIp;

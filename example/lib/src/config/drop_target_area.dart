@@ -43,9 +43,7 @@ class _DropTargetAreaState extends State<DropTargetArea> {
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(_Style.borderRadius),
           border: Border.all(
-            color: _hovering
-                ? Colors.blueAccent
-                : Colors.grey.shade700,
+            color: _hovering ? Colors.blueAccent : Colors.grey.shade700,
             width: _Style.borderWidth,
           ),
           color: _hovering

@@ -35,10 +35,7 @@ class IcmpPacket {
     result[_codeOffset] = code;
     result.setRange(_payloadOffset, totalLength, payload);
     final checksum = _computeChecksum(result);
-    ByteData.sublistView(result).setUint16(
-      _checksumOffset,
-      checksum,
-    );
+    ByteData.sublistView(result).setUint16(_checksumOffset, checksum);
     return result;
   }
 

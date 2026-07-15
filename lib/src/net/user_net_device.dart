@@ -20,8 +20,8 @@ import 'package:dart_emu/src/net/udp_packet.dart';
 /// stack via [NetBackend].
 class UserNetDevice extends EthernetDevice {
   UserNetDevice({NetBackend? backend, Uint8List? macAddress})
-      : _backend = backend ?? createDefaultNetBackend(),
-        _macAddress = macAddress ?? UserNetMac.defaultClient;
+    : _backend = backend ?? createDefaultNetBackend(),
+      _macAddress = macAddress ?? UserNetMac.defaultClient;
 
   final NetBackend _backend;
   final Uint8List _macAddress;
@@ -154,10 +154,7 @@ class UserNetDevice extends EthernetDevice {
     }
 
     if (udp.destinationPort == DnsConst.port) {
-      final reply = _dnsResolver.handleQuery(
-        udp.payload,
-        _backend.resolveDns,
-      );
+      final reply = _dnsResolver.handleQuery(udp.payload, _backend.resolveDns);
       if (reply != null) {
         _enqueueDnsReply(frame, ip, udp.sourcePort, reply);
       } else {
@@ -307,10 +304,7 @@ class UserNetDevice extends EthernetDevice {
     _enqueueIpReply(original, originalIp, IpProtocol.tcp, tcpBytes);
   }
 
-  void _enqueueTcpReplyFromSession(
-    TcpSession session,
-    TcpPacket tcpReply,
-  ) {
+  void _enqueueTcpReplyFromSession(TcpSession session, TcpPacket tcpReply) {
     final tcpBytes = tcpReply.encode(
       sourceIp: session.remoteIp,
       destIp: UserNetAddr.dhcpClient,
@@ -369,11 +363,7 @@ class UserNetDevice extends EthernetDevice {
 }
 
 class _PendingDnsQuery {
-  _PendingDnsQuery({
-    required this.frame,
-    required this.ip,
-    required this.udp,
-  });
+  _PendingDnsQuery({required this.frame, required this.ip, required this.udp});
 
   final EthernetFrame frame;
   final Ipv4Packet ip;

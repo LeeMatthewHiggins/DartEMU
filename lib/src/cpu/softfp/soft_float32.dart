@@ -55,8 +55,7 @@ class SoftFloat32 {
     if (_isSNaN(a) || _isSNaN(b)) flags.add(FpFlags.invalidOp);
     if (_isNaN(a) || _isNaN(b)) return _Float32Bits.canonicalNaN;
 
-    if ((_isInf(a) && _toDouble(b) == 0) ||
-        (_isInf(b) && _toDouble(a) == 0)) {
+    if ((_isInf(a) && _toDouble(b) == 0) || (_isInf(b) && _toDouble(a) == 0)) {
       flags.add(FpFlags.invalidOp);
       return _Float32Bits.canonicalNaN;
     }
@@ -110,8 +109,7 @@ class SoftFloat32 {
     }
     if (_isNaN(a) || _isNaN(b) || _isNaN(c)) return _Float32Bits.canonicalNaN;
 
-    if ((_isInf(a) && _toDouble(b) == 0) ||
-        (_isInf(b) && _toDouble(a) == 0)) {
+    if ((_isInf(a) && _toDouble(b) == 0) || (_isInf(b) && _toDouble(a) == 0)) {
       flags.add(FpFlags.invalidOp);
       return _Float32Bits.canonicalNaN;
     }

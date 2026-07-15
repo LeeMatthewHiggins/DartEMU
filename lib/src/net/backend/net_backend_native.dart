@@ -14,17 +14,14 @@ class NativeNetBackend implements NetBackend {
   int _nextId = 0;
 
   @override
-  TcpConnectionHandle? openTcpConnection(
-    Uint8List destIp,
-    int destPort,
-  ) {
+  TcpConnectionHandle? openTcpConnection(Uint8List destIp, int destPort) {
     final ipStr = destIp.join('.');
     final connection = NativeTcpConnection._(id: _nextId++);
     _tcpConnections[connection._id] = connection;
-    Socket.connect(ipStr, destPort).then(
-      connection._onConnected,
-      onError: connection._onError,
-    );
+    Socket.connect(
+      ipStr,
+      destPort,
+    ).then(connection._onConnected, onError: connection._onError);
     return connection;
   }
 
@@ -36,30 +33,21 @@ class NativeNetBackend implements NetBackend {
     DataCallback onResponse,
   ) {
     final ipStr = destIp.join('.');
-    RawDatagramSocket.bind(InternetAddress.anyIPv4, 0).then(
-      (socket) {
-        socket
-          ..send(data, InternetAddress(ipStr), destPort)
-          ..listen(
-            (event) {
-              if (event == RawSocketEvent.read) {
-                final datagram = socket.receive();
-                if (datagram != null) {
-                  onResponse(datagram.data);
-                  socket.close();
-                }
-              }
-            },
-            onDone: socket.close,
-          );
-        // Auto-close after timeout.
-        Future<void>.delayed(
-          const Duration(seconds: 5),
-          socket.close,
-        );
-      },
-      onError: (_) {},
-    );
+    RawDatagramSocket.bind(InternetAddress.anyIPv4, 0).then((socket) {
+      socket
+        ..send(data, InternetAddress(ipStr), destPort)
+        ..listen((event) {
+          if (event == RawSocketEvent.read) {
+            final datagram = socket.receive();
+            if (datagram != null) {
+              onResponse(datagram.data);
+              socket.close();
+            }
+          }
+        }, onDone: socket.close);
+      // Auto-close after timeout.
+      Future<void>.delayed(const Duration(seconds: 5), socket.close);
+    }, onError: (_) {});
   }
 
   @override

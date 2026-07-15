@@ -121,9 +121,7 @@ class Emulator {
       final machine = _machine!;
       while (!machine.cpu.state.shutDown) {
         machine.step(_cyclesPerStep);
-        final delay = machine.cpu.state.powerDown
-            ? _idleDelay
-            : _activeDelay;
+        final delay = machine.cpu.state.powerDown ? _idleDelay : _activeDelay;
         await Future<void>.delayed(delay);
       }
     } on Object catch (error) {

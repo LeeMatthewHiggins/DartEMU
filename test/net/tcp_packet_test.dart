@@ -76,9 +76,7 @@ void main() {
     });
 
     test('encode/decode roundtrip preserves data', () {
-      final payload = Uint8List.fromList(
-        List.generate(30, (i) => i & 0xFF),
-      );
+      final payload = Uint8List.fromList(List.generate(30, (i) => i & 0xFF));
       final original = TcpPacket(
         sourcePort: 8080,
         destinationPort: 443,

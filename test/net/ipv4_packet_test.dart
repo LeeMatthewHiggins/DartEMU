@@ -69,9 +69,7 @@ void main() {
     });
 
     test('encode/decode roundtrip preserves data', () {
-      final payload = Uint8List.fromList(
-        List.generate(50, (i) => i & 0xFF),
-      );
+      final payload = Uint8List.fromList(List.generate(50, (i) => i & 0xFF));
       final original = Ipv4Packet(
         sourceIp: srcIp,
         destinationIp: dstIp,
@@ -99,11 +97,7 @@ void main() {
         payload: Uint8List(10),
       ).encode();
 
-      final truncated = Uint8List.sublistView(
-        encoded,
-        0,
-        encoded.length - 5,
-      );
+      final truncated = Uint8List.sublistView(encoded, 0, encoded.length - 5);
       expect(Ipv4Packet.parse(truncated), isNull);
     });
   });

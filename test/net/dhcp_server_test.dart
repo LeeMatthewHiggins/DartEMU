@@ -63,9 +63,7 @@ void main() {
     });
 
     test('REQUEST produces ACK', () {
-      final reply = server.handlePacket(
-        buildRequest(DhcpConst.messageRequest),
-      );
+      final reply = server.handlePacket(buildRequest(DhcpConst.messageRequest));
       expect(reply, isNotNull);
 
       final data = reply!.payload;
@@ -90,10 +88,7 @@ void main() {
       final dns = _findOption(data, DhcpConst.optionDns);
       expect(dns, UserNetAddr.dnsServer);
 
-      final serverIdBytes = _findOption(
-        data,
-        DhcpConst.optionServerIdentifier,
-      );
+      final serverIdBytes = _findOption(data, DhcpConst.optionServerIdentifier);
       expect(serverIdBytes, UserNetAddr.gateway);
     });
 
@@ -101,11 +96,7 @@ void main() {
       final reply = server.handlePacket(
         buildRequest(DhcpConst.messageDiscover),
       )!;
-      final chaddr = Uint8List.sublistView(
-        reply.payload,
-        28,
-        34,
-      );
+      final chaddr = Uint8List.sublistView(reply.payload, 28, 34);
       expect(chaddr, clientMac);
     });
 

@@ -18,15 +18,9 @@ class _ConsoleConst {
 }
 
 class VirtioConsoleDevice extends VirtioDevice {
-  VirtioConsoleDevice({
-    required super.memMap,
-    required this.characterDevice,
-  }) {
+  VirtioConsoleDevice({required super.memMap, required this.characterDevice}) {
     queues[_ConsoleConst.receiveQueueIdx].manualRecv = true;
-    _writeConsoleSize(
-      _ConsoleConst.defaultColumns,
-      _ConsoleConst.defaultRows,
-    );
+    _writeConsoleSize(_ConsoleConst.defaultColumns, _ConsoleConst.defaultRows);
   }
 
   final CharacterDevice characterDevice;
@@ -41,12 +35,7 @@ class VirtioConsoleDevice extends VirtioDevice {
   int get deviceFeatures => _ConsoleConst.featureSizeBit;
 
   @override
-  int onDeviceReceive(
-    int queueIdx,
-    int descIdx,
-    int readSize,
-    int writeSize,
-  ) {
+  int onDeviceReceive(int queueIdx, int descIdx, int readSize, int writeSize) {
     if (queueIdx == _ConsoleConst.transmitQueueIdx) {
       _handleTransmit(descIdx, readSize);
     }
@@ -74,8 +63,7 @@ class VirtioConsoleDevice extends VirtioDevice {
     final descIdx = memMap.physReadU16(
       qs.availAddr +
           _ConsoleConst.availRingEntriesOffset +
-          (qs.lastAvailIdx & (qs.num - 1)) *
-              _ConsoleConst.availRingEntryBytes,
+          (qs.lastAvailIdx & (qs.num - 1)) * _ConsoleConst.availRingEntryBytes,
     );
 
     final sizes = getDescriptorRwSize(queueIdx, descIdx);
@@ -95,8 +83,7 @@ class VirtioConsoleDevice extends VirtioDevice {
     final descIdx = memMap.physReadU16(
       qs.availAddr +
           _ConsoleConst.availRingEntriesOffset +
-          (qs.lastAvailIdx & (qs.num - 1)) *
-              _ConsoleConst.availRingEntryBytes,
+          (qs.lastAvailIdx & (qs.num - 1)) * _ConsoleConst.availRingEntryBytes,
     );
 
     memcpyToQueue(queueIdx, descIdx, 0, data, data.length);
@@ -112,24 +99,13 @@ class VirtioConsoleDevice extends VirtioDevice {
 
   void _handleTransmit(int descIdx, int readSize) {
     final buf = Uint8List(readSize);
-    memcpyFromQueue(
-      buf,
-      _ConsoleConst.transmitQueueIdx,
-      descIdx,
-      0,
-      readSize,
-    );
+    memcpyFromQueue(buf, _ConsoleConst.transmitQueueIdx, descIdx, 0, readSize);
     characterDevice.writeData(buf);
-    consumeDescriptor(
-      _ConsoleConst.transmitQueueIdx,
-      descIdx,
-      0,
-    );
+    consumeDescriptor(_ConsoleConst.transmitQueueIdx, descIdx, 0);
   }
 
   void _writeConsoleSize(int columns, int rows) {
-    configSpace.buffer
-        .asByteData(configSpace.offsetInBytes)
+    configSpace.buffer.asByteData(configSpace.offsetInBytes)
       ..setUint16(0, columns, Endian.little)
       ..setUint16(2, rows, Endian.little);
   }
@@ -139,8 +115,5 @@ VirtioConsoleDevice createVirtioConsole({
   required PhysMemoryMap memMap,
   required CharacterDevice characterDevice,
 }) {
-  return VirtioConsoleDevice(
-    memMap: memMap,
-    characterDevice: characterDevice,
-  );
+  return VirtioConsoleDevice(memMap: memMap, characterDevice: characterDevice);
 }

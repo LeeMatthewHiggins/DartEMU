@@ -114,16 +114,12 @@ class _ConfigPickerScreenState extends State<ConfigPickerScreen> {
           const SizedBox(height: _PickerLayout.spacing),
           Text(
             'Drop a .yaml or .zip config here',
-            style: Theme.of(context)
-                .textTheme
-                .titleSmall
-                ?.copyWith(color: Colors.white70),
+            style: Theme.of(
+              context,
+            ).textTheme.titleSmall?.copyWith(color: Colors.white70),
           ),
           const SizedBox(height: _PickerLayout.smallSpacing),
-          Text(
-            'or',
-            style: TextStyle(color: Colors.grey.shade600),
-          ),
+          Text('or', style: TextStyle(color: Colors.grey.shade600)),
           const SizedBox(height: _PickerLayout.smallSpacing),
           FilledButton.icon(
             onPressed: _loading ? null : _browseForConfig,
@@ -147,10 +143,9 @@ class _ConfigPickerScreenState extends State<ConfigPickerScreen> {
         const SizedBox(height: _PickerLayout.spacing),
         Text(
           'Load a .zip VM bundle',
-          style: Theme.of(context)
-              .textTheme
-              .titleSmall
-              ?.copyWith(color: Colors.white70),
+          style: Theme.of(
+            context,
+          ).textTheme.titleSmall?.copyWith(color: Colors.white70),
         ),
         const SizedBox(height: _PickerLayout.smallSpacing),
         FilledButton.icon(
@@ -195,24 +190,17 @@ class _ConfigPickerScreenState extends State<ConfigPickerScreen> {
   Widget _buildDemoDivider() {
     return Row(
       children: [
-        const Expanded(
-          child: Divider(indent: _PickerLayout.dividerIndent),
-        ),
+        const Expanded(child: Divider(indent: _PickerLayout.dividerIndent)),
         Padding(
           padding: const EdgeInsets.symmetric(
             horizontal: _PickerLayout.smallSpacing,
           ),
           child: Text(
             'or boot a built-in demo',
-            style: TextStyle(
-              color: Colors.grey.shade600,
-              fontSize: 12,
-            ),
+            style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
           ),
         ),
-        const Expanded(
-          child: Divider(endIndent: _PickerLayout.dividerIndent),
-        ),
+        const Expanded(child: Divider(endIndent: _PickerLayout.dividerIndent)),
       ],
     );
   }
@@ -223,9 +211,7 @@ class _ConfigPickerScreenState extends State<ConfigPickerScreen> {
       children: [
         if (!kIsWeb)
           Padding(
-            padding: const EdgeInsets.only(
-              right: _PickerLayout.spacing,
-            ),
+            padding: const EdgeInsets.only(right: _PickerLayout.spacing),
             child: _DemoCard(
               label: 'RISC-V 64-bit',
               subtitle: 'RV64IMAFDC',
@@ -374,18 +360,16 @@ class _DemoCard extends StatelessWidget {
               children: [
                 Text(
                   label,
-                  style: Theme.of(context)
-                      .textTheme
-                      .titleSmall
-                      ?.copyWith(color: Colors.white),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.titleSmall?.copyWith(color: Colors.white),
                 ),
                 const SizedBox(height: _DemoCardLayout.subtitleSpacing),
                 Text(
                   subtitle,
-                  style: Theme.of(context)
-                      .textTheme
-                      .bodySmall
-                      ?.copyWith(color: Colors.grey),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodySmall?.copyWith(color: Colors.grey),
                 ),
               ],
             ),

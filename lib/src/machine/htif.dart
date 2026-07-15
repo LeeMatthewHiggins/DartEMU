@@ -46,7 +46,8 @@ class Htif {
   }
 
   void receiveChar(int ch) {
-    _fromhostHi = (_Device.console << _HiWordShift.device) |
+    _fromhostHi =
+        (_Device.console << _HiWordShift.device) |
         (_Cmd.getchar << _HiWordShift.cmd);
     _fromhostLo = ch;
   }
@@ -65,8 +66,7 @@ class Htif {
       console?.writeData(Uint8List.fromList([ch]));
       _tohostLo = 0;
       _tohostHi = 0;
-      _fromhostHi = (device << _HiWordShift.device) |
-          (cmd << _HiWordShift.cmd);
+      _fromhostHi = (device << _HiWordShift.device) | (cmd << _HiWordShift.cmd);
       _fromhostLo = 0;
       return;
     }

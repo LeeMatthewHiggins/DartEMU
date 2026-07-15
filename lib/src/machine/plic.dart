@@ -3,10 +3,7 @@ import 'package:dart_emu/src/device/irq_signal.dart';
 import 'package:dart_emu/src/util/bit_utils.dart';
 
 class Plic {
-  Plic({
-    required this.setMip,
-    required this.resetMip,
-  });
+  Plic({required this.setMip, required this.resetMip});
 
   final SetMipCallback setMip;
   final ResetMipCallback resetMip;
@@ -15,10 +12,7 @@ class Plic {
   int _servedIrq = 0;
 
   IrqSignal irqSource(int irqNum) {
-    return IrqSignal(
-      setIrq: _setIrqLevel,
-      irqNum: irqNum,
-    );
+    return IrqSignal(setIrq: _setIrqLevel, irqNum: irqNum);
   }
 
   int read(int offset, int sizeLog2) {

@@ -52,8 +52,8 @@ class _RenderCrtEffect extends RenderProxyBox {
   _RenderCrtEffect({
     ui.FragmentShader? shader,
     CrtEffect effect = CrtEffect.none,
-  })  : _shader = shader,
-        _effect = effect;
+  }) : _shader = shader,
+       _effect = effect;
 
   ui.FragmentShader? _shader;
   CrtEffect _effect;
@@ -99,10 +99,7 @@ class _RenderCrtEffect extends RenderProxyBox {
       ..setFloat(2, _effect.mode.toDouble())
       ..setImageSampler(0, image);
 
-    context.canvas.drawRect(
-      offset & size,
-      Paint()..shader = shader,
-    );
+    context.canvas.drawRect(offset & size, Paint()..shader = shader);
 
     image.dispose();
   }

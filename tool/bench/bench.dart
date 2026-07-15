@@ -99,9 +99,7 @@ class BenchRunner {
       kernelData: _readAsset('kernel-riscv$suffix.bin'),
       cmdLine: _Bench.cmdLine,
       console: _console,
-      blockDevices: [
-        MemoryBlockDevice(_readAsset('root-riscv$suffix.bin')),
-      ],
+      blockDevices: [MemoryBlockDevice(_readAsset('root-riscv$suffix.bin'))],
     );
     _machine = RiscVMachine.fromConfig(config);
 
@@ -124,8 +122,7 @@ class BenchRunner {
     return PhaseResult(
       name: name,
       wallMicros: stopwatch.elapsedMicroseconds,
-      instructions:
-          _machine.cpu.state.instructionCounter - startInstructions,
+      instructions: _machine.cpu.state.instructionCounter - startInstructions,
     );
   }
 
@@ -174,14 +171,8 @@ class _Bench {
   static const timeoutMs = 180000;
 
   static const workloads = [
-    _Workload(
-      'sh_loop',
-      r'i=0; while [ $i -lt 10000 ]; do i=$((i+1)); done',
-    ),
-    _Workload(
-      'dd_64m',
-      'dd if=/dev/zero of=/dev/null bs=65536 count=1024',
-    ),
+    _Workload('sh_loop', r'i=0; while [ $i -lt 10000 ]; do i=$((i+1)); done'),
+    _Workload('dd_64m', 'dd if=/dev/zero of=/dev/null bs=65536 count=1024'),
     _Workload(
       'fork_100',
       r'i=0; while [ $i -lt 100 ]; do /bin/true; i=$((i+1)); done',
@@ -258,16 +249,16 @@ void _printTable(Xlen xlen, List<RunResult> results) {
 }
 
 Map<String, Object> _toJson(Xlen xlen, List<RunResult> results) => {
-      'xlen': xlen.name,
-      'runs': [
-        for (final r in results)
-          {
-            for (final p in r.phases)
-              p.name: {
-                'wall_us': p.wallMicros,
-                'instructions': p.instructions,
-                'mips': double.parse(p.mips.toStringAsFixed(2)),
-              },
+  'xlen': xlen.name,
+  'runs': [
+    for (final r in results)
+      {
+        for (final p in r.phases)
+          p.name: {
+            'wall_us': p.wallMicros,
+            'instructions': p.instructions,
+            'mips': double.parse(p.mips.toStringAsFixed(2)),
           },
-      ],
-    };
+      },
+  ],
+};

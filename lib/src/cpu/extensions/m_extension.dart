@@ -55,16 +55,14 @@ class _MExtension64 extends MExtension {
       (BigInt.from(a) * BigInt.from(b) >> _Bits.dword).toInt();
 
   static int _mulhsu64(int a, int b) =>
-      (BigInt.from(a) *
-              BigInt.from(b).toUnsigned(_Bits.dword) >>
-          _Bits.dword)
-      .toInt();
+      (BigInt.from(a) * BigInt.from(b).toUnsigned(_Bits.dword) >> _Bits.dword)
+          .toInt();
 
   static int _mulhu64(int a, int b) =>
       (BigInt.from(a).toUnsigned(_Bits.dword) *
-              BigInt.from(b).toUnsigned(_Bits.dword) >>
-          _Bits.dword)
-      .toInt();
+                  BigInt.from(b).toUnsigned(_Bits.dword) >>
+              _Bits.dword)
+          .toInt();
 
   static int _div64(int a, int b) {
     if (b == 0) return -1;
@@ -142,18 +140,17 @@ class _MExtension32 extends MExtension {
     required int rs1Val,
     required int rs2Val,
     required bool isWord,
-  }) =>
-      switch (funct3) {
-        _Funct3.mul => _mul(rs1Val, rs2Val),
-        _Funct3.mulh => _mulh(rs1Val, rs2Val),
-        _Funct3.mulhsu => _mulhsu(rs1Val, rs2Val),
-        _Funct3.mulhu => _mulhu(rs1Val, rs2Val),
-        _Funct3.div => _div(rs1Val, rs2Val),
-        _Funct3.divu => _divu(rs1Val, rs2Val),
-        _Funct3.rem => _rem(rs1Val, rs2Val),
-        _Funct3.remu => _remu(rs1Val, rs2Val),
-        _ => throw ArgumentError('Invalid M funct3: $funct3'),
-      };
+  }) => switch (funct3) {
+    _Funct3.mul => _mul(rs1Val, rs2Val),
+    _Funct3.mulh => _mulh(rs1Val, rs2Val),
+    _Funct3.mulhsu => _mulhsu(rs1Val, rs2Val),
+    _Funct3.mulhu => _mulhu(rs1Val, rs2Val),
+    _Funct3.div => _div(rs1Val, rs2Val),
+    _Funct3.divu => _divu(rs1Val, rs2Val),
+    _Funct3.rem => _rem(rs1Val, rs2Val),
+    _Funct3.remu => _remu(rs1Val, rs2Val),
+    _ => throw ArgumentError('Invalid M funct3: $funct3'),
+  };
 
   /// Uses split-multiply to produce correct lower 32 bits
   /// without exceeding JS safe integer range.
@@ -164,27 +161,26 @@ class _MExtension32 extends MExtension {
     final bHi = (b >> _Half.bits) & _Half.mask;
     final lo = aLo * bLo;
     final cross = aLo * bHi + aHi * bLo;
-    return (lo + ((cross & _Half.mask) << _Half.bits)) &
-        _Limits.wordMask;
+    return (lo + ((cross & _Half.mask) << _Half.bits)) & _Limits.wordMask;
   }
 
   static int _mulh(int a, int b) =>
       (BigInt.from(a.toSigned(_Bits.word)) *
-              BigInt.from(b.toSigned(_Bits.word)) >>
-          _Bits.word)
-      .toInt();
+                  BigInt.from(b.toSigned(_Bits.word)) >>
+              _Bits.word)
+          .toInt();
 
   static int _mulhsu(int a, int b) =>
       (BigInt.from(a.toSigned(_Bits.word)) *
-              BigInt.from(b).toUnsigned(_Bits.word) >>
-          _Bits.word)
-      .toInt();
+                  BigInt.from(b).toUnsigned(_Bits.word) >>
+              _Bits.word)
+          .toInt();
 
   static int _mulhu(int a, int b) =>
       (BigInt.from(a).toUnsigned(_Bits.word) *
-              BigInt.from(b).toUnsigned(_Bits.word) >>
-          _Bits.word)
-      .toInt();
+                  BigInt.from(b).toUnsigned(_Bits.word) >>
+              _Bits.word)
+          .toInt();
 
   static int _div(int a, int b) {
     final sa = a.toSigned(_Bits.word);

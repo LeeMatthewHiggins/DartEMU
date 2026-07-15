@@ -14,7 +14,8 @@ import 'package:test/test.dart';
 
 import 'helpers.dart';
 
-const _gistRawUrl = 'https://gist.githubusercontent.com'
+const _gistRawUrl =
+    'https://gist.githubusercontent.com'
     '/khaykov/a6105154becce4c0530da38e723c2330/raw/';
 const _pollDelay = Duration(milliseconds: 20);
 
@@ -34,10 +35,7 @@ void main() {
     client.close();
 
     // Serve it on a local HTTP server.
-    server = await HttpServer.bind(
-      InternetAddress.loopbackIPv4,
-      0,
-    );
+    server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     serverPort = server.port;
     server.listen((req) {
       req.response
@@ -51,155 +49,164 @@ void main() {
     await server.close();
   });
 
-  test('downloads 1MB gist file via local HTTP server', () async {
-    final device = UserNetDevice();
-    final mac = UserNetMac.defaultClient;
-    final clientIp = UserNetAddr.dhcpClient;
-    final serverIp = Uint8List.fromList([127, 0, 0, 1]);
+  test(
+    'downloads 1MB gist file via local HTTP server',
+    () async {
+      final device = UserNetDevice();
+      final mac = UserNetMac.defaultClient;
+      final clientIp = UserNetAddr.dhcpClient;
+      final serverIp = Uint8List.fromList([127, 0, 0, 1]);
 
-    // ARP + DHCP (local, instant).
-    device
-      ..writePacket(buildArpRequest(
-        senderMac: mac,
-        senderIp: clientIp,
-        targetIp: UserNetAddr.gateway,
-      ))
-      ..readPacket()
-      ..writePacket(buildDhcpDiscover(clientMac: mac))
-      ..readPacket()
-      ..writePacket(buildDhcpRequest(
-        clientMac: mac,
-        requestedIp: clientIp,
-        serverIp: UserNetAddr.gateway,
-      ))
-      ..readPacket();
+      // ARP + DHCP (local, instant).
+      device
+        ..writePacket(
+          buildArpRequest(
+            senderMac: mac,
+            senderIp: clientIp,
+            targetIp: UserNetAddr.gateway,
+          ),
+        )
+        ..readPacket()
+        ..writePacket(buildDhcpDiscover(clientMac: mac))
+        ..readPacket()
+        ..writePacket(
+          buildDhcpRequest(
+            clientMac: mac,
+            requestedIp: clientIp,
+            serverIp: UserNetAddr.gateway,
+          ),
+        )
+        ..readPacket();
 
-    // TCP handshake to 127.0.0.1:serverPort.
-    const srcPort = 50000;
-    const initialSeq = 2000;
-    var guestSeq = initialSeq;
+      // TCP handshake to 127.0.0.1:serverPort.
+      const srcPort = 50000;
+      const initialSeq = 2000;
+      var guestSeq = initialSeq;
 
-    device.writePacket(buildTcpSyn(
-      srcIp: clientIp,
-      srcMac: mac,
-      dstIp: serverIp,
-      dstPort: serverPort,
-      srcPort: srcPort,
-      seqNum: initialSeq,
-    ));
-    guestSeq++;
+      device.writePacket(
+        buildTcpSyn(
+          srcIp: clientIp,
+          srcMac: mac,
+          dstIp: serverIp,
+          dstPort: serverPort,
+          srcPort: srcPort,
+          seqNum: initialSeq,
+        ),
+      );
+      guestSeq++;
 
-    final synAck = await _waitForTcp(
-      device,
-      (tcp) => tcp.isSyn && tcp.isAck,
-    );
-    expect(synAck, isNotNull, reason: 'No SYN-ACK');
-    var serverSeq = synAck!.seqNum + 1;
+      final synAck = await _waitForTcp(device, (tcp) => tcp.isSyn && tcp.isAck);
+      expect(synAck, isNotNull, reason: 'No SYN-ACK');
+      var serverSeq = synAck!.seqNum + 1;
 
-    // Complete handshake.
-    device.writePacket(buildTcpPacket(
-      srcIp: clientIp,
-      srcMac: mac,
-      dstIp: serverIp,
-      dstPort: serverPort,
-      srcPort: srcPort,
-      seqNum: guestSeq,
-      ackNum: serverSeq,
-      flags: TcpFlags.ack,
-    ));
+      // Complete handshake.
+      device.writePacket(
+        buildTcpPacket(
+          srcIp: clientIp,
+          srcMac: mac,
+          dstIp: serverIp,
+          dstPort: serverPort,
+          srcPort: srcPort,
+          seqNum: guestSeq,
+          ackNum: serverSeq,
+          flags: TcpFlags.ack,
+        ),
+      );
 
-    // Let localhost socket connect.
-    for (var i = 0; i < 10; i++) {
-      await Future<void>.delayed(_pollDelay);
-      device.poll();
-      _drainPackets(device);
-    }
-
-    // Send HTTP GET.
-    final httpReq = Uint8List.fromList(
-      'GET / HTTP/1.0\r\n'
-          'Host: localhost\r\n'
-          '\r\n'
-          .codeUnits,
-    );
-    device.writePacket(buildTcpPacket(
-      srcIp: clientIp,
-      srcMac: mac,
-      dstIp: serverIp,
-      dstPort: serverPort,
-      srcPort: srcPort,
-      seqNum: guestSeq,
-      ackNum: serverSeq,
-      flags: TcpFlags.ack | TcpFlags.psh,
-      payload: httpReq,
-    ));
-    guestSeq += httpReq.length;
-
-    // Receive all data until FIN or timeout.
-    final received = BytesBuilder(copy: false);
-    var done = false;
-    var idleCount = 0;
-    const maxIdle = 500;
-
-    while (!done && idleCount < maxIdle) {
-      await Future<void>.delayed(_pollDelay);
-      device.poll();
-
-      var gotData = false;
-      for (var raw = device.readPacket();
-          raw != null;
-          raw = device.readPacket()) {
-        final tcp = _parseTcp(raw);
-        if (tcp == null) continue;
-
-        if (tcp.payload.isNotEmpty) {
-          received.add(tcp.payload);
-          serverSeq += tcp.payload.length;
-          gotData = true;
-        }
-        if (tcp.isFin) {
-          serverSeq++;
-          done = true;
-        }
-        if (tcp.payload.isNotEmpty || tcp.isFin) {
-          device.writePacket(buildTcpPacket(
-            srcIp: clientIp,
-            srcMac: mac,
-            dstIp: serverIp,
-            dstPort: serverPort,
-            srcPort: srcPort,
-            seqNum: guestSeq,
-            ackNum: serverSeq,
-            flags: TcpFlags.ack,
-          ));
-        }
+      // Let localhost socket connect.
+      for (var i = 0; i < 10; i++) {
+        await Future<void>.delayed(_pollDelay);
+        device.poll();
+        _drainPackets(device);
       }
-      idleCount = gotData ? 0 : idleCount + 1;
-    }
 
-    expect(done, isTrue, reason: 'Never received FIN');
+      // Send HTTP GET.
+      final httpReq = Uint8List.fromList(
+        'GET / HTTP/1.0\r\n'
+                'Host: localhost\r\n'
+                '\r\n'
+            .codeUnits,
+      );
+      device.writePacket(
+        buildTcpPacket(
+          srcIp: clientIp,
+          srcMac: mac,
+          dstIp: serverIp,
+          dstPort: serverPort,
+          srcPort: srcPort,
+          seqNum: guestSeq,
+          ackNum: serverSeq,
+          flags: TcpFlags.ack | TcpFlags.psh,
+          payload: httpReq,
+        ),
+      );
+      guestSeq += httpReq.length;
 
-    // Parse HTTP response: split headers from body.
-    final allBytes = received.toBytes();
-    final headerEnd = _findHeaderEnd(allBytes);
-    expect(
-      headerEnd,
-      isNonNegative,
-      reason: 'No HTTP header boundary found',
-    );
-    final body = Uint8List.sublistView(
-      allBytes,
-      headerEnd,
-    );
+      // Receive all data until FIN or timeout.
+      final received = BytesBuilder(copy: false);
+      var done = false;
+      var idleCount = 0;
+      const maxIdle = 500;
 
-    expect(
-      body.length,
-      expectedBody.length,
-      reason: 'Body is ${body.length} bytes, '
-          'expected ${expectedBody.length}',
-    );
-    expect(body, expectedBody);
-  }, timeout: const Timeout(Duration(seconds: 30)));
+      while (!done && idleCount < maxIdle) {
+        await Future<void>.delayed(_pollDelay);
+        device.poll();
+
+        var gotData = false;
+        for (
+          var raw = device.readPacket();
+          raw != null;
+          raw = device.readPacket()
+        ) {
+          final tcp = _parseTcp(raw);
+          if (tcp == null) continue;
+
+          if (tcp.payload.isNotEmpty) {
+            received.add(tcp.payload);
+            serverSeq += tcp.payload.length;
+            gotData = true;
+          }
+          if (tcp.isFin) {
+            serverSeq++;
+            done = true;
+          }
+          if (tcp.payload.isNotEmpty || tcp.isFin) {
+            device.writePacket(
+              buildTcpPacket(
+                srcIp: clientIp,
+                srcMac: mac,
+                dstIp: serverIp,
+                dstPort: serverPort,
+                srcPort: srcPort,
+                seqNum: guestSeq,
+                ackNum: serverSeq,
+                flags: TcpFlags.ack,
+              ),
+            );
+          }
+        }
+        idleCount = gotData ? 0 : idleCount + 1;
+      }
+
+      expect(done, isTrue, reason: 'Never received FIN');
+
+      // Parse HTTP response: split headers from body.
+      final allBytes = received.toBytes();
+      final headerEnd = _findHeaderEnd(allBytes);
+      expect(headerEnd, isNonNegative, reason: 'No HTTP header boundary found');
+      final body = Uint8List.sublistView(allBytes, headerEnd);
+
+      expect(
+        body.length,
+        expectedBody.length,
+        reason:
+            'Body is ${body.length} bytes, '
+            'expected ${expectedBody.length}',
+      );
+      expect(body, expectedBody);
+    },
+    timeout: const Timeout(Duration(seconds: 30)),
+  );
 }
 
 Future<TcpPacket?> _waitForTcp(

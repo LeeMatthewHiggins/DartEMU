@@ -5,7 +5,7 @@ import 'package:dart_emu/src/device/character_device.dart';
 
 class StreamConsoleDevice implements CharacterDevice {
   StreamConsoleDevice()
-      : _outputController = StreamController<Uint8List>.broadcast();
+    : _outputController = StreamController<Uint8List>.broadcast();
 
   final StreamController<Uint8List> _outputController;
   final List<int> _inputBuffer = [];
@@ -28,8 +28,9 @@ class StreamConsoleDevice implements CharacterDevice {
     if (_inputBuffer.isEmpty) {
       return Uint8List(0);
     }
-    final count =
-        maxLength < _inputBuffer.length ? maxLength : _inputBuffer.length;
+    final count = maxLength < _inputBuffer.length
+        ? maxLength
+        : _inputBuffer.length;
     final result = Uint8List.fromList(_inputBuffer.sublist(0, count));
     _inputBuffer.removeRange(0, count);
     return result;

@@ -9,9 +9,7 @@ import 'package:dart_emu/src/util/bit_utils.dart';
 
 class DExtension {
   factory DExtension({required RiscVCpuState state}) =>
-      state.isRv32
-          ? _DExtension32(state: state)
-          : _DExtension64(state: state);
+      state.isRv32 ? _DExtension32(state: state) : _DExtension64(state: state);
 
   DExtension._({required this.state});
 
@@ -32,36 +30,25 @@ class DExtension {
       case _Funct7.add:
         _writeFp(
           rd,
-          SoftFloat64.add(
-            _readFp(rs1), _readFp(rs2Field), rm, _flags,
-          ),
+          SoftFloat64.add(_readFp(rs1), _readFp(rs2Field), rm, _flags),
         );
       case _Funct7.sub:
         _writeFp(
           rd,
-          SoftFloat64.sub(
-            _readFp(rs1), _readFp(rs2Field), rm, _flags,
-          ),
+          SoftFloat64.sub(_readFp(rs1), _readFp(rs2Field), rm, _flags),
         );
       case _Funct7.mul:
         _writeFp(
           rd,
-          SoftFloat64.mul(
-            _readFp(rs1), _readFp(rs2Field), rm, _flags,
-          ),
+          SoftFloat64.mul(_readFp(rs1), _readFp(rs2Field), rm, _flags),
         );
       case _Funct7.div:
         _writeFp(
           rd,
-          SoftFloat64.div(
-            _readFp(rs1), _readFp(rs2Field), rm, _flags,
-          ),
+          SoftFloat64.div(_readFp(rs1), _readFp(rs2Field), rm, _flags),
         );
       case _Funct7.sqrt:
-        _writeFp(
-          rd,
-          SoftFloat64.sqrt(_readFp(rs1), rm, _flags),
-        );
+        _writeFp(rd, SoftFloat64.sqrt(_readFp(rs1), rm, _flags));
       case _Funct7.sgnj:
         _executeSgnj(rs1, rs2Field, rd, funct3);
       case _Funct7.minMax:
@@ -78,10 +65,7 @@ class DExtension {
         if (funct3 == _CmpFunct3.fmvOrClass) {
           _writeIntReg(rd, _readFp(rs1));
         } else {
-          _writeIntReg(
-            rd,
-            SoftFloat64.classify(_readFp(rs1)),
-          );
+          _writeIntReg(rd, SoftFloat64.classify(_readFp(rs1)));
         }
       case _Funct7.mvDX:
         _writeFp(rd, state.regs[rs1]);
@@ -97,8 +81,7 @@ class DExtension {
     final rs1 = (insn >> _Shift.rs1) & _Mask.reg;
     final rs2 = (insn >> _Shift.rs2) & _Mask.reg;
     final rs3 = insn >>> _Shift.rs3;
-    final funct3 =
-        (insn >> _Shift.funct3) & _Mask.funct3;
+    final funct3 = (insn >> _Shift.funct3) & _Mask.funct3;
     final rm = _resolveRm(funct3);
 
     _flags.reset();
@@ -112,17 +95,11 @@ class DExtension {
       case _FmaOpcode.fmadd:
         result = SoftFloat64.fma(a, b, c, rm, _flags);
       case _FmaOpcode.fmsub:
-        result = SoftFloat64.fma(
-          a, b, _negateF64(c), rm, _flags,
-        );
+        result = SoftFloat64.fma(a, b, _negateF64(c), rm, _flags);
       case _FmaOpcode.fnmsub:
-        result = SoftFloat64.fma(
-          _negateF64(a), b, c, rm, _flags,
-        );
+        result = SoftFloat64.fma(_negateF64(a), b, c, rm, _flags);
       case _FmaOpcode.fnmadd:
-        result = SoftFloat64.fma(
-          _negateF64(a), b, _negateF64(c), rm, _flags,
-        );
+        result = SoftFloat64.fma(_negateF64(a), b, _negateF64(c), rm, _flags);
       default:
         throw const IllegalFpException();
     }
@@ -143,9 +120,7 @@ class DExtension {
   }
 
   void _markFsDirty() {
-    state.mstatus =
-        (state.mstatus & ~_MstatusFp.fsMask) |
-        _MstatusFp.fsDirty;
+    state.mstatus = (state.mstatus & ~_MstatusFp.fsMask) | _MstatusFp.fsDirty;
   }
 
   void _flushFlags() {
@@ -153,20 +128,14 @@ class DExtension {
   }
 
   RoundingMode _resolveRm(int funct3Rm) {
-    final rm =
-        funct3Rm == _RmBits.dynamic_ ? state.frm : funct3Rm;
+    final rm = funct3Rm == _RmBits.dynamic_ ? state.frm : funct3Rm;
     if (rm > _RmBits.maxValid) {
       throw const IllegalFpException();
     }
     return RoundingMode.fromValue(rm);
   }
 
-  void _executeSgnj(
-    int rs1,
-    int rs2,
-    int rd,
-    int funct3,
-  ) {
+  void _executeSgnj(int rs1, int rs2, int rd, int funct3) {
     final src = _readFp(rs1);
     final sign2 = _readFp(rs2) & _Float64.signMask;
     final magnitude = src & ~_Float64.signMask;
@@ -185,12 +154,7 @@ class DExtension {
     _writeFp(rd, result);
   }
 
-  void _executeMinMax(
-    int rs1,
-    int rs2,
-    int rd,
-    int funct3,
-  ) {
+  void _executeMinMax(int rs1, int rs2, int rd, int funct3) {
     _flags.reset();
     final a = _readFp(rs1);
     final b = _readFp(rs2);
@@ -204,12 +168,7 @@ class DExtension {
     }
   }
 
-  void _executeCvtToInt(
-    int rs1,
-    int rd,
-    int rs2Field,
-    RoundingMode rm,
-  ) {
+  void _executeCvtToInt(int rs1, int rd, int rs2Field, RoundingMode rm) {
     final val = state.fpRegs.readDouble(rs1);
     final int result;
 
@@ -236,17 +195,13 @@ class DExtension {
 
     switch (rs2Field) {
       case _CvtRs2.w:
-        val = (srcInt & _Mask.word)
-            .toSigned(_Bits.word)
-            .toDouble();
+        val = (srcInt & _Mask.word).toSigned(_Bits.word).toDouble();
       case _CvtRs2.wu:
         val = (srcInt & _Mask.word).toDouble();
       case _CvtRs2.l:
         val = srcInt.toDouble();
       case _CvtRs2.lu:
-        val = BigInt.from(srcInt)
-            .toUnsigned(_Bits.doubleWord)
-            .toDouble();
+        val = BigInt.from(srcInt).toUnsigned(_Bits.doubleWord).toDouble();
       default:
         throw const IllegalFpException();
     }
@@ -262,12 +217,7 @@ class DExtension {
     _markFsDirty();
   }
 
-  void _executeCompare(
-    int rs1,
-    int rs2,
-    int rd,
-    int funct3,
-  ) {
+  void _executeCompare(int rs1, int rs2, int rd, int funct3) {
     _flags.reset();
     final a = _readFp(rs1);
     final b = _readFp(rs2);
@@ -368,18 +318,14 @@ class DExtension {
     return big.toInt();
   }
 
-  static double _applyRounding(
-    double val,
-    RoundingMode rm,
-  ) {
+  static double _applyRounding(double val, RoundingMode rm) {
     return switch (rm) {
       RoundingMode.rne => val.roundToDouble(),
       RoundingMode.rtz => val.truncateToDouble(),
       RoundingMode.rdn => val.floorToDouble(),
       RoundingMode.rup => val.ceilToDouble(),
-      RoundingMode.rmm => val >= 0
-          ? (val + 0.5).floorToDouble()
-          : (val - 0.5).ceilToDouble(),
+      RoundingMode.rmm =>
+        val >= 0 ? (val + 0.5).floorToDouble() : (val - 0.5).ceilToDouble(),
     };
   }
 
@@ -404,8 +350,7 @@ class _DExtension32 extends DExtension {
   void executeArithmetic(int insn) {
     final funct7 = insn >>> _Shift.funct7;
     final funct3 = (insn >> _Shift.funct3) & _Mask.funct3;
-    if (funct7 == _Funct7.mvClassXD &&
-        funct3 == _CmpFunct3.fmvOrClass) {
+    if (funct7 == _Funct7.mvClassXD && funct3 == _CmpFunct3.fmvOrClass) {
       throw const IllegalFpException();
     }
     if (funct7 == _Funct7.mvDX) {
@@ -415,12 +360,7 @@ class _DExtension32 extends DExtension {
   }
 
   @override
-  void _executeCvtToInt(
-    int rs1,
-    int rd,
-    int rs2Field,
-    RoundingMode rm,
-  ) {
+  void _executeCvtToInt(int rs1, int rd, int rs2Field, RoundingMode rm) {
     if (rs2Field >= _CvtRs2.l) throw const IllegalFpException();
     super._executeCvtToInt(rs1, rd, rs2Field, rm);
   }

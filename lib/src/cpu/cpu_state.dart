@@ -22,11 +22,10 @@ abstract class RiscVCpuState {
   factory RiscVCpuState({
     required PhysMemoryMap memMap,
     Xlen xlen = Xlen.rv64,
-  }) =>
-      switch (xlen) {
-        Xlen.rv32 => _CpuState32(memMap: memMap),
-        Xlen.rv64 => _CpuState64(memMap: memMap),
-      };
+  }) => switch (xlen) {
+    Xlen.rv32 => _CpuState32(memMap: memMap),
+    Xlen.rv64 => _CpuState64(memMap: memMap),
+  };
 
   RiscVCpuState._({required this.memMap}) {
     regs[0] = 0;

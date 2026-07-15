@@ -14,14 +14,11 @@ class _Assets {
   static const kernel64 = 'assets/kernel-riscv64.bin';
   static const rootfs64 = 'assets/root-riscv64.bin';
 
-  static String bios(Xlen xlen) =>
-      xlen == Xlen.rv32 ? bios32 : bios64;
+  static String bios(Xlen xlen) => xlen == Xlen.rv32 ? bios32 : bios64;
 
-  static String kernel(Xlen xlen) =>
-      xlen == Xlen.rv32 ? kernel32 : kernel64;
+  static String kernel(Xlen xlen) => xlen == Xlen.rv32 ? kernel32 : kernel64;
 
-  static String rootfs(Xlen xlen) =>
-      xlen == Xlen.rv32 ? rootfs32 : rootfs64;
+  static String rootfs(Xlen xlen) => xlen == Xlen.rv32 ? rootfs32 : rootfs64;
 }
 
 class _Defaults {
@@ -96,8 +93,7 @@ class EmulatorController {
     _outputSub = _emulator!.output.listen(_outputController.add);
     _statusSub = _emulator!.status.listen((status) {
       _statusController.add(status);
-      if (status == EmulatorStatus.stopped ||
-          status == EmulatorStatus.error) {
+      if (status == EmulatorStatus.stopped || status == EmulatorStatus.error) {
         _ticker?.stop();
       }
     });

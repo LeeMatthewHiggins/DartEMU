@@ -49,11 +49,10 @@ class FpRegisterFile extends ListBase<int> {
   int readLo(int reg) =>
       _data.getUint32(reg * _Layout.bytesPerReg, Endian.little);
 
-  int readHi(int reg) =>
-      _data.getUint32(
-        reg * _Layout.bytesPerReg + _Layout.hiOffset,
-        Endian.little,
-      );
+  int readHi(int reg) => _data.getUint32(
+    reg * _Layout.bytesPerReg + _Layout.hiOffset,
+    Endian.little,
+  );
 
   void writePair(int reg, int lo, int hi) {
     final offset = reg * _Layout.bytesPerReg;

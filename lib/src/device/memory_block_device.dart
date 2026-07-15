@@ -6,11 +6,9 @@ import 'package:dart_emu/src/device/block_device.dart';
 class MemoryBlockDevice implements BlockDevice {
   MemoryBlockDevice(this._data);
 
-  MemoryBlockDevice.empty(int sizeInBytes)
-      : _data = Uint8List(sizeInBytes);
+  MemoryBlockDevice.empty(int sizeInBytes) : _data = Uint8List(sizeInBytes);
 
-  MemoryBlockDevice.fromData(Uint8List data)
-      : _data = Uint8List.fromList(data);
+  MemoryBlockDevice.fromData(Uint8List data) : _data = Uint8List.fromList(data);
 
   final Uint8List _data;
 
