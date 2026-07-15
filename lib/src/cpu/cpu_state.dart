@@ -15,19 +15,17 @@ enum PrivilegeLevel {
   const PrivilegeLevel(this.value);
   final int value;
 
-  static PrivilegeLevel fromValue(int v) =>
-      PrivilegeLevel.values.firstWhere((e) => e.value == v);
+  static PrivilegeLevel fromValue(int v) => PrivilegeLevel.values[v];
 }
 
 abstract class RiscVCpuState {
   factory RiscVCpuState({
     required PhysMemoryMap memMap,
     Xlen xlen = Xlen.rv64,
-  }) =>
-      switch (xlen) {
-        Xlen.rv32 => _CpuState32(memMap: memMap),
-        Xlen.rv64 => _CpuState64(memMap: memMap),
-      };
+  }) => switch (xlen) {
+    Xlen.rv32 => _CpuState32(memMap: memMap),
+    Xlen.rv64 => _CpuState64(memMap: memMap),
+  };
 
   RiscVCpuState._({required this.memMap}) {
     regs[0] = 0;
@@ -90,14 +88,17 @@ abstract class RiscVCpuState {
   final List<TlbEntry> tlbRead = List.generate(
     TlbConstants.size,
     (_) => TlbEntry(),
+    growable: false,
   );
   final List<TlbEntry> tlbWrite = List.generate(
     TlbConstants.size,
     (_) => TlbEntry(),
+    growable: false,
   );
   final List<TlbEntry> tlbCode = List.generate(
     TlbConstants.size,
     (_) => TlbEntry(),
+    growable: false,
   );
 
   void flushTlb() {

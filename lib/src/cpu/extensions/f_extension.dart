@@ -8,9 +8,7 @@ import 'package:dart_emu/src/util/bit_utils.dart';
 
 class FExtension {
   factory FExtension({required RiscVCpuState state}) =>
-      state.isRv32
-          ? _FExtension32(state: state)
-          : _FExtension64(state: state);
+      state.isRv32 ? _FExtension32(state: state) : _FExtension64(state: state);
 
   FExtension._({required this.state});
 
@@ -31,30 +29,22 @@ class FExtension {
       case _Funct7.add:
         _writeFp(
           rd,
-          SoftFloat32.add(
-            _readFp(rs1), _readFp(rs2Field), rm, _flags,
-          ),
+          SoftFloat32.add(_readFp(rs1), _readFp(rs2Field), rm, _flags),
         );
       case _Funct7.sub:
         _writeFp(
           rd,
-          SoftFloat32.sub(
-            _readFp(rs1), _readFp(rs2Field), rm, _flags,
-          ),
+          SoftFloat32.sub(_readFp(rs1), _readFp(rs2Field), rm, _flags),
         );
       case _Funct7.mul:
         _writeFp(
           rd,
-          SoftFloat32.mul(
-            _readFp(rs1), _readFp(rs2Field), rm, _flags,
-          ),
+          SoftFloat32.mul(_readFp(rs1), _readFp(rs2Field), rm, _flags),
         );
       case _Funct7.div:
         _writeFp(
           rd,
-          SoftFloat32.div(
-            _readFp(rs1), _readFp(rs2Field), rm, _flags,
-          ),
+          SoftFloat32.div(_readFp(rs1), _readFp(rs2Field), rm, _flags),
         );
       case _Funct7.sqrt:
         _writeFp(rd, SoftFloat32.sqrt(_readFp(rs1), rm, _flags));
@@ -323,9 +313,8 @@ class FExtension {
       RoundingMode.rtz => val.truncateToDouble(),
       RoundingMode.rdn => val.floorToDouble(),
       RoundingMode.rup => val.ceilToDouble(),
-      RoundingMode.rmm => val >= 0
-          ? (val + 0.5).floorToDouble()
-          : (val - 0.5).ceilToDouble(),
+      RoundingMode.rmm =>
+        val >= 0 ? (val + 0.5).floorToDouble() : (val - 0.5).ceilToDouble(),
     };
   }
 
@@ -352,23 +341,13 @@ class _FExtension32 extends FExtension {
   _FExtension32({required super.state}) : super._();
 
   @override
-  void _executeCvtToInt(
-    int rs1,
-    int rd,
-    int rs2Field,
-    RoundingMode rm,
-  ) {
+  void _executeCvtToInt(int rs1, int rd, int rs2Field, RoundingMode rm) {
     if (rs2Field >= _CvtRs2.l) throw const IllegalFpException();
     super._executeCvtToInt(rs1, rd, rs2Field, rm);
   }
 
   @override
-  void _executeCvtFromInt(
-    int rs1,
-    int rd,
-    int rs2Field,
-    RoundingMode rm,
-  ) {
+  void _executeCvtFromInt(int rs1, int rd, int rs2Field, RoundingMode rm) {
     if (rs2Field >= _CvtRs2.l) throw const IllegalFpException();
     super._executeCvtFromInt(rs1, rd, rs2Field, rm);
   }

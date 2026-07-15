@@ -1,10 +1,7 @@
 import 'package:dart_emu/src/cpu/mip_callbacks.dart';
 
 class Clint {
-  Clint({
-    required this.setMip,
-    required this.resetMip,
-  }) {
+  Clint({required this.setMip, required this.resetMip}) {
     _wallClock.start();
   }
 
@@ -17,8 +14,7 @@ class Clint {
 
   int get timecmp => _timecmpLow | (_timecmpHigh << _wordBits);
 
-  int get rtcTime =>
-      _wallClock.elapsedMicroseconds * _rtcTicksPerMicrosecond;
+  int get rtcTime => _wallClock.elapsedMicroseconds * _rtcTicksPerMicrosecond;
 
   int read(int offset, int sizeLog2) {
     if (sizeLog2 == _wordSizeLog2) {

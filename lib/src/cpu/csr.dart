@@ -11,24 +11,13 @@ class CsrHandler {
     return switch (csrAddr) {
       _Addr.fflags => state.fflags,
       _Addr.frm => state.frm,
-      _Addr.fcsr =>
-        state.fflags | (state.frm << _frmShift),
-      _Addr.cycle ||
-      _Addr.instret =>
-        _readCounter(csrAddr),
-      _Addr.time =>
-        _readTime(),
-      _Addr.cycleh ||
-      _Addr.instreth =>
-        _readCounterHigh(csrAddr),
-      _Addr.timeh =>
-        _readTimeHigh(),
-      _Addr.mcycle ||
-      _Addr.minstret =>
-        state.instructionCounter,
-      _Addr.mcycleh ||
-      _Addr.minstreth =>
-        _readMCounterHigh(),
+      _Addr.fcsr => state.fflags | (state.frm << _frmShift),
+      _Addr.cycle || _Addr.instret => _readCounter(csrAddr),
+      _Addr.time => _readTime(),
+      _Addr.cycleh || _Addr.instreth => _readCounterHigh(csrAddr),
+      _Addr.timeh => _readTimeHigh(),
+      _Addr.mcycle || _Addr.minstret => state.instructionCounter,
+      _Addr.mcycleh || _Addr.minstreth => _readMCounterHigh(),
       _Addr.sstatus => _getMstatus(_sstatusMask),
       _Addr.sie => state.mie & state.mideleg,
       _Addr.stvec => state.stvec,
@@ -67,13 +56,9 @@ class CsrHandler {
         state.fflags = value & _fflagsMask;
         state.frm = (value >> _frmShift) & _frmMask;
       case _Addr.sstatus:
-        _setMstatus(
-          (state.mstatus & ~_sstatusMask) |
-              (value & _sstatusMask),
-        );
+        _setMstatus((state.mstatus & ~_sstatusMask) | (value & _sstatusMask));
       case _Addr.sie:
-        state.mie = (state.mie & ~state.mideleg) |
-            (value & state.mideleg);
+        state.mie = (state.mie & ~state.mideleg) | (value & state.mideleg);
       case _Addr.stvec:
         state.stvec = value;
       case _Addr.scounteren:
@@ -87,8 +72,7 @@ class CsrHandler {
       case _Addr.stval:
         state.stval = value;
       case _Addr.sip:
-        state.mip = (state.mip & ~state.mideleg) |
-            (value & state.mideleg);
+        state.mip = (state.mip & ~state.mideleg) | (value & state.mideleg);
       case _Addr.satp:
         state.satp = value;
         state.flushTlb();
@@ -121,10 +105,8 @@ class CsrHandler {
 
   int _getMstatus(int mask) {
     var val = state.mstatus & mask;
-    final fsDirty =
-        (val & _Mstatus.fsMask) == _Mstatus.fsMask;
-    final xsDirty =
-        (val & _Mstatus.xsMask) == _Mstatus.xsMask;
+    final fsDirty = (val & _Mstatus.fsMask) == _Mstatus.fsMask;
+    final xsDirty = (val & _Mstatus.xsMask) == _Mstatus.xsMask;
     if (fsDirty || xsDirty) {
       val |= _sdBit;
     }
@@ -133,40 +115,35 @@ class CsrHandler {
 
   void _setMstatus(int val) {
     final mod = state.mstatus ^ val;
-    final mprvChanged =
-        (mod & _Mstatus.tlbFlushBits) != 0;
+    final mprvChanged = (mod & _Mstatus.tlbFlushBits) != 0;
     final mprvMppChanged =
         (state.mstatus & _Mstatus.mprvBit) != 0 &&
-            (mod & _Mstatus.mppMask) != 0;
+        (mod & _Mstatus.mppMask) != 0;
     if (mprvChanged || mprvMppChanged) {
       state.flushTlb();
     }
 
     var mask = _Mstatus.writeMask;
     if (!state.isRv32) {
-      final uxl =
-          (val >> _Mstatus.uxlShift) & _Mstatus.xlMask;
+      final uxl = (val >> _Mstatus.uxlShift) & _Mstatus.xlMask;
       if (uxl >= 1 && uxl <= _mxlRv64) {
         mask |= _Mstatus.uxlMask;
       }
-      final sxl =
-          (val >> _Mstatus.sxlShift) & _Mstatus.xlMask;
+      final sxl = (val >> _Mstatus.sxlShift) & _Mstatus.xlMask;
       if (sxl >= 1 && sxl <= _mxlRv64) {
         mask |= _Mstatus.sxlMask;
       }
     }
 
-    state.mstatus =
-        (state.mstatus & ~mask) | (val & mask);
+    state.mstatus = (state.mstatus & ~mask) | (val & mask);
   }
 
   void _checkCounterAccess(int csrAddr) {
     final counterBit = 1 << (csrAddr & _counterBitMask);
     if (state.privilege.value < PrivilegeLevel.machine.value) {
-      final counteren =
-          state.privilege.value < PrivilegeLevel.supervisor.value
-              ? state.scounteren
-              : state.mcounteren;
+      final counteren = state.privilege.value < PrivilegeLevel.supervisor.value
+          ? state.scounteren
+          : state.mcounteren;
       if ((counteren & counterBit) == 0) {
         throw CsrAccessException(csrAddr, state.privilege);
       }
@@ -189,8 +166,7 @@ class CsrHandler {
       throw CsrAccessException(_Addr.timeh, state.privilege);
     }
     _checkCounterAccess(_Addr.time);
-    return (state.rtcTimeRead() >> _counterHighShift) &
-        _counterHighMask;
+    return (state.rtcTimeRead() >> _counterHighShift) & _counterHighMask;
   }
 
   int _readCounterHigh(int csrAddr) {
@@ -200,41 +176,34 @@ class CsrHandler {
     final lowAddr = csrAddr - _counterHighOffset;
     final counterBit = 1 << (lowAddr & _counterBitMask);
     if (state.privilege.value < PrivilegeLevel.machine.value) {
-      final counteren =
-          state.privilege.value < PrivilegeLevel.supervisor.value
-              ? state.scounteren
-              : state.mcounteren;
+      final counteren = state.privilege.value < PrivilegeLevel.supervisor.value
+          ? state.scounteren
+          : state.mcounteren;
       if ((counteren & counterBit) == 0) {
         throw CsrAccessException(csrAddr, state.privilege);
       }
     }
-    return (state.instructionCounter >> _counterHighShift) &
-        _counterHighMask;
+    return (state.instructionCounter >> _counterHighShift) & _counterHighMask;
   }
 
   int _readMCounterHigh() {
     if (!state.isRv32) {
       throw CsrAccessException(0, state.privilege);
     }
-    return (state.instructionCounter >> _counterHighShift) &
-        _counterHighMask;
+    return (state.instructionCounter >> _counterHighShift) & _counterHighMask;
   }
 
   void _checkAccess(int csrAddr) {
-    final requiredPriv =
-        (csrAddr >> _privShift) & _privMask;
+    final requiredPriv = (csrAddr >> _privShift) & _privMask;
     if (state.privilege.value < requiredPriv) {
       throw CsrAccessException(csrAddr, state.privilege);
     }
   }
 
-  int get _sdBit => state.isRv32
-      ? _Mstatus.sdBit32
-      : _Mstatus.sdBit64;
+  int get _sdBit => state.isRv32 ? _Mstatus.sdBit32 : _Mstatus.sdBit64;
 
-  int get _sstatusMask => state.isRv32
-      ? _Mstatus.sstatusMask32
-      : _Mstatus.sstatusMask64;
+  int get _sstatusMask =>
+      state.isRv32 ? _Mstatus.sstatusMask32 : _Mstatus.sstatusMask64;
 
   static const _privShift = 8;
   static const _privMask = 3;
@@ -323,7 +292,8 @@ class _Mstatus {
   static const sdBit32 = 1 << 31;
   static const sdBit64 = Int64Const.signBit;
 
-  static const _sstatusMaskBase = uieBit |
+  static const _sstatusMaskBase =
+      uieBit |
       sieBit |
       upieBit |
       spieBit |
@@ -336,7 +306,8 @@ class _Mstatus {
   static const sstatusMask32 = _sstatusMaskBase;
   static const sstatusMask64 = _sstatusMaskBase | uxlMask;
 
-  static const writeMask = uieBit |
+  static const writeMask =
+      uieBit |
       sieBit |
       mieBit |
       upieBit |

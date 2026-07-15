@@ -28,10 +28,7 @@ class DhcpServer {
     if (data.length < _minDhcpSize) return null;
     if (data[0] != DhcpConst.bootRequest) return null;
 
-    final messageType = _findOptionByte(
-      data,
-      DhcpConst.optionMessageType,
-    );
+    final messageType = _findOptionByte(data, DhcpConst.optionMessageType);
     if (messageType == null) return null;
 
     final int replyType;
@@ -55,8 +52,10 @@ class DhcpServer {
   Uint8List _buildReply(Uint8List request, int messageType) {
     final reply = Uint8List(_replySize)
       ..[0] = DhcpConst.bootReply
-      ..[1] = request[1] // hardware type
-      ..[2] = request[2] // hardware address length
+      ..[1] =
+          request[1] // hardware type
+      ..[2] =
+          request[2] // hardware address length
       // Copy transaction ID (bytes 4-7).
       ..setRange(4, 8, Uint8List.sublistView(request, 4, 8))
       // yiaddr: your IP address (bytes 16-19).
@@ -80,12 +79,9 @@ class DhcpServer {
       reply[offset++] = b;
     }
     // Message type option.
-    offset = _writeOption(
-      reply,
-      offset,
-      DhcpConst.optionMessageType,
-      [messageType],
-    );
+    offset = _writeOption(reply, offset, DhcpConst.optionMessageType, [
+      messageType,
+    ]);
     // Server identifier.
     offset = _writeOption(
       reply,
@@ -108,31 +104,16 @@ class DhcpServer {
       subnetMask,
     );
     // Router.
-    offset = _writeOption(
-      reply,
-      offset,
-      DhcpConst.optionRouter,
-      gatewayIp,
-    );
+    offset = _writeOption(reply, offset, DhcpConst.optionRouter, gatewayIp);
     // DNS server.
-    offset = _writeOption(
-      reply,
-      offset,
-      DhcpConst.optionDns,
-      dnsIp,
-    );
+    offset = _writeOption(reply, offset, DhcpConst.optionDns, dnsIp);
     // End option.
     reply[offset] = DhcpConst.optionEnd;
 
     return reply;
   }
 
-  static int _writeOption(
-    Uint8List buf,
-    int offset,
-    int code,
-    List<int> data,
-  ) {
+  static int _writeOption(Uint8List buf, int offset, int code, List<int> data) {
     buf[offset] = code;
     buf[offset + 1] = data.length;
     buf.setRange(offset + 2, offset + 2 + data.length, data);
@@ -140,11 +121,11 @@ class DhcpServer {
   }
 
   static List<int> _uint32Bytes(int value) => [
-        (value >> 24) & 0xFF,
-        (value >> 16) & 0xFF,
-        (value >> 8) & 0xFF,
-        value & 0xFF,
-      ];
+    (value >> 24) & 0xFF,
+    (value >> 16) & 0xFF,
+    (value >> 8) & 0xFF,
+    value & 0xFF,
+  ];
 
   static int? _findOptionByte(Uint8List data, int optionCode) {
     var offset = _optionsOffset + 4; // skip magic cookie

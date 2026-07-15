@@ -23,10 +23,7 @@ class _VirtioNet {
 /// Queue 0 is the receive queue (host-to-guest, manual receive).
 /// Queue 1 is the transmit queue (guest-to-host, auto-processed).
 class VirtioNetDevice extends VirtioDevice {
-  VirtioNetDevice({
-    required super.memMap,
-    required this.ethernetDevice,
-  }) {
+  VirtioNetDevice({required super.memMap, required this.ethernetDevice}) {
     queues[_VirtioNet.receiveQueueIdx].manualRecv = true;
     configSpace.setRange(0, _VirtioNet.macLength, ethernetDevice.macAddress);
     // Link status = up.
@@ -45,12 +42,7 @@ class VirtioNetDevice extends VirtioDevice {
   int get deviceFeatures => _VirtioNet.featureMac;
 
   @override
-  int onDeviceReceive(
-    int queueIdx,
-    int descIdx,
-    int readSize,
-    int writeSize,
-  ) {
+  int onDeviceReceive(int queueIdx, int descIdx, int readSize, int writeSize) {
     if (queueIdx == _VirtioNet.transmitQueueIdx) {
       _handleTransmit(descIdx, readSize);
     }
@@ -80,8 +72,7 @@ class VirtioNetDevice extends VirtioDevice {
     final descIdx = memMap.physReadU16(
       qs.availAddr +
           _VirtioNet.availRingEntriesOffset +
-          (qs.lastAvailIdx & (qs.num - 1)) *
-              _VirtioNet.availRingEntryBytes,
+          (qs.lastAvailIdx & (qs.num - 1)) * _VirtioNet.availRingEntryBytes,
     );
     final sizes = getDescriptorRwSize(queueIdx, descIdx);
     final writeSize = sizes?.writeSize ?? 0;
@@ -104,8 +95,7 @@ class VirtioNetDevice extends VirtioDevice {
     final descIdx = memMap.physReadU16(
       qs.availAddr +
           _VirtioNet.availRingEntriesOffset +
-          (qs.lastAvailIdx & (qs.num - 1)) *
-              _VirtioNet.availRingEntryBytes,
+          (qs.lastAvailIdx & (qs.num - 1)) * _VirtioNet.availRingEntryBytes,
     );
 
     final header = Uint8List(_VirtioNet.headerSize);
@@ -144,8 +134,5 @@ VirtioNetDevice createVirtioNet({
   required PhysMemoryMap memMap,
   required EthernetDevice ethernetDevice,
 }) {
-  return VirtioNetDevice(
-    memMap: memMap,
-    ethernetDevice: ethernetDevice,
-  );
+  return VirtioNetDevice(memMap: memMap, ethernetDevice: ethernetDevice);
 }

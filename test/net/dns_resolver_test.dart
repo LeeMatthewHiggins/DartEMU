@@ -46,36 +46,24 @@ void main() {
       expect(view.getUint16(4), 1);
       expect(view.getUint16(6), 1);
 
-      final answerIp = Uint8List.sublistView(
-        response,
-        response.length - 4,
-      );
+      final answerIp = Uint8List.sublistView(response, response.length - 4);
       expect(answerIp, ip);
     });
 
     test('returns null when lookup returns null', () {
       final query = buildQuery('unknown.test');
-      final response = resolver.handleQuery(
-        query,
-        (_) => null,
-      );
+      final response = resolver.handleQuery(query, (_) => null);
       expect(response, isNull);
     });
 
     test('returns null when lookup returns empty', () {
       final query = buildQuery('empty.test');
-      final response = resolver.handleQuery(
-        query,
-        (_) => [],
-      );
+      final response = resolver.handleQuery(query, (_) => []);
       expect(response, isNull);
     });
 
     test('returns null for too-short data', () {
-      expect(
-        resolver.handleQuery(Uint8List(11), (_) => null),
-        isNull,
-      );
+      expect(resolver.handleQuery(Uint8List(11), (_) => null), isNull);
     });
 
     test('returns null for zero question count', () {
@@ -84,10 +72,7 @@ void main() {
         ..setUint16(0, 0x1234)
         ..setUint16(2, 0x0100)
         ..setUint16(4, 0);
-      expect(
-        resolver.handleQuery(data, (_) => null),
-        isNull,
-      );
+      expect(resolver.handleQuery(data, (_) => null), isNull);
     });
 
     test('returns empty response for AAAA query', () {
@@ -112,10 +97,7 @@ void main() {
         Uint8List.fromList([1, 2, 3, 4]),
         Uint8List.fromList([5, 6, 7, 8]),
       ];
-      final response = resolver.handleQuery(
-        query,
-        (_) => ips,
-      );
+      final response = resolver.handleQuery(query, (_) => ips);
 
       expect(response, isNotNull);
       final view = ByteData.sublistView(response!);
@@ -128,10 +110,7 @@ void main() {
       );
       expect(ip1, ips[0]);
 
-      final ip2 = Uint8List.sublistView(
-        response,
-        response.length - 4,
-      );
+      final ip2 = Uint8List.sublistView(response, response.length - 4);
       expect(ip2, ips[1]);
     });
   });

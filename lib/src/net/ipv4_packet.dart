@@ -46,7 +46,8 @@ class Ipv4Packet {
   Uint8List encode() {
     final totalLength = _minHeaderSize + payload.length;
     final result = Uint8List(totalLength)
-      ..[0] = 0x45 // version 4, IHL 5 (20 bytes)
+      ..[0] =
+          0x45 // version 4, IHL 5 (20 bytes)
       ..setRange(_srcIpOffset, _dstIpOffset, sourceIp)
       ..setRange(_dstIpOffset, _dstIpOffset + _ipLength, destinationIp)
       ..setRange(_minHeaderSize, totalLength, payload);

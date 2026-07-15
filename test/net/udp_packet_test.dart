@@ -26,9 +26,7 @@ void main() {
     });
 
     test('encode/decode roundtrip preserves data', () {
-      final payload = Uint8List.fromList(
-        List.generate(40, (i) => i & 0xFF),
-      );
+      final payload = Uint8List.fromList(List.generate(40, (i) => i & 0xFF));
       final original = UdpPacket(
         sourcePort: 49152,
         destinationPort: 67,
@@ -74,11 +72,7 @@ void main() {
         payload: Uint8List(20),
       ).encode();
 
-      final truncated = Uint8List.sublistView(
-        encoded,
-        0,
-        encoded.length - 5,
-      );
+      final truncated = Uint8List.sublistView(encoded, 0, encoded.length - 5);
       expect(UdpPacket.parse(truncated), isNull);
     });
   });

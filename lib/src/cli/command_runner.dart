@@ -10,8 +10,8 @@ const description = 'A RISC-V system emulator ported from TinyEMU';
 
 class DartEmuCommandRunner extends CommandRunner<int> {
   DartEmuCommandRunner({Logger? logger})
-      : _logger = logger ?? Logger(),
-        super(executableName, description) {
+    : _logger = logger ?? Logger(),
+      super(executableName, description) {
     argParser
       ..addFlag(
         'version',

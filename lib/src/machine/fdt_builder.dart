@@ -324,11 +324,7 @@ class FdtBuilder {
     propEmpty('interrupt-controller');
     propStr('compatible', _DeviceTree.plicCompatible);
     propU32('riscv,ndev', _DeviceTree.plicMaxDevices);
-    propU64Pair(
-      'reg',
-      MemoryMapLayout.plicBaseAddr,
-      MemoryMapLayout.plicSize,
-    );
+    propU64Pair('reg', MemoryMapLayout.plicBaseAddr, MemoryMapLayout.plicSize);
     propTab('interrupts-extended', [
       intcPhandle,
       _InterruptIds.sExternal,
@@ -405,8 +401,7 @@ class FdtBuilder {
   void _putData(List<int> data) {
     if (data.isEmpty) return;
     final padded = (data.length + 3) & ~3;
-    final buf = Uint8List(padded)
-      ..setRange(0, data.length, data);
+    final buf = Uint8List(padded)..setRange(0, data.length, data);
     final view = ByteData.sublistView(buf);
     for (var i = 0; i < padded; i += _FdtFormat.cellBytes) {
       _structWords.add(view.getUint32(i));
@@ -469,10 +464,7 @@ class FdtBuilder {
   void _copyStructBlock(Uint8List output, int offset) {
     final view = ByteData.sublistView(output);
     for (var i = 0; i < _structWords.length; i++) {
-      view.setUint32(
-        offset + i * _FdtFormat.cellBytes,
-        _structWords[i],
-      );
+      view.setUint32(offset + i * _FdtFormat.cellBytes, _structWords[i]);
     }
   }
 

@@ -17,12 +17,7 @@ String tcpSessionKeyOf(
 }
 
 /// States for a simplified TCP connection proxy.
-enum TcpState {
-  synReceived,
-  established,
-  finWait,
-  closed,
-}
+enum TcpState { synReceived, established, finWait, closed }
 
 /// Manages TCP state for a single proxied connection.
 ///
@@ -36,8 +31,8 @@ class TcpSession {
     required this.remotePort,
     required this.localPort,
     required int initialGuestSeq,
-  })  : _hostSeq = Random().nextInt(0xFFFFFFFF),
-        _guestAcked = initialGuestSeq + 1;
+  }) : _hostSeq = Random().nextInt(0xFFFFFFFF),
+       _guestAcked = initialGuestSeq + 1;
 
   final TcpConnectionHandle handle;
   final Uint8List remoteIp;
@@ -66,19 +61,17 @@ class TcpSession {
     var offset = 0;
     while (offset < data.length) {
       final chunkSize = min(data.length - offset, _maxSegmentSize);
-      packets.add(TcpPacket(
-        sourcePort: remotePort,
-        destinationPort: localPort,
-        seqNum: _hostSeq & _seqMask,
-        ackNum: _guestAcked & _seqMask,
-        flags: TcpFlags.ack | TcpFlags.psh,
-        windowSize: _windowSize,
-        payload: Uint8List.sublistView(
-          data,
-          offset,
-          offset + chunkSize,
+      packets.add(
+        TcpPacket(
+          sourcePort: remotePort,
+          destinationPort: localPort,
+          seqNum: _hostSeq & _seqMask,
+          ackNum: _guestAcked & _seqMask,
+          flags: TcpFlags.ack | TcpFlags.psh,
+          windowSize: _windowSize,
+          payload: Uint8List.sublistView(data, offset, offset + chunkSize),
         ),
-      ));
+      );
       _hostSeq += chunkSize;
       offset += chunkSize;
     }

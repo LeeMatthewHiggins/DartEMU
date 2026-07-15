@@ -2,10 +2,8 @@ import 'dart:typed_data';
 
 import 'package:dart_emu/src/machine/phys_memory_range.dart';
 
-typedef FlushTlbWriteRangeCallback = void Function(
-  Uint8List ramAddr,
-  int ramSize,
-);
+typedef FlushTlbWriteRangeCallback =
+    void Function(Uint8List ramAddr, int ramSize);
 
 class PhysMemoryMap {
   PhysMemoryMap({this.onFlushTlbWriteRange});
@@ -68,10 +66,7 @@ class PhysMemoryMap {
     final range = findRange(physAddr);
     if (range is! RamRange) return null;
     final offset = physAddr - range.addr;
-    return Uint8List.view(
-      range.data.buffer,
-      range.data.offsetInBytes + offset,
-    );
+    return Uint8List.view(range.data.buffer, range.data.offsetInBytes + offset);
   }
 
   int physReadU8(int physAddr) {
@@ -83,19 +78,13 @@ class PhysMemoryMap {
   int physReadU16(int physAddr) {
     final range = findRange(physAddr);
     if (range is! RamRange) return 0;
-    return range.byteData.getUint16(
-      physAddr - range.addr,
-      Endian.little,
-    );
+    return range.byteData.getUint16(physAddr - range.addr, Endian.little);
   }
 
   int physReadU32(int physAddr) {
     final range = findRange(physAddr);
     if (range is! RamRange) return 0;
-    return range.byteData.getUint32(
-      physAddr - range.addr,
-      Endian.little,
-    );
+    return range.byteData.getUint32(physAddr - range.addr, Endian.little);
   }
 
   int physReadU64(int physAddr) {
@@ -122,11 +111,7 @@ class PhysMemoryMap {
   void physWriteU32(int physAddr, int value) {
     final range = findRange(physAddr);
     if (range is! RamRange) return;
-    range.byteData.setUint32(
-      physAddr - range.addr,
-      value,
-      Endian.little,
-    );
+    range.byteData.setUint32(physAddr - range.addr, value, Endian.little);
   }
 
   void physWriteU64(int physAddr, int value) {

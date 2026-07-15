@@ -32,15 +32,9 @@ class RiscVMachine {
     final memMap = PhysMemoryMap();
     final cpu = CpuExecutor(memMap: memMap, xlen: config.xlen);
 
-    final plic = Plic(
-      setMip: cpu.setMip,
-      resetMip: cpu.resetMip,
-    );
+    final plic = Plic(setMip: cpu.setMip, resetMip: cpu.resetMip);
 
-    final clint = Clint(
-      setMip: cpu.setMip,
-      resetMip: cpu.resetMip,
-    );
+    final clint = Clint(setMip: cpu.setMip, resetMip: cpu.resetMip);
 
     cpu.state.rtcTimeRead = () => clint.rtcTime;
 
@@ -78,13 +72,13 @@ class RiscVMachine {
       );
 
     return RiscVMachine._(
-      config: config,
-      memMap: memMap,
-      cpu: cpu,
-      plic: plic,
-      clint: clint,
-      htif: htif,
-    )
+        config: config,
+        memMap: memMap,
+        cpu: cpu,
+        plic: plic,
+        clint: clint,
+        htif: htif,
+      )
       .._registerVirtioDevices()
       .._loadAndBoot();
   }
@@ -118,9 +112,7 @@ class RiscVMachine {
     if (console == null) return;
     if (!console.canWriteData) return;
 
-    final input = config.console?.readData(
-      console.writeBufferLength,
-    );
+    final input = config.console?.readData(console.writeBufferLength);
     if (input == null || input.isEmpty) return;
 
     console.writeData(input);
@@ -247,38 +239,21 @@ class RiscVMachine {
       throw StateError('Low RAM not found for boot trampoline');
     }
     ByteData.sublistView(ramPtr)
-      ..setUint32(
-        _BootInsn.auipcT0Offset,
-        _BootInsn.auipcT0,
-        Endian.little,
-      )
-      ..setUint32(
-        _BootInsn.auipcA1Offset,
-        _BootInsn.auipcA1,
-        Endian.little,
-      )
-      ..setUint32(
-        _BootInsn.addiA1Offset,
-        _BootInsn.addiA1,
-        Endian.little,
-      )
+      ..setUint32(_BootInsn.auipcT0Offset, _BootInsn.auipcT0, Endian.little)
+      ..setUint32(_BootInsn.auipcA1Offset, _BootInsn.auipcA1, Endian.little)
+      ..setUint32(_BootInsn.addiA1Offset, _BootInsn.addiA1, Endian.little)
       ..setUint32(
         _BootInsn.csrrA0Offset,
         _BootInsn.csrrA0Mhartid,
         Endian.little,
       )
-      ..setUint32(
-        _BootInsn.jalrT0Offset,
-        _BootInsn.jalrZeroT0,
-        Endian.little,
-      );
+      ..setUint32(_BootInsn.jalrT0Offset, _BootInsn.jalrZeroT0, Endian.little);
   }
 
   Uint8List? _resolveImageData(Uint8List? data) => data;
 
-  int get _kernelAlignment => config.xlen == Xlen.rv32
-      ? _kernelAlign4Mb
-      : _kernelAlign2Mb;
+  int get _kernelAlignment =>
+      config.xlen == Xlen.rv32 ? _kernelAlign4Mb : _kernelAlign2Mb;
 
   static const _kernelAlign2Mb = 2 * 1024 * 1024;
   static const _kernelAlign4Mb = 4 * 1024 * 1024;

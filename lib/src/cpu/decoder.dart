@@ -1,33 +1,5 @@
-enum InstructionFormat { r, i, s, b, u, j }
-
-class DecodedInstruction {
-  const DecodedInstruction({
-    required this.raw,
-    required this.opcode,
-    required this.rd,
-    required this.rs1,
-    required this.rs2,
-    required this.funct3,
-    required this.funct7,
-    required this.immediate,
-    required this.format,
-  });
-
-  final int raw;
-  final int opcode;
-  final int rd;
-  final int rs1;
-  final int rs2;
-  final int funct3;
-  final int funct7;
-  final int immediate;
-  final InstructionFormat format;
-}
-
 class InstructionDecoder {
   const InstructionDecoder._();
-
-  static int extractOpcode(int insn) => insn & _opcodeMask;
 
   static int extractRd(int insn) => (insn >> _rdShift) & _regMask;
 
@@ -62,8 +34,6 @@ class InstructionDecoder {
     );
   }
 
-  static int extractImmU(int insn) => insn & _immUMask;
-
   static int extractImmJ(int insn) {
     final bits19to12 = (insn >> _immJMidShift) & 0xFF;
     final bit11 = (insn >> _immJBit11Shift) & 1;
@@ -86,7 +56,6 @@ class InstructionDecoder {
     return (value ^ signBit) - signBit;
   }
 
-  static const _opcodeMask = 0x7F;
   static const _regMask = 0x1F;
   static const _regBits = 5;
   static const _rdShift = 7;
@@ -105,7 +74,6 @@ class InstructionDecoder {
   static const _immBBit11 = 11;
   static const _immBBit5 = 5;
   static const _immBBits = 13;
-  static const _immUMask = 0xFFFFF000;
   static const _immJMidShift = 12;
   static const _immJBit11Shift = 20;
   static const _immJLowShift = 21;

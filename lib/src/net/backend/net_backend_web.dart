@@ -14,10 +14,7 @@ NetBackend createDefaultNetBackend() => WebNetBackend();
 /// - All other UDP is silently dropped
 class WebNetBackend implements NetBackend {
   @override
-  TcpConnectionHandle? openTcpConnection(
-    Uint8List destIp,
-    int destPort,
-  ) {
+  TcpConnectionHandle? openTcpConnection(Uint8List destIp, int destPort) {
     // Web cannot open raw TCP sockets.
     return null;
   }

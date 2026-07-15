@@ -44,9 +44,9 @@ class MachineConfig {
   final int memorySizeMb;
 
   String get machineType => switch (xlen) {
-        Xlen.rv32 => 'riscv32',
-        Xlen.rv64 => 'riscv64',
-      };
+    Xlen.rv32 => 'riscv32',
+    Xlen.rv64 => 'riscv64',
+  };
 
   final CharacterDevice? console;
   final List<BlockDevice> blockDevices;
@@ -116,10 +116,7 @@ class MachineConfig {
 
 /// Configuration for a VirtIO 9P shared filesystem.
 class FilesystemConfig {
-  const FilesystemConfig({
-    required this.file,
-    this.tag,
-  });
+  const FilesystemConfig({required this.file, this.tag});
 
   final String file;
   final String? tag;
@@ -127,10 +124,7 @@ class FilesystemConfig {
 
 /// Configuration for a VirtIO block device backed by a file.
 class DriveConfig {
-  const DriveConfig({
-    required this.file,
-    this.device,
-  });
+  const DriveConfig({required this.file, this.device});
 
   final String file;
   final String? device;
@@ -138,10 +132,7 @@ class DriveConfig {
 
 /// Configuration for a VirtIO network device.
 class EthernetConfig {
-  const EthernetConfig({
-    required this.driver,
-    this.ifname,
-  });
+  const EthernetConfig({required this.driver, this.ifname});
 
   final String driver;
   final String? ifname;

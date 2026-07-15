@@ -15,10 +15,7 @@ abstract class NetBackend {
   ///
   /// Returns a handle for sending/receiving, or `null` if the
   /// connection cannot be established (triggers RST on the guest).
-  TcpConnectionHandle? openTcpConnection(
-    Uint8List destIp,
-    int destPort,
-  );
+  TcpConnectionHandle? openTcpConnection(Uint8List destIp, int destPort);
 
   /// Sends a UDP datagram and registers a callback for responses.
   void sendUdpDatagram(

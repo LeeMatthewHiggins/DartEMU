@@ -21,15 +21,10 @@ class ConfigLoader {
     return loadFromString(content, baseDir: baseDir);
   }
 
-  static MachineConfig loadFromString(
-    String yamlContent, {
-    String? baseDir,
-  }) {
+  static MachineConfig loadFromString(String yamlContent, {String? baseDir}) {
     final doc = loadYaml(yamlContent);
     if (doc is! YamlMap) {
-      throw const ConfigException(
-        'Config must be a YAML mapping',
-      );
+      throw const ConfigException('Config must be a YAML mapping');
     }
     return _parseConfig(doc, baseDir);
   }
@@ -37,11 +32,11 @@ class ConfigLoader {
   static MachineConfig _parseConfig(YamlMap doc, String? baseDir) {
     _validateVersion(doc);
 
-    final machineStr = _getString(doc, _Keys.machine) ??
-        MachineConfig.defaultMachineType;
+    final machineStr =
+        _getString(doc, _Keys.machine) ?? MachineConfig.defaultMachineType;
     final xlen = _parseXlen(machineStr);
-    final memorySizeMb = _getInt(doc, _Keys.memorySize) ??
-        MachineConfig.defaultMemorySizeMb;
+    final memorySizeMb =
+        _getInt(doc, _Keys.memorySize) ?? MachineConfig.defaultMemorySizeMb;
 
     return MachineConfig(
       xlen: xlen,
@@ -123,10 +118,7 @@ class ConfigLoader {
         final file = fsMap[_Keys.file] as String?;
         if (file != null) {
           filesystems.add(
-            FilesystemConfig(
-              file: file,
-              tag: fsMap[_Keys.tag] as String?,
-            ),
+            FilesystemConfig(file: file, tag: fsMap[_Keys.tag] as String?),
           );
         }
       }
@@ -198,9 +190,7 @@ class ConfigResolver {
       initrdData: config.initrdData ?? _readFileOrNull(config.initrdPath),
       blockDevices: [
         ...config.blockDevices,
-        ...config.driveConfigs.map(
-          (drive) => FileBlockDevice.open(drive.file),
-        ),
+        ...config.driveConfigs.map((drive) => FileBlockDevice.open(drive.file)),
       ],
       ethDevices: [
         ...config.ethDevices,
@@ -212,9 +202,7 @@ class ConfigResolver {
   static EthernetDevice _resolveEthernet(EthernetConfig eth) {
     return switch (eth.driver) {
       'user' => UserNetDevice(),
-      _ => throw ConfigException(
-          'Unsupported ethernet driver: ${eth.driver}',
-        ),
+      _ => throw ConfigException('Unsupported ethernet driver: ${eth.driver}'),
     };
   }
 

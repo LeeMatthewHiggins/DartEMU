@@ -2,10 +2,8 @@ import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:dart_emu/src/device/irq_signal.dart';
-import 'package:dart_emu/src/device/pci/pci_device.dart';
 import 'package:dart_emu/src/device/virtio/virtio_queue.dart';
 import 'package:dart_emu/src/machine/phys_memory_map.dart';
-import 'package:dart_emu/src/machine/phys_memory_range.dart';
 
 class _MmioOffset {
   static const magicValue = 0x000;
@@ -49,17 +47,14 @@ class _MmioConst {
 }
 
 abstract class VirtioDevice {
-  VirtioDevice({
-    required this.memMap,
-  })  : queues = List.generate(
-          VirtioQueueConstants.maxQueues,
-          (_) => QueueState(),
-        ),
-        configSpace = Uint8List(VirtioQueueConstants.maxConfigSpaceSize);
+  VirtioDevice({required this.memMap})
+    : queues = List.generate(
+        VirtioQueueConstants.maxQueues,
+        (_) => QueueState(),
+      ),
+      configSpace = Uint8List(VirtioQueueConstants.maxConfigSpaceSize);
 
   final PhysMemoryMap memMap;
-  DeviceRange? memRange;
-  PciDevice? pciDevice;
   IrqSignal? irq;
 
   int intStatus = 0;
@@ -73,12 +68,7 @@ abstract class VirtioDevice {
   int get vendorId;
   int get deviceFeatures;
 
-  int onDeviceReceive(
-    int queueIdx,
-    int descIdx,
-    int readSize,
-    int writeSize,
-  );
+  int onDeviceReceive(int queueIdx, int descIdx, int readSize, int writeSize);
 
   void onConfigWrite() {}
 
@@ -143,10 +133,7 @@ abstract class VirtioDevice {
 
   int readMmio(int offset, int sizeLog2) {
     if (offset >= _MmioOffset.configBase) {
-      return readConfig(
-        offset - _MmioOffset.configBase,
-        sizeLog2,
-      );
+      return readConfig(offset - _MmioOffset.configBase, sizeLog2);
     }
 
     if (sizeLog2 != _MmioConst.sizeLog2Word) return 0;
@@ -198,11 +185,7 @@ abstract class VirtioDevice {
 
   void writeMmio(int offset, int value, int sizeLog2) {
     if (offset >= _MmioOffset.configBase) {
-      writeConfig(
-        offset - _MmioOffset.configBase,
-        value,
-        sizeLog2,
-      );
+      writeConfig(offset - _MmioOffset.configBase, value, sizeLog2);
       return;
     }
 
@@ -258,7 +241,8 @@ abstract class VirtioDevice {
     final index = mem.physReadU16(idxAddr);
     mem.physWriteU16(idxAddr, index + 1);
 
-    final entryAddr = qs.usedAddr +
+    final entryAddr =
+        qs.usedAddr +
         _MmioConst.usedRingHeaderBytes +
         (index & (qs.num - 1)) * _MmioConst.usedRingEntryBytes;
     mem
@@ -276,8 +260,7 @@ abstract class VirtioDevice {
 
   VirtioDescriptor getDescriptor(int queueIdx, int descIdx) {
     final qs = queues[queueIdx];
-    final addr =
-        qs.descAddr + descIdx * _MmioConst.descriptorByteSize;
+    final addr = qs.descAddr + descIdx * _MmioConst.descriptorByteSize;
     return VirtioDescriptor(
       addr: memMap.physReadU64(addr),
       length: memMap.physReadU32(addr + 8),
@@ -326,8 +309,7 @@ abstract class VirtioDevice {
       final descIdx = memMap.physReadU16(
         qs.availAddr +
             _MmioConst.availRingEntriesOffset +
-            (qs.lastAvailIdx & (qs.num - 1)) *
-                _MmioConst.availRingEntryBytes,
+            (qs.lastAvailIdx & (qs.num - 1)) * _MmioConst.availRingEntryBytes,
       );
       final sizes = getDescriptorRwSize(queueIdx, descIdx);
       if (sizes != null) {
@@ -416,19 +398,9 @@ abstract class VirtioDevice {
       final chunkLen = min(remaining, desc.length - descOffset);
 
       if (toQueue) {
-        _memcpyToRam(
-          desc.addr + descOffset,
-          buf,
-          bufOffset,
-          chunkLen,
-        );
+        _memcpyToRam(desc.addr + descOffset, buf, bufOffset, chunkLen);
       } else {
-        _memcpyFromRam(
-          buf,
-          bufOffset,
-          desc.addr + descOffset,
-          chunkLen,
-        );
+        _memcpyFromRam(buf, bufOffset, desc.addr + descOffset, chunkLen);
       }
 
       remaining -= chunkLen;
@@ -446,23 +418,13 @@ abstract class VirtioDevice {
     return 0;
   }
 
-  void _memcpyFromRam(
-    Uint8List buf,
-    int bufOffset,
-    int physAddr,
-    int count,
-  ) {
+  void _memcpyFromRam(Uint8List buf, int bufOffset, int physAddr, int count) {
     final ptr = memMap.getRamPointer(physAddr);
     if (ptr == null) return;
     buf.setRange(bufOffset, bufOffset + count, ptr);
   }
 
-  void _memcpyToRam(
-    int physAddr,
-    Uint8List buf,
-    int bufOffset,
-    int count,
-  ) {
+  void _memcpyToRam(int physAddr, Uint8List buf, int bufOffset, int count) {
     final ptr = memMap.getRamPointer(physAddr);
     if (ptr == null) return;
     ptr.setRange(0, count, buf, bufOffset);
@@ -482,25 +444,17 @@ abstract class VirtioDevice {
   static bool _isPowerOfTwo(int value) =>
       value > 0 && (value & (value - 1)) == 0;
 
-  static void _setLow32(
-    QueueState qs,
-    _AddrField field,
-    int value,
-  ) {
+  static void _setLow32(QueueState qs, _AddrField field, int value) {
     final current = field.read(qs);
     final updated =
         (current & ~_MmioConst.mask32) | (value & _MmioConst.mask32);
     field.write(qs, updated);
   }
 
-  static void _setHigh32(
-    QueueState qs,
-    _AddrField field,
-    int value,
-  ) {
+  static void _setHigh32(QueueState qs, _AddrField field, int value) {
     final current = field.read(qs);
-    final updated = (current & _MmioConst.mask32) |
-        ((value & _MmioConst.mask32) << 32);
+    final updated =
+        (current & _MmioConst.mask32) | ((value & _MmioConst.mask32) << 32);
     field.write(qs, updated);
   }
 }
@@ -511,10 +465,10 @@ enum _AddrField {
   used;
 
   int read(QueueState qs) => switch (this) {
-        desc => qs.descAddr,
-        avail => qs.availAddr,
-        used => qs.usedAddr,
-      };
+    desc => qs.descAddr,
+    avail => qs.availAddr,
+    used => qs.usedAddr,
+  };
 
   void write(QueueState qs, int value) {
     switch (this) {

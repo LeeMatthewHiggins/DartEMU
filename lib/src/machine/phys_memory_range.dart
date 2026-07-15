@@ -6,10 +6,8 @@ typedef DeviceReadFunc = int Function(int offset, int sizeLog2);
 typedef DeviceWriteFunc = void Function(int offset, int value, int sizeLog2);
 
 sealed class PhysMemoryRange {
-  PhysMemoryRange({
-    required this.addr,
-    required this.originalSize,
-  }) : size = originalSize;
+  PhysMemoryRange({required this.addr, required this.originalSize})
+    : size = originalSize;
 
   int addr;
   final int originalSize;
@@ -33,8 +31,7 @@ class RamRange extends PhysMemoryRange {
   final Uint8List data;
   final DirtyBits dirtyBits;
 
-  late final ByteData byteData =
-      ByteData.view(data.buffer, data.offsetInBytes);
+  late final ByteData byteData = ByteData.view(data.buffer, data.offsetInBytes);
 }
 
 class DeviceRange extends PhysMemoryRange {

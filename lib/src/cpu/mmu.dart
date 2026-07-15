@@ -20,36 +20,27 @@ abstract class Mmu {
 
   void flushTlbPage(int virtualAddr) {
     final pageTag = virtualAddr & ~TlbConstants.pageMask;
-    final tlbIdx = (virtualAddr >> TlbConstants.pageSizeLog2) &
-        TlbConstants.indexMask;
+    final tlbIdx =
+        (virtualAddr >> TlbConstants.pageSizeLog2) & TlbConstants.indexMask;
     _invalidateIfMatches(state.tlbRead[tlbIdx], pageTag);
     _invalidateIfMatches(state.tlbWrite[tlbIdx], pageTag);
     _invalidateIfMatches(state.tlbCode[tlbIdx], pageTag);
   }
 
-  PrivilegeLevel _effectivePrivilege(
-    MemoryAccessType accessType,
-  ) {
+  PrivilegeLevel _effectivePrivilege(MemoryAccessType accessType) {
     if (state.privilege == PrivilegeLevel.machine &&
         accessType != MemoryAccessType.fetch &&
         (state.mstatus & _Mstatus.mprvMask) != 0) {
-      final mpp =
-          (state.mstatus >> _Mstatus.mppShift) & _Mstatus.privMask;
+      final mpp = (state.mstatus >> _Mstatus.mppShift) & _Mstatus.privMask;
       return PrivilegeLevel.fromValue(mpp);
     }
     return state.privilege;
   }
 
-  bool _pteIsValid(int pte) =>
-      (pte & _Pte.validMask) != 0;
+  bool _pteIsValid(int pte) => (pte & _Pte.validMask) != 0;
 
-  void _validateLeafXwr(
-    int xwr,
-    int virtualAddr,
-    MemoryAccessType accessType,
-  ) {
-    if (xwr == _Pte.xwrWriteOnly ||
-        xwr == _Pte.xwrWriteExecute) {
+  void _validateLeafXwr(int xwr, int virtualAddr, MemoryAccessType accessType) {
+    if (xwr == _Pte.xwrWriteOnly || xwr == _Pte.xwrWriteExecute) {
       _raisePageFault(virtualAddr, accessType);
     }
   }
@@ -63,8 +54,7 @@ abstract class Mmu {
     final isUserPage = (pte & _Pte.userMask) != 0;
 
     if (effectivePriv == PrivilegeLevel.supervisor) {
-      if (isUserPage &&
-          (state.mstatus & _Mstatus.sumMask) == 0) {
+      if (isUserPage && (state.mstatus & _Mstatus.sumMask) == 0) {
         _raisePageFault(virtualAddr, accessType);
       }
     } else if (effectivePriv == PrivilegeLevel.user) {
@@ -74,15 +64,10 @@ abstract class Mmu {
     }
   }
 
-  void _checkPermission(
-    int xwr,
-    MemoryAccessType accessType,
-    int virtualAddr,
-  ) {
+  void _checkPermission(int xwr, MemoryAccessType accessType, int virtualAddr) {
     var effectiveXwr = xwr;
     if ((state.mstatus & _Mstatus.mxrMask) != 0) {
-      effectiveXwr |=
-          effectiveXwr >> _Pte.xwrExecuteToReadShift;
+      effectiveXwr |= effectiveXwr >> _Pte.xwrExecuteToReadShift;
     }
     effectiveXwr &= _Pte.xwrMask;
 
@@ -97,15 +82,8 @@ abstract class Mmu {
     }
   }
 
-  Never _raisePageFault(
-    int virtualAddr,
-    MemoryAccessType accessType,
-  ) {
-    throw MmuException(
-      virtualAddr,
-      accessType,
-      MmuFault.pageFault,
-    );
+  Never _raisePageFault(int virtualAddr, MemoryAccessType accessType) {
+    throw MmuException(virtualAddr, accessType, MmuFault.pageFault);
   }
 
   void _invalidateIfMatches(TlbEntry entry, int pageTag) {
@@ -140,12 +118,9 @@ class _Mmu32 extends Mmu {
     var pageTableBase = rootPpn << _Sv32.pageShift;
 
     for (var level = _Sv32.rootLevel; level >= 0; level--) {
-      final vpnShift =
-          _Sv32.pageShift + _Sv32.vpnBits * level;
-      final vpn =
-          (virtualAddr >> vpnShift) & _Sv32.vpnMask;
-      final pteAddr =
-          pageTableBase + vpn * _Sv32.pteSizeBytes;
+      final vpnShift = _Sv32.pageShift + _Sv32.vpnBits * level;
+      final vpn = (virtualAddr >> vpnShift) & _Sv32.vpnMask;
+      final pteAddr = pageTableBase + vpn * _Sv32.pteSizeBytes;
 
       final pte = _readPte(pteAddr, virtualAddr, accessType);
       if (!_pteIsValid(pte)) {
@@ -154,31 +129,22 @@ class _Mmu32 extends Mmu {
 
       final xwr = (pte >> _Pte.readBit) & _Pte.xwrMask;
       if (xwr == 0) {
-        pageTableBase =
-            _ptePpn(pte) << _Sv32.pageShift;
+        pageTableBase = _ptePpn(pte) << _Sv32.pageShift;
         continue;
       }
 
       _validateLeafXwr(xwr, virtualAddr, accessType);
       _checkPrivilege(pte, accessType, virtualAddr, effectivePriv);
       _checkPermission(xwr, accessType, virtualAddr);
-      _validateSuperpageAlignment(
-        pte, level, virtualAddr, accessType,
-      );
-      _updateAccessedDirtyBits(
-        pteAddr, pte, accessType, virtualAddr,
-      );
+      _validateSuperpageAlignment(pte, level, virtualAddr, accessType);
+      _updateAccessedDirtyBits(pteAddr, pte, accessType, virtualAddr);
       return _buildPhysicalAddr(pte, virtualAddr, level);
     }
 
     _raisePageFault(virtualAddr, accessType);
   }
 
-  int _readPte(
-    int pteAddr,
-    int virtualAddr,
-    MemoryAccessType accessType,
-  ) {
+  int _readPte(int pteAddr, int virtualAddr, MemoryAccessType accessType) {
     final range = state.memMap.findRange(pteAddr);
     if (range is! RamRange) {
       _raisePageFault(virtualAddr, accessType);
@@ -187,8 +153,7 @@ class _Mmu32 extends Mmu {
     return range.byteData.getUint32(offset, Endian.little);
   }
 
-  int _ptePpn(int pte) =>
-      (pte >> _Pte.ppnShift) & _Sv32.ppnMask;
+  int _ptePpn(int pte) => (pte >> _Pte.ppnShift) & _Sv32.ppnMask;
 
   void _validateSuperpageAlignment(
     int pte,
@@ -198,8 +163,7 @@ class _Mmu32 extends Mmu {
   ) {
     if (level == 0) return;
     final ppn = _ptePpn(pte);
-    final alignMask =
-        (1 << (_Sv32.vpnBits * level)) - 1;
+    final alignMask = (1 << (_Sv32.vpnBits * level)) - 1;
     if ((ppn & alignMask) != 0) {
       _raisePageFault(virtualAddr, accessType);
     }
@@ -211,11 +175,9 @@ class _Mmu32 extends Mmu {
     MemoryAccessType accessType,
     int virtualAddr,
   ) {
-    final needsAccessed =
-        (pte & _Pte.accessedMask) == 0;
+    final needsAccessed = (pte & _Pte.accessedMask) == 0;
     final needsDirty =
-        accessType == MemoryAccessType.write &&
-            (pte & _Pte.dirtyMask) == 0;
+        accessType == MemoryAccessType.write && (pte & _Pte.dirtyMask) == 0;
     if (!needsAccessed && !needsDirty) return;
 
     var updatedPte = pte | _Pte.accessedMask;
@@ -228,24 +190,14 @@ class _Mmu32 extends Mmu {
       _raisePageFault(virtualAddr, accessType);
     }
     final offset = pteAddr - range.addr;
-    range.byteData.setUint32(
-      offset,
-      updatedPte,
-      Endian.little,
-    );
+    range.byteData.setUint32(offset, updatedPte, Endian.little);
   }
 
-  int _buildPhysicalAddr(
-    int pte,
-    int virtualAddr,
-    int level,
-  ) {
+  int _buildPhysicalAddr(int pte, int virtualAddr, int level) {
     final paddr = _ptePpn(pte) << _Sv32.pageShift;
-    final shift =
-        _Sv32.pageShift + _Sv32.vpnBits * level;
+    final shift = _Sv32.pageShift + _Sv32.vpnBits * level;
     final vaddrMask = (1 << shift) - 1;
-    return (paddr & ~vaddrMask) |
-        (virtualAddr & vaddrMask);
+    return (paddr & ~vaddrMask) | (virtualAddr & vaddrMask);
   }
 }
 
@@ -259,20 +211,13 @@ class _Mmu64 extends Mmu {
       return virtualAddr;
     }
 
-    final satpMode = (state.satp >> _Satp64.modeShift) &
-        _Satp64.modeMask;
+    final satpMode = (state.satp >> _Satp64.modeShift) & _Satp64.modeMask;
     if (satpMode == 0) return virtualAddr;
 
     return switch (satpMode) {
-      _SatpMode.sv39 =>
-        _walkSv39(virtualAddr, accessType, effectivePriv),
-      _SatpMode.sv48 =>
-        _walkSv48(virtualAddr, accessType),
-      _ => throw MmuException(
-          virtualAddr,
-          accessType,
-          MmuFault.accessFault,
-        ),
+      _SatpMode.sv39 => _walkSv39(virtualAddr, accessType, effectivePriv),
+      _SatpMode.sv48 => _walkSv48(virtualAddr, accessType),
+      _ => throw MmuException(virtualAddr, accessType, MmuFault.accessFault),
     };
   }
 
@@ -287,8 +232,7 @@ class _Mmu64 extends Mmu {
 
     for (var level = _Sv39.rootLevel; level >= 0; level--) {
       final vpn = _extractVpn(virtualAddr, level);
-      final pteAddr =
-          pageTableBase + vpn * _Sv39.pteSizeBytes;
+      final pteAddr = pageTableBase + vpn * _Sv39.pteSizeBytes;
 
       final pte = _readPte(pteAddr, virtualAddr, accessType);
       if (!_pteIsValid(pte)) {
@@ -304,47 +248,31 @@ class _Mmu64 extends Mmu {
       _validateLeafXwr(xwr, virtualAddr, accessType);
       _checkPrivilege(pte, accessType, virtualAddr, effectivePriv);
       _checkPermission(xwr, accessType, virtualAddr);
-      _validateSuperpageAlignment(
-        pte, level, virtualAddr, accessType,
-      );
-      _updateAccessedDirtyBits(
-        pteAddr, pte, accessType, virtualAddr,
-      );
+      _validateSuperpageAlignment(pte, level, virtualAddr, accessType);
+      _updateAccessedDirtyBits(pteAddr, pte, accessType, virtualAddr);
       return _buildPhysicalAddr(pte, virtualAddr, level);
     }
 
     _raisePageFault(virtualAddr, accessType);
   }
 
-  int _walkSv48(
-    int virtualAddr,
-    MemoryAccessType accessType,
-  ) {
+  int _walkSv48(int virtualAddr, MemoryAccessType accessType) {
     throw UnimplementedError('SV48 page table walk');
   }
 
-  void _validateSv39VirtualAddr(
-    int virtualAddr,
-    MemoryAccessType accessType,
-  ) {
-    final shifted =
-        (virtualAddr << _Sv39.signExtShift) >> _Sv39.signExtShift;
+  void _validateSv39VirtualAddr(int virtualAddr, MemoryAccessType accessType) {
+    final shifted = (virtualAddr << _Sv39.signExtShift) >> _Sv39.signExtShift;
     if (shifted != virtualAddr) {
       _raisePageFault(virtualAddr, accessType);
     }
   }
 
   int _extractVpn(int virtualAddr, int level) {
-    final shift =
-        _Sv39.pageShift + _Sv39.vpnBits * level;
+    final shift = _Sv39.pageShift + _Sv39.vpnBits * level;
     return (virtualAddr >> shift) & _Sv39.vpnMask;
   }
 
-  int _readPte(
-    int pteAddr,
-    int virtualAddr,
-    MemoryAccessType accessType,
-  ) {
+  int _readPte(int pteAddr, int virtualAddr, MemoryAccessType accessType) {
     final range = state.memMap.findRange(pteAddr);
     if (range is! RamRange) {
       _raisePageFault(virtualAddr, accessType);
@@ -353,8 +281,7 @@ class _Mmu64 extends Mmu {
     return range.byteData.getUint64(offset, Endian.little);
   }
 
-  int _ptePpn(int pte) =>
-      (pte >> _Pte.ppnShift) & _Sv39.ppnMask;
+  int _ptePpn(int pte) => (pte >> _Pte.ppnShift) & _Sv39.ppnMask;
 
   void _validateSuperpageAlignment(
     int pte,
@@ -364,8 +291,7 @@ class _Mmu64 extends Mmu {
   ) {
     if (level == 0) return;
     final ppn = _ptePpn(pte);
-    final alignMask =
-        (1 << (_Sv39.vpnBits * level)) - 1;
+    final alignMask = (1 << (_Sv39.vpnBits * level)) - 1;
     if ((ppn & alignMask) != 0) {
       _raisePageFault(virtualAddr, accessType);
     }
@@ -377,11 +303,9 @@ class _Mmu64 extends Mmu {
     MemoryAccessType accessType,
     int virtualAddr,
   ) {
-    final needsAccessed =
-        (pte & _Pte.accessedMask) == 0;
+    final needsAccessed = (pte & _Pte.accessedMask) == 0;
     final needsDirty =
-        accessType == MemoryAccessType.write &&
-            (pte & _Pte.dirtyMask) == 0;
+        accessType == MemoryAccessType.write && (pte & _Pte.dirtyMask) == 0;
     if (!needsAccessed && !needsDirty) return;
 
     var updatedPte = pte | _Pte.accessedMask;
@@ -394,24 +318,14 @@ class _Mmu64 extends Mmu {
       _raisePageFault(virtualAddr, accessType);
     }
     final offset = pteAddr - range.addr;
-    range.byteData.setUint64(
-      offset,
-      updatedPte,
-      Endian.little,
-    );
+    range.byteData.setUint64(offset, updatedPte, Endian.little);
   }
 
-  int _buildPhysicalAddr(
-    int pte,
-    int virtualAddr,
-    int level,
-  ) {
+  int _buildPhysicalAddr(int pte, int virtualAddr, int level) {
     final paddr = _ptePpn(pte) << _Sv39.pageShift;
-    final shift =
-        _Sv39.pageShift + _Sv39.vpnBits * level;
+    final shift = _Sv39.pageShift + _Sv39.vpnBits * level;
     final vaddrMask = (1 << shift) - 1;
-    return (paddr & ~vaddrMask) |
-        (virtualAddr & vaddrMask);
+    return (paddr & ~vaddrMask) | (virtualAddr & vaddrMask);
   }
 }
 
@@ -425,19 +339,18 @@ class MmuException implements Exception {
   final MmuFault fault;
 
   int get causeCode => switch ((accessType, fault)) {
-        (MemoryAccessType.fetch, MmuFault.pageFault) =>
-          _ExceptionCause.fetchPageFault,
-        (MemoryAccessType.read, MmuFault.pageFault) =>
-          _ExceptionCause.loadPageFault,
-        (MemoryAccessType.write, MmuFault.pageFault) =>
-          _ExceptionCause.storePageFault,
-        (MemoryAccessType.fetch, MmuFault.accessFault) =>
-          _ExceptionCause.faultFetch,
-        (MemoryAccessType.read, MmuFault.accessFault) =>
-          _ExceptionCause.faultLoad,
-        (MemoryAccessType.write, MmuFault.accessFault) =>
-          _ExceptionCause.faultStore,
-      };
+    (MemoryAccessType.fetch, MmuFault.pageFault) =>
+      _ExceptionCause.fetchPageFault,
+    (MemoryAccessType.read, MmuFault.pageFault) =>
+      _ExceptionCause.loadPageFault,
+    (MemoryAccessType.write, MmuFault.pageFault) =>
+      _ExceptionCause.storePageFault,
+    (MemoryAccessType.fetch, MmuFault.accessFault) =>
+      _ExceptionCause.faultFetch,
+    (MemoryAccessType.read, MmuFault.accessFault) => _ExceptionCause.faultLoad,
+    (MemoryAccessType.write, MmuFault.accessFault) =>
+      _ExceptionCause.faultStore,
+  };
 
   @override
   String toString() =>

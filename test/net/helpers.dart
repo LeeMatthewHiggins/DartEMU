@@ -13,8 +13,10 @@ Uint8List buildArpRequest({
   required Uint8List targetIp,
 }) {
   final arp = Uint8List(28)
-    ..[4] = 6 // hardware size
-    ..[5] = 4 // protocol size
+    ..[4] =
+        6 // hardware size
+    ..[5] =
+        4 // protocol size
     ..setRange(8, 14, senderMac)
     ..setRange(14, 18, senderIp)
     ..setRange(24, 28, targetIp);
@@ -33,8 +35,10 @@ Uint8List buildArpRequest({
 Uint8List buildDhcpDiscover({required Uint8List clientMac}) {
   final dhcp = Uint8List(548)
     ..[0] = DhcpConst.bootRequest
-    ..[1] = 1 // Ethernet
-    ..[2] = 6 // MAC length
+    ..[1] =
+        1 // Ethernet
+    ..[2] =
+        6 // MAC length
     ..setRange(28, 34, clientMac);
   ByteData.sublistView(dhcp).setUint32(4, 0x12345678);
   // Magic cookie at offset 236.

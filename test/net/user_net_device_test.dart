@@ -21,10 +21,7 @@ void main() {
 
     setUp(() {
       backend = MockNetBackend();
-      device = UserNetDevice(
-        backend: backend,
-        macAddress: clientMac,
-      );
+      device = UserNetDevice(backend: backend, macAddress: clientMac);
     });
 
     test('ARP request returns reply with gateway MAC', () {
@@ -108,10 +105,7 @@ void main() {
 
       final icmp = IcmpPacket.parse(ip.payload)!;
       expect(icmp.isEchoReply, isTrue);
-      expect(
-        icmp.payload,
-        Uint8List.fromList([0, 1, 0, 1, 0x61]),
-      );
+      expect(icmp.payload, Uint8List.fromList([0, 1, 0, 1, 0x61]));
     });
 
     test('DNS query returns A-record response', () {
@@ -139,10 +133,7 @@ void main() {
       expect(view.getUint16(2), DnsConst.flagsResponse);
       expect(view.getUint16(6), 1);
 
-      final answerIp = Uint8List.sublistView(
-        dns,
-        dns.length - 4,
-      );
+      final answerIp = Uint8List.sublistView(dns, dns.length - 4);
       expect(answerIp, [93, 184, 216, 34]);
     });
 
@@ -197,114 +188,106 @@ void main() {
       expect(tcp.isRst, isTrue);
     });
 
-    test(
-      'full TCP download: SYN → SYN-ACK → data → FIN',
-      () {
-        final dstIp = Uint8List.fromList([93, 184, 216, 34]);
-        final mockHandle = FakeTcpHandle();
-        backend.tcpHandle = mockHandle;
+    test('full TCP download: SYN → SYN-ACK → data → FIN', () {
+      final dstIp = Uint8List.fromList([93, 184, 216, 34]);
+      final mockHandle = FakeTcpHandle();
+      backend.tcpHandle = mockHandle;
 
-        // Step 1: Send SYN, expect SYN-ACK.
-        final syn = buildTcpSyn(
-          srcIp: clientIp,
-          srcMac: clientMac,
-          dstIp: dstIp,
-          dstPort: 80,
-        );
-        device.writePacket(syn);
+      // Step 1: Send SYN, expect SYN-ACK.
+      final syn = buildTcpSyn(
+        srcIp: clientIp,
+        srcMac: clientMac,
+        dstIp: dstIp,
+        dstPort: 80,
+      );
+      device.writePacket(syn);
 
-        final synAckBytes = device.readPacket();
-        expect(synAckBytes, isNotNull);
+      final synAckBytes = device.readPacket();
+      expect(synAckBytes, isNotNull);
 
-        final synAckFrame = EthernetFrame.parse(synAckBytes!)!;
-        final synAckIp = Ipv4Packet.parse(synAckFrame.payload)!;
-        final synAck = TcpPacket.parse(synAckIp.payload)!;
-        expect(synAck.isSyn, isTrue);
-        expect(synAck.isAck, isTrue);
-        expect(synAck.ackNum, 1001);
+      final synAckFrame = EthernetFrame.parse(synAckBytes!)!;
+      final synAckIp = Ipv4Packet.parse(synAckFrame.payload)!;
+      final synAck = TcpPacket.parse(synAckIp.payload)!;
+      expect(synAck.isSyn, isTrue);
+      expect(synAck.isAck, isTrue);
+      expect(synAck.ackNum, 1001);
 
-        final serverSeq = synAck.seqNum + 1;
+      final serverSeq = synAck.seqNum + 1;
 
-        // Step 2: Complete handshake with ACK.
-        final ack = buildTcpPacket(
-          srcIp: clientIp,
-          srcMac: clientMac,
-          dstIp: dstIp,
-          dstPort: 80,
-          srcPort: 49152,
-          seqNum: 1001,
-          ackNum: serverSeq,
-          flags: TcpFlags.ack,
-        );
-        device.writePacket(ack);
-        expect(device.readPacket(), isNull);
+      // Step 2: Complete handshake with ACK.
+      final ack = buildTcpPacket(
+        srcIp: clientIp,
+        srcMac: clientMac,
+        dstIp: dstIp,
+        dstPort: 80,
+        srcPort: 49152,
+        seqNum: 1001,
+        ackNum: serverSeq,
+        flags: TcpFlags.ack,
+      );
+      device.writePacket(ack);
+      expect(device.readPacket(), isNull);
 
-        // Step 3: Host sends data via poll().
-        final downloadData = Uint8List.fromList(
-          'Hello, World!'.codeUnits,
-        );
-        mockHandle.pendingData = downloadData;
-        device.poll();
+      // Step 3: Host sends data via poll().
+      final downloadData = Uint8List.fromList('Hello, World!'.codeUnits);
+      mockHandle.pendingData = downloadData;
+      device.poll();
 
-        final dataReply = device.readPacket();
-        expect(dataReply, isNotNull);
+      final dataReply = device.readPacket();
+      expect(dataReply, isNotNull);
 
-        final dataFrame = EthernetFrame.parse(dataReply!)!;
-        final dataIp = Ipv4Packet.parse(dataFrame.payload)!;
-        final dataTcp = TcpPacket.parse(dataIp.payload)!;
-        expect(dataTcp.isAck, isTrue);
-        expect(dataTcp.isPsh, isTrue);
-        expect(
-          String.fromCharCodes(dataTcp.payload),
-          'Hello, World!',
-        );
+      final dataFrame = EthernetFrame.parse(dataReply!)!;
+      final dataIp = Ipv4Packet.parse(dataFrame.payload)!;
+      final dataTcp = TcpPacket.parse(dataIp.payload)!;
+      expect(dataTcp.isAck, isTrue);
+      expect(dataTcp.isPsh, isTrue);
+      expect(String.fromCharCodes(dataTcp.payload), 'Hello, World!');
 
-        // Step 4: ACK the data.
-        final dataAck = buildTcpPacket(
-          srcIp: clientIp,
-          srcMac: clientMac,
-          dstIp: dstIp,
-          dstPort: 80,
-          srcPort: 49152,
-          seqNum: 1001,
-          ackNum: serverSeq + downloadData.length,
-          flags: TcpFlags.ack,
-        );
-        device.writePacket(dataAck);
+      // Step 4: ACK the data.
+      final dataAck = buildTcpPacket(
+        srcIp: clientIp,
+        srcMac: clientMac,
+        dstIp: dstIp,
+        dstPort: 80,
+        srcPort: 49152,
+        seqNum: 1001,
+        ackNum: serverSeq + downloadData.length,
+        flags: TcpFlags.ack,
+      );
+      device.writePacket(dataAck);
 
-        // Step 5: Host closes connection.
-        mockHandle.remoteIsClosed = true;
-        device.poll();
+      // Step 5: Host closes connection.
+      mockHandle.remoteIsClosed = true;
+      device.poll();
 
-        final finBytes = device.readPacket();
-        expect(finBytes, isNotNull);
+      final finBytes = device.readPacket();
+      expect(finBytes, isNotNull);
 
-        final finFrame = EthernetFrame.parse(finBytes!)!;
-        final finIp = Ipv4Packet.parse(finFrame.payload)!;
-        final finTcp = TcpPacket.parse(finIp.payload)!;
-        expect(finTcp.isFin, isTrue);
-        expect(finTcp.isAck, isTrue);
+      final finFrame = EthernetFrame.parse(finBytes!)!;
+      final finIp = Ipv4Packet.parse(finFrame.payload)!;
+      final finTcp = TcpPacket.parse(finIp.payload)!;
+      expect(finTcp.isFin, isTrue);
+      expect(finTcp.isAck, isTrue);
 
-        // Step 6: Guest sends FIN-ACK.
-        final guestFin = buildTcpPacket(
-          srcIp: clientIp,
-          srcMac: clientMac,
-          dstIp: dstIp,
-          dstPort: 80,
-          srcPort: 49152,
-          seqNum: 1001,
-          ackNum: finTcp.seqNum + 1,
-          flags: TcpFlags.fin | TcpFlags.ack,
-        );
-        device.writePacket(guestFin);
+      // Step 6: Guest sends FIN-ACK.
+      final guestFin = buildTcpPacket(
+        srcIp: clientIp,
+        srcMac: clientMac,
+        dstIp: dstIp,
+        dstPort: 80,
+        srcPort: 49152,
+        seqNum: 1001,
+        ackNum: finTcp.seqNum + 1,
+        flags: TcpFlags.fin | TcpFlags.ack,
+      );
+      device.writePacket(guestFin);
 
-        // Drain any remaining ACK.
-        while (device.readPacket() != null) {}
+      // Drain any remaining ACK.
+      while (device.readPacket() != null) {}
 
-        // Queue should be empty, session cleaned up.
-        expect(device.readPacket(), isNull);
-      },
-    );
+      // Queue should be empty, session cleaned up.
+      expect(device.readPacket(), isNull);
+    });
 
     test('UDP datagram is forwarded to backend', () {
       final dstIp = Uint8List.fromList([8, 8, 8, 8]);
@@ -345,10 +328,7 @@ class MockNetBackend implements NetBackend {
   Uint8List? lastUdpData;
 
   @override
-  TcpConnectionHandle? openTcpConnection(
-    Uint8List destIp,
-    int destPort,
-  ) {
+  TcpConnectionHandle? openTcpConnection(Uint8List destIp, int destPort) {
     return tcpHandle;
   }
 

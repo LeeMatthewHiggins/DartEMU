@@ -53,9 +53,7 @@ class ZipConfigLoader {
   }
 
   static ArchiveFile _findConfigEntry(Archive archive) {
-    final configs = archive.files.where(
-      (f) => f.isFile && _isYaml(f.name),
-    );
+    final configs = archive.files.where((f) => f.isFile && _isYaml(f.name));
     if (configs.isEmpty) {
       throw const ZipConfigException(
         'No .yaml or .yml config file found in archive',
@@ -86,12 +84,20 @@ class ZipConfigLoader {
       xlen: xlen,
       memorySizeMb: memorySizeMb,
       biosData: _readArchiveFile(
-        archive, configDir, _getString(doc, _Keys.bios),
+        archive,
+        configDir,
+        _getString(doc, _Keys.bios),
       ),
-      kernelData:
-          _readArchiveFile(archive, configDir, _getString(doc, _Keys.kernel)),
-      initrdData:
-          _readArchiveFile(archive, configDir, _getString(doc, _Keys.initrd)),
+      kernelData: _readArchiveFile(
+        archive,
+        configDir,
+        _getString(doc, _Keys.kernel),
+      ),
+      initrdData: _readArchiveFile(
+        archive,
+        configDir,
+        _getString(doc, _Keys.initrd),
+      ),
       cmdLine: _getString(doc, _Keys.cmdline),
       blockDevices: _resolveDrives(doc, archive, configDir),
       ethDevices: _resolveEthernets(doc),
@@ -146,9 +152,9 @@ class ZipConfigLoader {
         : '$configDir/$relativePath';
 
     final entry = archive.files.cast<ArchiveFile?>().firstWhere(
-          (f) => f!.isFile && (f.name == fullPath || f.name == relativePath),
-          orElse: () => null,
-        );
+      (f) => f!.isFile && (f.name == fullPath || f.name == relativePath),
+      orElse: () => null,
+    );
 
     if (entry == null) {
       throw ZipConfigException('File not found in archive: $relativePath');

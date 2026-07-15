@@ -120,9 +120,9 @@ class DnsResolver {
       }
       pos++;
       if (pos + length > data.length) return (null, null);
-      parts.add(String.fromCharCodes(
-        Uint8List.sublistView(data, pos, pos + length),
-      ));
+      parts.add(
+        String.fromCharCodes(Uint8List.sublistView(data, pos, pos + length)),
+      );
       pos += length;
     }
     if (parts.isEmpty) return (null, null);

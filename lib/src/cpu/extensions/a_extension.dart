@@ -6,9 +6,7 @@ typedef MemoryWriteCallback = void Function(int addr, int value);
 
 class AExtension {
   factory AExtension({required RiscVCpuState state}) =>
-      state.isRv32
-          ? _AExtension32(state: state)
-          : _AExtension64(state: state);
+      state.isRv32 ? _AExtension32(state: state) : _AExtension64(state: state);
 
   AExtension._({required this.state});
 
@@ -101,76 +99,70 @@ class AExtension {
   }) {
     return switch (funct5) {
       _Funct5.lr => _executeLr(addr, read),
-      _Funct5.sc => _executeSc(
-          addr,
-          rs2Val,
-          write,
-        ),
+      _Funct5.sc => _executeSc(addr, rs2Val, write),
       _Funct5.amoSwap => _executeAmo(
-          addr,
-          rs2Val,
-          read,
-          write,
-          (_, val2) => val2,
-        ),
+        addr,
+        rs2Val,
+        read,
+        write,
+        (_, val2) => val2,
+      ),
       _Funct5.amoAdd => _executeAmo(
-          addr,
-          rs2Val,
-          read,
-          write,
-          (old, val2) => signExtend(old + val2),
-        ),
+        addr,
+        rs2Val,
+        read,
+        write,
+        (old, val2) => signExtend(old + val2),
+      ),
       _Funct5.amoXor => _executeAmo(
-          addr,
-          rs2Val,
-          read,
-          write,
-          (old, val2) => signExtend(old ^ val2),
-        ),
+        addr,
+        rs2Val,
+        read,
+        write,
+        (old, val2) => signExtend(old ^ val2),
+      ),
       _Funct5.amoAnd => _executeAmo(
-          addr,
-          rs2Val,
-          read,
-          write,
-          (old, val2) => signExtend(old & val2),
-        ),
+        addr,
+        rs2Val,
+        read,
+        write,
+        (old, val2) => signExtend(old & val2),
+      ),
       _Funct5.amoOr => _executeAmo(
-          addr,
-          rs2Val,
-          read,
-          write,
-          (old, val2) => signExtend(old | val2),
-        ),
+        addr,
+        rs2Val,
+        read,
+        write,
+        (old, val2) => signExtend(old | val2),
+      ),
       _Funct5.amoMin => _executeAmo(
-          addr,
-          rs2Val,
-          read,
-          write,
-          (old, val2) => old < val2 ? old : val2,
-        ),
+        addr,
+        rs2Val,
+        read,
+        write,
+        (old, val2) => old < val2 ? old : val2,
+      ),
       _Funct5.amoMax => _executeAmo(
-          addr,
-          rs2Val,
-          read,
-          write,
-          (old, val2) => old > val2 ? old : val2,
-        ),
+        addr,
+        rs2Val,
+        read,
+        write,
+        (old, val2) => old > val2 ? old : val2,
+      ),
       _Funct5.amoMinU => _executeAmo(
-          addr,
-          rs2Val,
-          read,
-          write,
-          (old, val2) =>
-              toUnsigned(old) < toUnsigned(val2) ? old : val2,
-        ),
+        addr,
+        rs2Val,
+        read,
+        write,
+        (old, val2) => toUnsigned(old) < toUnsigned(val2) ? old : val2,
+      ),
       _Funct5.amoMaxU => _executeAmo(
-          addr,
-          rs2Val,
-          read,
-          write,
-          (old, val2) =>
-              toUnsigned(old) > toUnsigned(val2) ? old : val2,
-        ),
+        addr,
+        rs2Val,
+        read,
+        write,
+        (old, val2) => toUnsigned(old) > toUnsigned(val2) ? old : val2,
+      ),
       _ => throw const IllegalAtomicException(),
     };
   }
@@ -180,11 +172,7 @@ class AExtension {
     return read(addr);
   }
 
-  int _executeSc(
-    int addr,
-    int value,
-    MemoryWriteCallback write,
-  ) {
+  int _executeSc(int addr, int value, MemoryWriteCallback write) {
     if (state.loadReservation == addr) {
       write(addr, value);
       state.loadReservation = _noReservation;
@@ -225,11 +213,9 @@ class AExtension {
 
   static int _identity(int value) => value;
 
-  static int _toUnsigned32(int value) =>
-      value & _Masks.word;
+  static int _toUnsigned32(int value) => value & _Masks.word;
 
-  static int _toUnsigned64(int value) =>
-      value ^ _Masks.doubleSignBit;
+  static int _toUnsigned64(int value) => value ^ _Masks.doubleSignBit;
 
   static const _noReservation = -1;
   static const _scSuccess = 0;

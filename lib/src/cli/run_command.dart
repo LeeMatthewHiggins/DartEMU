@@ -21,22 +21,10 @@ class RunCommand extends Command<int> {
         help: 'RAM size in megabytes.',
         defaultsTo: '${MachineConfig.defaultMemorySizeMb}',
       )
-      ..addOption(
-        'bios',
-        help: 'Path to the BIOS/bootloader binary.',
-      )
-      ..addOption(
-        'kernel',
-        help: 'Path to the kernel binary.',
-      )
-      ..addOption(
-        'drive',
-        help: 'Path to a block device image file.',
-      )
-      ..addOption(
-        'cmdline',
-        help: 'Kernel command line string.',
-      );
+      ..addOption('bios', help: 'Path to the BIOS/bootloader binary.')
+      ..addOption('kernel', help: 'Path to the kernel binary.')
+      ..addOption('drive', help: 'Path to a block device image file.')
+      ..addOption('cmdline', help: 'Kernel command line string.');
   }
 
   final Logger _logger;
@@ -66,9 +54,7 @@ class RunCommand extends Command<int> {
 
     final stdinSub = stdin.listen(emulator.sendInput);
 
-    final outputSub = emulator.output.listen(
-      (bytes) => stdout.add(bytes),
-    );
+    final outputSub = emulator.output.listen((bytes) => stdout.add(bytes));
 
     try {
       _logger.info('Press Ctrl+C to exit.');
@@ -108,10 +94,7 @@ class RunCommand extends Command<int> {
   }
 
   void _applySttyFlags(List<String> flags) {
-    Process.runSync(
-      'sh',
-      ['-c', 'stty ${flags.join(' ')} < /dev/tty'],
-    );
+    Process.runSync('sh', ['-c', 'stty ${flags.join(' ')} < /dev/tty']);
   }
 
   static const _rawModeSttyArgs = [
@@ -142,9 +125,7 @@ class RunCommand extends Command<int> {
       );
     }
 
-    final memorySizeMb = int.parse(
-      argResults!['memory'] as String,
-    );
+    final memorySizeMb = int.parse(argResults!['memory'] as String);
 
     final drivePath = argResults!['drive'] as String?;
     final driveConfigs = <DriveConfig>[
