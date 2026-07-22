@@ -1,20 +1,32 @@
 /// Guest-workload benchmark for DartEMU.
 ///
-/// Boots Linux with an in-memory rootfs (asset files are never mutated),
-/// measures wall time and retired instructions per phase, and reports
-/// MIPS. Phases: boot to shell prompt, then a set of CPU-bound guest
-/// workloads driven through the virtio console.
+/// Boots Linux with an in-memory rootfs (asset files are never mutated)
+/// and measures wall time, retired instructions, and MIPS per phase.
+/// Phases cover boot plus workloads that each stress a distinct
+/// emulator subsystem: exec latency, process creation, shell CPU,
+/// pipes, soft-float, sorting, compression, hashing, kernel memcpy,
+/// and VirtIO block I/O.
+///
+/// Results across runs are aggregated as best/median/mean +- stddev,
+/// with a coefficient-of-variation column to judge noise. Use `--json`
+/// to save a baseline and `compare.dart` to diff two baselines.
 ///
 /// Usage:
 ///   dart tool/bench/bench.dart [--xlen rv32|rv64] [--runs 3] [--json]
+///   dart tool/bench/bench.dart --quick
+///   dart tool/bench/bench.dart --workloads sh_loop_10k,disk_read_4m
+///   dart tool/bench/bench.dart --list
 library;
 
 import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:args/args.dart';
 import 'package:dart_emu/dart_emu.dart';
+
+import 'src/runner.dart';
+import 'src/stats.dart';
+import 'src/workloads.dart';
 
 void main(List<String> args) {
   final parser = ArgParser()
@@ -34,7 +46,13 @@ void main(List<String> args) {
       defaultsTo: 'example/assets',
       help: 'Directory containing bios/kernel/rootfs images.',
     )
+    ..addOption(
+      'workloads',
+      help: 'Comma-separated workload names (default: all).',
+    )
+    ..addFlag('quick', help: 'Single run of a reduced workload set.')
     ..addFlag('json', help: 'Emit results as JSON.')
+    ..addFlag('list', help: 'List available workloads and exit.')
     ..addFlag('help', abbr: 'h', negatable: false);
 
   final options = parser.parse(args);
@@ -42,223 +60,194 @@ void main(List<String> args) {
     stdout.writeln(parser.usage);
     return;
   }
+  if (options['list'] as bool) {
+    _printWorkloadList();
+    return;
+  }
 
+  final quick = options['quick'] as bool;
   final xlen = options['xlen'] == 'rv32' ? Xlen.rv32 : Xlen.rv64;
-  final runs = int.parse(options['runs'] as String);
+  final runs = quick ? 1 : int.parse(options['runs'] as String);
   final assetsDir = options['assets'] as String;
   final asJson = options['json'] as bool;
+  final workloads = _selectWorkloads(
+    quick: quick,
+    filter: options['workloads'] as String?,
+  );
 
-  final results = <RunResult>[];
+  final samplesPerRun = <List<PhaseSample>>[];
   for (var i = 0; i < runs; i++) {
     if (!asJson) stdout.writeln('run ${i + 1}/$runs...');
-    results.add(BenchRunner(xlen: xlen, assetsDir: assetsDir).run());
+    samplesPerRun.add(
+      BenchRunner(xlen: xlen, assetsDir: assetsDir, workloads: workloads).run(),
+    );
   }
+
+  final phases = _aggregate(samplesPerRun);
+  _reportFailures(phases);
 
   if (asJson) {
-    stdout.writeln(jsonEncode(_toJson(xlen, results)));
+    stdout.writeln(
+      const JsonEncoder.withIndent('  ').convert(_toJson(xlen, runs, phases)),
+    );
   } else {
-    _printTable(xlen, results);
+    _printTable(xlen, runs, phases);
   }
 }
 
-class RunResult {
-  RunResult(this.phases);
+List<Workload> _selectWorkloads({required bool quick, String? filter}) {
+  final names =
+      filter?.split(',').map((name) => name.trim()).toList() ??
+      (quick ? Workloads.quick : null);
+  if (names == null) return Workloads.all;
 
-  final List<PhaseResult> phases;
+  final byName = {for (final w in Workloads.all) w.name: w};
+  return names.map((name) {
+    final workload = byName[name];
+    if (workload == null) {
+      stderr.writeln('Unknown workload "$name". Use --list to see options.');
+      exit(2);
+    }
+    return workload;
+  }).toList();
 }
 
+void _printWorkloadList() {
+  stdout.writeln('Available workloads:');
+  for (final workload in Workloads.all) {
+    stdout.writeln(
+      '  ${workload.name.padRight(_Report.nameWidth)}'
+      '${workload.description}',
+    );
+  }
+}
+
+/// Aggregated statistics for one phase across all runs.
 class PhaseResult {
   PhaseResult({
     required this.name,
-    required this.wallMicros,
+    required this.wall,
     required this.instructions,
+    required this.exitCodes,
   });
 
   final String name;
-  final int wallMicros;
-  final int instructions;
+  final SampleStats wall;
+  final SampleStats instructions;
+  final List<int?> exitCodes;
 
-  double get mips => instructions / wallMicros;
+  double get mipsBest => instructions.median / wall.best;
 }
 
-class BenchRunner {
-  BenchRunner({required this.xlen, required this.assetsDir});
-
-  final Xlen xlen;
-  final String assetsDir;
-
-  late final RiscVMachine _machine;
-  final _BenchConsole _console = _BenchConsole();
-
-  RunResult run() {
-    final suffix = xlen == Xlen.rv32 ? '32' : '64';
-    final config = MachineConfig(
-      xlen: xlen,
-      memorySizeMb: _Bench.memorySizeMb,
-      biosData: _readAsset('bbl$suffix.bin'),
-      kernelData: _readAsset('kernel-riscv$suffix.bin'),
-      cmdLine: _Bench.cmdLine,
-      console: _console,
-      blockDevices: [MemoryBlockDevice(_readAsset('root-riscv$suffix.bin'))],
-    );
-    _machine = RiscVMachine.fromConfig(config);
-
-    final phases = <PhaseResult>[
-      _measure('boot', () => _waitFor(_Bench.shellPrompt)),
-      for (final workload in _Bench.workloads)
-        _measure(workload.name, () => _runWorkload(workload)),
-    ];
-    return RunResult(phases);
-  }
-
-  Uint8List _readAsset(String name) =>
-      File('$assetsDir/$name').readAsBytesSync();
-
-  PhaseResult _measure(String name, void Function() body) {
-    final startInstructions = _machine.cpu.state.instructionCounter;
-    final stopwatch = Stopwatch()..start();
-    body();
-    stopwatch.stop();
-    return PhaseResult(
-      name: name,
-      wallMicros: stopwatch.elapsedMicroseconds,
-      instructions: _machine.cpu.state.instructionCounter - startInstructions,
-    );
-  }
-
-  void _runWorkload(_Workload workload) {
-    _console.feedInput(utf8.encode('${workload.command}\n'));
-    _waitFor(workload.doneMarker);
-  }
-
-  void _waitFor(String marker) {
-    final deadline = Stopwatch()..start();
-    while (!_console.outputContains(marker)) {
-      _machine.step(_Bench.cyclesPerStep);
-      if (deadline.elapsedMilliseconds > _Bench.timeoutMs) {
-        stderr
-          ..writeln('timeout waiting for "$marker"; last output:')
-          ..writeln(_console.tail());
-        exit(1);
-      }
-    }
-    _console.advanceCursor(marker);
-  }
-}
-
-/// A guest shell command whose completion marker is computed at runtime
-/// by the guest, so the tty echo of the typed command never contains
-/// the literal marker text.
-class _Workload {
-  const _Workload(this.name, this.body);
-
-  final String name;
-  final String body;
-
-  String get command => '$body; echo B\$(($_markerBase+$_markerAdd))E';
-
-  String get doneMarker => 'B${_markerBase + _markerAdd}E';
-
-  static const _markerBase = 663000;
-  static const _markerAdd = 3;
-}
-
-class _Bench {
-  static const memorySizeMb = 128;
-  static const cmdLine = 'console=hvc0 root=/dev/vda rw';
-  static const shellPrompt = '~ #';
-  static const cyclesPerStep = 50000;
-  static const timeoutMs = 180000;
-
-  static const workloads = [
-    _Workload('sh_loop', r'i=0; while [ $i -lt 10000 ]; do i=$((i+1)); done'),
-    _Workload('dd_64m', 'dd if=/dev/zero of=/dev/null bs=65536 count=1024'),
-    _Workload(
-      'fork_100',
-      r'i=0; while [ $i -lt 100 ]; do /bin/true; i=$((i+1)); done',
-    ),
+List<PhaseResult> _aggregate(List<List<PhaseSample>> samplesPerRun) {
+  final phaseCount = samplesPerRun.first.length;
+  return [
+    for (var p = 0; p < phaseCount; p++)
+      PhaseResult(
+        name: samplesPerRun.first[p].name,
+        wall: SampleStats([for (final run in samplesPerRun) run[p].wallMicros]),
+        instructions: SampleStats([
+          for (final run in samplesPerRun) run[p].instructions,
+        ]),
+        exitCodes: [for (final run in samplesPerRun) run[p].exitCode],
+      ),
   ];
 }
 
-class _BenchConsole implements CharacterDevice {
-  final BytesBuilder _output = BytesBuilder();
-  final List<int> _input = [];
-  String _decoded = '';
-  int _cursor = 0;
-
-  void feedInput(List<int> bytes) => _input.addAll(bytes);
-
-  bool outputContains(String marker) {
-    _decoded = utf8.decode(_output.toBytes(), allowMalformed: true);
-    return _decoded.indexOf(marker, _cursor) >= 0;
+void _reportFailures(List<PhaseResult> phases) {
+  for (final phase in phases) {
+    final failed = phase.exitCodes.where((code) => code != null && code != 0);
+    if (failed.isNotEmpty) {
+      stderr.writeln(
+        'WARNING: ${phase.name} exited non-zero in ${failed.length} run(s): '
+        '${failed.join(', ')} — timings for this phase are not comparable.',
+      );
+    }
   }
-
-  void advanceCursor(String marker) {
-    final index = _decoded.indexOf(marker, _cursor);
-    if (index >= 0) _cursor = index + marker.length;
-  }
-
-  String tail() {
-    final text = utf8.decode(_output.toBytes(), allowMalformed: true);
-    return text.length <= _tailLength
-        ? text
-        : text.substring(text.length - _tailLength);
-  }
-
-  @override
-  void writeData(Uint8List data) => _output.add(data);
-
-  @override
-  Uint8List readData(int maxLength) {
-    if (_input.isEmpty) return Uint8List(0);
-    final count = maxLength < _input.length ? maxLength : _input.length;
-    final result = Uint8List.fromList(_input.sublist(0, count));
-    _input.removeRange(0, count);
-    return result;
-  }
-
-  static const _tailLength = 600;
 }
 
-void _printTable(Xlen xlen, List<RunResult> results) {
+void _printTable(Xlen xlen, int runs, List<PhaseResult> phases) {
   stdout
     ..writeln()
-    ..writeln('DartEMU bench — ${xlen.name}, ${results.length} run(s)')
+    ..writeln('DartEMU guest benchmark — ${xlen.name}, $runs run(s)')
     ..writeln()
     ..writeln(
-      '${'phase'.padRight(10)} ${'best ms'.padLeft(9)} '
-      '${'median ms'.padLeft(10)} ${'instr (M)'.padLeft(10)} '
-      '${'best MIPS'.padLeft(10)}',
+      '${'phase'.padRight(_Report.nameWidth)}'
+      '${'best'.padLeft(_Report.colWidth)}'
+      '${'median'.padLeft(_Report.colWidth)}'
+      '${'mean'.padLeft(_Report.colWidth)}'
+      '${'cov'.padLeft(_Report.covWidth)}'
+      '${'minst'.padLeft(_Report.colWidth)}'
+      '${'mips'.padLeft(_Report.colWidth)}',
     );
 
-  final phaseCount = results.first.phases.length;
-  for (var p = 0; p < phaseCount; p++) {
-    final samples = [for (final r in results) r.phases[p]];
-    final wallSorted = [...samples]
-      ..sort((a, b) => a.wallMicros.compareTo(b.wallMicros));
-    final best = wallSorted.first;
-    final median = wallSorted[wallSorted.length ~/ 2];
+  for (final phase in phases) {
     stdout.writeln(
-      '${best.name.padRight(10)} '
-      '${(best.wallMicros / 1000).toStringAsFixed(0).padLeft(9)} '
-      '${(median.wallMicros / 1000).toStringAsFixed(0).padLeft(10)} '
-      '${(best.instructions / 1e6).toStringAsFixed(1).padLeft(10)} '
-      '${best.mips.toStringAsFixed(1).padLeft(10)}',
+      '${phase.name.padRight(_Report.nameWidth)}'
+      '${_ms(phase.wall.best).padLeft(_Report.colWidth)}'
+      '${_ms(phase.wall.median).padLeft(_Report.colWidth)}'
+      '${_ms(phase.wall.mean).padLeft(_Report.colWidth)}'
+      '${_pct(phase.wall.covPercent).padLeft(_Report.covWidth)}'
+      '${_millions(phase.instructions.median).padLeft(_Report.colWidth)}'
+      '${phase.mipsBest.toStringAsFixed(1).padLeft(_Report.colWidth)}',
     );
   }
+
+  final totalBest = phases.fold<num>(0, (acc, p) => acc + p.wall.best);
+  stdout
+    ..writeln()
+    ..writeln('total (best): ${_ms(totalBest)} ms')
+    ..writeln(
+      'note: "best" is least noisy; cov > ${_Report.noisyCovPercent}% '
+      'means the phase is noisy on this host.',
+    );
 }
 
-Map<String, Object> _toJson(Xlen xlen, List<RunResult> results) => {
-  'xlen': xlen.name,
-  'runs': [
-    for (final r in results)
+String _ms(num micros) =>
+    (micros / Duration.microsecondsPerMillisecond).toStringAsFixed(1);
+
+String _pct(double value) => '${value.toStringAsFixed(1)}%';
+
+String _millions(num value) => (value / _Report.million).toStringAsFixed(1);
+
+Map<String, Object> _toJson(Xlen xlen, int runs, List<PhaseResult> phases) => {
+  'schema': _Report.schemaVersion,
+  'meta': {
+    'timestamp': DateTime.now().toUtc().toIso8601String(),
+    'dart': Platform.version,
+    'os': Platform.operatingSystemVersion,
+    'xlen': xlen.name,
+    'runs': runs,
+    'memory_mb': BenchDefaults.memorySizeMb,
+    'cycles_per_step': BenchDefaults.cyclesPerStep,
+  },
+  'phases': [
+    for (final phase in phases)
       {
-        for (final p in r.phases)
-          p.name: {
-            'wall_us': p.wallMicros,
-            'instructions': p.instructions,
-            'mips': double.parse(p.mips.toStringAsFixed(2)),
-          },
+        'name': phase.name,
+        'wall_us': {
+          'best': phase.wall.best,
+          'median': phase.wall.median,
+          'mean': phase.wall.mean,
+          'stddev': phase.wall.stddev,
+          'cov_pct': phase.wall.covPercent,
+        },
+        'instructions': {
+          'median': phase.instructions.median,
+          'best': phase.instructions.best,
+          'worst': phase.instructions.worst,
+        },
+        'mips_best': phase.mipsBest,
+        'exit_codes': phase.exitCodes,
       },
   ],
 };
+
+class _Report {
+  static const schemaVersion = 1;
+  static const nameWidth = 16;
+  static const colWidth = 10;
+  static const covWidth = 8;
+  static const noisyCovPercent = 5;
+  static const million = 1000000;
+}

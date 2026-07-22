@@ -122,18 +122,40 @@ URL.
 ## Benchmarking
 
 A guest-workload benchmark measures emulation throughput (wall time,
-retired instructions, and MIPS) for boot and a set of CPU-bound guest
-workloads. It boots from an in-memory copy of the rootfs, so the asset
-images are never modified.
+retired instructions, and MIPS) for boot plus workloads that each
+stress a distinct emulator subsystem: exec round-trip latency, process
+creation, shell CPU, pipes and context switches, soft-float, sorting,
+compression, hashing, kernel memcpy, and VirtIO block I/O. It boots
+from an in-memory copy of the rootfs, so the asset images are never
+modified.
 
 ```sh
-dart tool/bench/bench.dart                    # RV32, 3 runs
+dart tool/bench/bench.dart                    # RV32, 3 runs, full suite
 dart tool/bench/bench.dart --xlen rv64        # RV64
-dart tool/bench/bench.dart --runs 5 --json    # machine-readable output
+dart tool/bench/bench.dart --quick            # 1 run, reduced set
+dart tool/bench/bench.dart --list             # show available workloads
+dart tool/bench/bench.dart --workloads sh_loop_10k,disk_read_4m
 ```
 
-Compare before/after when making performance changes; the `best` column
-is the least noisy.
+Results are aggregated across runs as best/median/mean with a
+coefficient-of-variation column; `best` is the least noisy. Each
+workload's guest exit status is checked, so a failing command is
+reported rather than silently timed.
+
+To measure a performance change, record a baseline, make the change,
+and compare:
+
+```sh
+dart tool/bench/bench.dart --json > tool/bench/baselines/before.json
+# ... make changes ...
+dart tool/bench/bench.dart --json > tool/bench/baselines/after.json
+dart tool/bench/compare.dart tool/bench/baselines/{before,after}.json
+```
+
+The compare tool marks a phase FASTER/SLOWER only when the delta
+exceeds the measured noise of both baselines, and supports
+`--fail-on-regress <pct>` for CI gates. Baselines are host-specific
+and gitignored.
 
 ## Building Root Filesystems
 
