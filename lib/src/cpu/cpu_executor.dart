@@ -1519,6 +1519,7 @@ class CpuExecutor {
     return true;
   }
 
+  @pragma('vm:prefer-inline')
   int _memReadU8(int addr) {
     final tlbIdx =
         (addr >>> TlbConstants.pageSizeLog2) & TlbConstants.indexMask;
@@ -1532,6 +1533,7 @@ class CpuExecutor {
     return _memReadSlow(addr, _SizeLog2.byte);
   }
 
+  @pragma('vm:prefer-inline')
   int _memReadU16(int addr) {
     final tlbIdx =
         (addr >>> TlbConstants.pageSizeLog2) & TlbConstants.indexMask;
@@ -1545,6 +1547,7 @@ class CpuExecutor {
     return _memReadSlow(addr, _SizeLog2.halfWord);
   }
 
+  @pragma('vm:prefer-inline')
   int _memReadU32(int addr) {
     final tlbIdx =
         (addr >>> TlbConstants.pageSizeLog2) & TlbConstants.indexMask;
@@ -1558,6 +1561,7 @@ class CpuExecutor {
     return _memReadSlow(addr, _SizeLog2.word);
   }
 
+  @pragma('vm:prefer-inline')
   int _memReadU64(int addr) {
     final tlbIdx =
         (addr >>> TlbConstants.pageSizeLog2) & TlbConstants.indexMask;
@@ -1668,6 +1672,7 @@ class CpuExecutor {
     return range.readFunc(offset, sizeLog2);
   }
 
+  @pragma('vm:prefer-inline')
   bool _memWriteU8(int addr, int val) {
     final tlbIdx =
         (addr >>> TlbConstants.pageSizeLog2) & TlbConstants.indexMask;
@@ -1682,6 +1687,7 @@ class CpuExecutor {
     return _memWriteSlow(addr, val, _SizeLog2.byte);
   }
 
+  @pragma('vm:prefer-inline')
   bool _memWriteU16(int addr, int val) {
     final tlbIdx =
         (addr >>> TlbConstants.pageSizeLog2) & TlbConstants.indexMask;
@@ -1696,6 +1702,7 @@ class CpuExecutor {
     return _memWriteSlow(addr, val, _SizeLog2.halfWord);
   }
 
+  @pragma('vm:prefer-inline')
   bool _memWriteU32(int addr, int val) {
     final tlbIdx =
         (addr >>> TlbConstants.pageSizeLog2) & TlbConstants.indexMask;
@@ -1710,6 +1717,7 @@ class CpuExecutor {
     return _memWriteSlow(addr, val, _SizeLog2.word);
   }
 
+  @pragma('vm:prefer-inline')
   bool _memWriteU64(int addr, int val) {
     final tlbIdx =
         (addr >>> TlbConstants.pageSizeLog2) & TlbConstants.indexMask;
@@ -2063,6 +2071,9 @@ class _CpuExecutor64 extends CpuExecutor {
 
     state.pendingException = CpuExecutor._noPendingException;
 
+    var pc = state.pc;
+    var cycles = state.nCycles;
+
     final regs = state.regs as Int64List;
     final signBit = state.signBit;
     var page = _decodedPage ?? _sentinelPage;
@@ -2073,17 +2084,22 @@ class _CpuExecutor64 extends CpuExecutor {
     var imms = page.imm;
     var sizes = page.size;
 
-    while (state.nCycles > 0) {
+    while (cycles > 0) {
       if (_hasPendingInterrupt()) {
+        state.pc = pc;
+        state.nCycles = cycles;
         _handleInterrupt();
         state.nCycles--;
-        break;
+        _syncCounter(counterTarget);
+        return;
       }
 
-      final addr = state.pc;
+      final addr = pc;
       if ((addr & ~TlbConstants.pageMask) != _codePageTag) {
         _fetchSlowAndCache(addr);
         if (state.pendingException >= 0) {
+          state.pc = pc;
+          state.nCycles = cycles;
           _handlePendingException(counterTarget);
           return;
         }
@@ -2103,295 +2119,316 @@ class _CpuExecutor64 extends CpuExecutor {
         op = Rv64Predecoder.decodeSlot(page, slot);
       }
 
-      state.nCycles--;
+      cycles--;
 
       switch (op) {
         case PredecodeOp.nop:
-          state.pc = addr + sizes[slot];
+          pc = addr + sizes[slot];
 
         case PredecodeOp.addi:
           regs[rds[slot]] = regs[rs1s[slot]] + imms[slot];
-          state.pc = addr + sizes[slot];
+          pc = addr + sizes[slot];
 
         case PredecodeOp.add:
           regs[rds[slot]] = regs[rs1s[slot]] + regs[rs2s[slot]];
-          state.pc = addr + sizes[slot];
+          pc = addr + sizes[slot];
 
         case PredecodeOp.sub:
           regs[rds[slot]] = regs[rs1s[slot]] - regs[rs2s[slot]];
-          state.pc = addr + sizes[slot];
+          pc = addr + sizes[slot];
 
         case PredecodeOp.and:
           regs[rds[slot]] = regs[rs1s[slot]] & regs[rs2s[slot]];
-          state.pc = addr + sizes[slot];
+          pc = addr + sizes[slot];
 
         case PredecodeOp.or:
           regs[rds[slot]] = regs[rs1s[slot]] | regs[rs2s[slot]];
-          state.pc = addr + sizes[slot];
+          pc = addr + sizes[slot];
 
         case PredecodeOp.xor:
           regs[rds[slot]] = regs[rs1s[slot]] ^ regs[rs2s[slot]];
-          state.pc = addr + sizes[slot];
+          pc = addr + sizes[slot];
 
         case PredecodeOp.andi:
           regs[rds[slot]] = regs[rs1s[slot]] & imms[slot];
-          state.pc = addr + sizes[slot];
+          pc = addr + sizes[slot];
 
         case PredecodeOp.ori:
           regs[rds[slot]] = regs[rs1s[slot]] | imms[slot];
-          state.pc = addr + sizes[slot];
+          pc = addr + sizes[slot];
 
         case PredecodeOp.xori:
           regs[rds[slot]] = regs[rs1s[slot]] ^ imms[slot];
-          state.pc = addr + sizes[slot];
+          pc = addr + sizes[slot];
 
         case PredecodeOp.slli:
           regs[rds[slot]] = regs[rs1s[slot]] << imms[slot];
-          state.pc = addr + sizes[slot];
+          pc = addr + sizes[slot];
 
         case PredecodeOp.srli:
           regs[rds[slot]] = regs[rs1s[slot]] >>> imms[slot];
-          state.pc = addr + sizes[slot];
+          pc = addr + sizes[slot];
 
         case PredecodeOp.srai:
           regs[rds[slot]] = regs[rs1s[slot]] >> imms[slot];
-          state.pc = addr + sizes[slot];
+          pc = addr + sizes[slot];
 
         case PredecodeOp.sll:
           regs[rds[slot]] =
               regs[rs1s[slot]] << (regs[rs2s[slot]] & CpuExecutor._shamtMask64);
-          state.pc = addr + sizes[slot];
+          pc = addr + sizes[slot];
 
         case PredecodeOp.srl:
           regs[rds[slot]] =
               regs[rs1s[slot]] >>>
               (regs[rs2s[slot]] & CpuExecutor._shamtMask64);
-          state.pc = addr + sizes[slot];
+          pc = addr + sizes[slot];
 
         case PredecodeOp.sra:
           regs[rds[slot]] =
               regs[rs1s[slot]] >> (regs[rs2s[slot]] & CpuExecutor._shamtMask64);
-          state.pc = addr + sizes[slot];
+          pc = addr + sizes[slot];
 
         case PredecodeOp.slt:
           regs[rds[slot]] = regs[rs1s[slot]] < regs[rs2s[slot]] ? 1 : 0;
-          state.pc = addr + sizes[slot];
+          pc = addr + sizes[slot];
 
         case PredecodeOp.sltu:
           regs[rds[slot]] =
               (regs[rs1s[slot]] ^ signBit) < (regs[rs2s[slot]] ^ signBit)
               ? 1
               : 0;
-          state.pc = addr + sizes[slot];
+          pc = addr + sizes[slot];
 
         case PredecodeOp.slti:
           regs[rds[slot]] = regs[rs1s[slot]] < imms[slot] ? 1 : 0;
-          state.pc = addr + sizes[slot];
+          pc = addr + sizes[slot];
 
         case PredecodeOp.sltiu:
           regs[rds[slot]] =
               (regs[rs1s[slot]] ^ signBit) < (imms[slot] ^ signBit) ? 1 : 0;
-          state.pc = addr + sizes[slot];
+          pc = addr + sizes[slot];
 
         case PredecodeOp.addiw:
           regs[rds[slot]] = BitUtils.signExtend32(
             regs[rs1s[slot]] + imms[slot],
           );
-          state.pc = addr + sizes[slot];
+          pc = addr + sizes[slot];
 
         case PredecodeOp.addw:
           regs[rds[slot]] = BitUtils.signExtend32(
             regs[rs1s[slot]] + regs[rs2s[slot]],
           );
-          state.pc = addr + sizes[slot];
+          pc = addr + sizes[slot];
 
         case PredecodeOp.subw:
           regs[rds[slot]] = BitUtils.signExtend32(
             regs[rs1s[slot]] - regs[rs2s[slot]],
           );
-          state.pc = addr + sizes[slot];
+          pc = addr + sizes[slot];
 
         case PredecodeOp.slliw:
           regs[rds[slot]] = BitUtils.signExtend32(
             regs[rs1s[slot]] << imms[slot],
           );
-          state.pc = addr + sizes[slot];
+          pc = addr + sizes[slot];
 
         case PredecodeOp.srliw:
           regs[rds[slot]] = BitUtils.signExtend32(
             (regs[rs1s[slot]] & CpuExecutor._mask32) >>> imms[slot],
           );
-          state.pc = addr + sizes[slot];
+          pc = addr + sizes[slot];
 
         case PredecodeOp.sraiw:
           regs[rds[slot]] =
               BitUtils.signExtend32(regs[rs1s[slot]]) >> imms[slot];
-          state.pc = addr + sizes[slot];
+          pc = addr + sizes[slot];
 
         case PredecodeOp.sllw:
           regs[rds[slot]] = BitUtils.signExtend32(
             (regs[rs1s[slot]] & CpuExecutor._mask32) <<
                 (regs[rs2s[slot]] & CpuExecutor._shamtMask32),
           );
-          state.pc = addr + sizes[slot];
+          pc = addr + sizes[slot];
 
         case PredecodeOp.srlw:
           regs[rds[slot]] = BitUtils.signExtend32(
             (regs[rs1s[slot]] & CpuExecutor._mask32) >>>
                 (regs[rs2s[slot]] & CpuExecutor._shamtMask32),
           );
-          state.pc = addr + sizes[slot];
+          pc = addr + sizes[slot];
 
         case PredecodeOp.sraw:
           regs[rds[slot]] =
               BitUtils.signExtend32(regs[rs1s[slot]]) >>
               (regs[rs2s[slot]] & CpuExecutor._shamtMask32);
-          state.pc = addr + sizes[slot];
+          pc = addr + sizes[slot];
 
         case PredecodeOp.lui:
           regs[rds[slot]] = imms[slot];
-          state.pc = addr + sizes[slot];
+          pc = addr + sizes[slot];
 
         case PredecodeOp.auipc:
           regs[rds[slot]] = addr + imms[slot];
-          state.pc = addr + sizes[slot];
+          pc = addr + sizes[slot];
 
         case PredecodeOp.jal:
           regs[rds[slot]] = addr + sizes[slot];
-          state.pc = addr + imms[slot];
+          pc = addr + imms[slot];
 
         case PredecodeOp.j:
-          state.pc = addr + imms[slot];
+          pc = addr + imms[slot];
 
         case PredecodeOp.jalr:
           final target = (regs[rs1s[slot]] + imms[slot]) & ~1;
           regs[rds[slot]] = addr + sizes[slot];
-          state.pc = target;
+          pc = target;
 
         case PredecodeOp.jr:
-          state.pc = (regs[rs1s[slot]] + imms[slot]) & ~1;
+          pc = (regs[rs1s[slot]] + imms[slot]) & ~1;
 
         case PredecodeOp.beq:
-          state.pc = regs[rs1s[slot]] == regs[rs2s[slot]]
+          pc = regs[rs1s[slot]] == regs[rs2s[slot]]
               ? addr + imms[slot]
               : addr + sizes[slot];
 
         case PredecodeOp.bne:
-          state.pc = regs[rs1s[slot]] != regs[rs2s[slot]]
+          pc = regs[rs1s[slot]] != regs[rs2s[slot]]
               ? addr + imms[slot]
               : addr + sizes[slot];
 
         case PredecodeOp.blt:
-          state.pc = regs[rs1s[slot]] < regs[rs2s[slot]]
+          pc = regs[rs1s[slot]] < regs[rs2s[slot]]
               ? addr + imms[slot]
               : addr + sizes[slot];
 
         case PredecodeOp.bge:
-          state.pc = regs[rs1s[slot]] >= regs[rs2s[slot]]
+          pc = regs[rs1s[slot]] >= regs[rs2s[slot]]
               ? addr + imms[slot]
               : addr + sizes[slot];
 
         case PredecodeOp.bltu:
-          state.pc = (regs[rs1s[slot]] ^ signBit) < (regs[rs2s[slot]] ^ signBit)
+          pc = (regs[rs1s[slot]] ^ signBit) < (regs[rs2s[slot]] ^ signBit)
               ? addr + imms[slot]
               : addr + sizes[slot];
 
         case PredecodeOp.bgeu:
-          state.pc =
-              (regs[rs1s[slot]] ^ signBit) >= (regs[rs2s[slot]] ^ signBit)
+          pc = (regs[rs1s[slot]] ^ signBit) >= (regs[rs2s[slot]] ^ signBit)
               ? addr + imms[slot]
               : addr + sizes[slot];
 
         case PredecodeOp.ld:
           final val = _memReadU64(regs[rs1s[slot]] + imms[slot]);
           if (state.pendingException >= 0) {
+            state.pc = pc;
+            state.nCycles = cycles;
             _handlePendingException(counterTarget);
             return;
           }
           regs[rds[slot]] = val;
-          state.pc = addr + sizes[slot];
+          pc = addr + sizes[slot];
 
         case PredecodeOp.lw:
           final val = _memReadU32(regs[rs1s[slot]] + imms[slot]);
           if (state.pendingException >= 0) {
+            state.pc = pc;
+            state.nCycles = cycles;
             _handlePendingException(counterTarget);
             return;
           }
           regs[rds[slot]] = BitUtils.signExtend32(val);
-          state.pc = addr + sizes[slot];
+          pc = addr + sizes[slot];
 
         case PredecodeOp.lwu:
           final val = _memReadU32(regs[rs1s[slot]] + imms[slot]);
           if (state.pendingException >= 0) {
+            state.pc = pc;
+            state.nCycles = cycles;
             _handlePendingException(counterTarget);
             return;
           }
           regs[rds[slot]] = val & CpuExecutor._mask32;
-          state.pc = addr + sizes[slot];
+          pc = addr + sizes[slot];
 
         case PredecodeOp.lh:
           final val = _memReadU16(regs[rs1s[slot]] + imms[slot]);
           if (state.pendingException >= 0) {
+            state.pc = pc;
+            state.nCycles = cycles;
             _handlePendingException(counterTarget);
             return;
           }
           regs[rds[slot]] = _signExtend16(val);
-          state.pc = addr + sizes[slot];
+          pc = addr + sizes[slot];
 
         case PredecodeOp.lhu:
           final val = _memReadU16(regs[rs1s[slot]] + imms[slot]);
           if (state.pendingException >= 0) {
+            state.pc = pc;
+            state.nCycles = cycles;
             _handlePendingException(counterTarget);
             return;
           }
           regs[rds[slot]] = val;
-          state.pc = addr + sizes[slot];
+          pc = addr + sizes[slot];
 
         case PredecodeOp.lb:
           final val = _memReadU8(regs[rs1s[slot]] + imms[slot]);
           if (state.pendingException >= 0) {
+            state.pc = pc;
+            state.nCycles = cycles;
             _handlePendingException(counterTarget);
             return;
           }
           regs[rds[slot]] = _signExtend8(val);
-          state.pc = addr + sizes[slot];
+          pc = addr + sizes[slot];
 
         case PredecodeOp.lbu:
           final val = _memReadU8(regs[rs1s[slot]] + imms[slot]);
           if (state.pendingException >= 0) {
+            state.pc = pc;
+            state.nCycles = cycles;
             _handlePendingException(counterTarget);
             return;
           }
           regs[rds[slot]] = val;
-          state.pc = addr + sizes[slot];
+          pc = addr + sizes[slot];
 
         case PredecodeOp.sd:
           if (!_memWriteU64(regs[rs1s[slot]] + imms[slot], regs[rs2s[slot]])) {
+            state.pc = pc;
+            state.nCycles = cycles;
             _handlePendingException(counterTarget);
             return;
           }
-          state.pc = addr + sizes[slot];
+          pc = addr + sizes[slot];
 
         case PredecodeOp.sw:
           if (!_memWriteU32(regs[rs1s[slot]] + imms[slot], regs[rs2s[slot]])) {
+            state.pc = pc;
+            state.nCycles = cycles;
             _handlePendingException(counterTarget);
             return;
           }
-          state.pc = addr + sizes[slot];
+          pc = addr + sizes[slot];
 
         case PredecodeOp.sh:
           if (!_memWriteU16(regs[rs1s[slot]] + imms[slot], regs[rs2s[slot]])) {
+            state.pc = pc;
+            state.nCycles = cycles;
             _handlePendingException(counterTarget);
             return;
           }
-          state.pc = addr + sizes[slot];
+          pc = addr + sizes[slot];
 
         case PredecodeOp.sb:
           if (!_memWriteU8(regs[rs1s[slot]] + imms[slot], regs[rs2s[slot]])) {
+            state.pc = pc;
+            state.nCycles = cycles;
             _handlePendingException(counterTarget);
             return;
           }
-          state.pc = addr + sizes[slot];
+          pc = addr + sizes[slot];
 
         case PredecodeOp.mulDiv:
           regs[rds[slot]] = _mExt.executeMulDiv(
@@ -2400,7 +2437,7 @@ class _CpuExecutor64 extends CpuExecutor {
             rs2Val: regs[rs2s[slot]],
             isWord: false,
           );
-          state.pc = addr + sizes[slot];
+          pc = addr + sizes[slot];
 
         case PredecodeOp.mulDivW:
           regs[rds[slot]] = _mExt.executeMulDiv(
@@ -2409,11 +2446,15 @@ class _CpuExecutor64 extends CpuExecutor {
             rs2Val: regs[rs2s[slot]],
             isWord: true,
           );
-          state.pc = addr + sizes[slot];
+          pc = addr + sizes[slot];
 
         default:
+          state.pc = pc;
+          state.nCycles = cycles;
           final insn = _fetchInstruction();
           if (state.pendingException >= 0) {
+            state.pc = pc;
+            state.nCycles = cycles;
             _handlePendingException(counterTarget);
             return;
           }
@@ -2421,9 +2462,12 @@ class _CpuExecutor64 extends CpuExecutor {
               ? CpuExecutor._compressedInsnSize
               : CpuExecutor._fullInsnSize;
           if (!_executeInstruction(insn, size)) {
+            state.pc = pc;
+            state.nCycles = cycles;
             _handlePendingException(counterTarget);
             return;
           }
+          pc = state.pc;
           page = _decodedPage ?? _sentinelPage;
           ops = page.op;
           rds = page.rd;
@@ -2436,6 +2480,8 @@ class _CpuExecutor64 extends CpuExecutor {
       if (state.powerDown) break;
     }
 
+    state.pc = pc;
+    state.nCycles = cycles;
     _syncCounter(counterTarget);
   }
 
