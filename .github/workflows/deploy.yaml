@@ -27,7 +27,7 @@ jobs:
 
       - name: Build web
         working-directory: example
-        run: flutter build web --release
+        run: flutter build web --wasm --release
 
       - name: Deploy to Firebase Hosting
         uses: FirebaseExtended/action-hosting-deploy@v0
