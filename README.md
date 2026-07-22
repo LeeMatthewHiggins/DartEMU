@@ -113,8 +113,13 @@ Build the example for web:
 
 ```sh
 cd example
-flutter build web --release
+flutter build web --wasm --release
 ```
+
+The `--wasm` flag compiles to WebAssembly (WasmGC), which runs the
+emulator measurably faster than the JavaScript backend (~1.4-1.7x on
+guest workloads and kernel boot); browsers without WasmGC support fall
+back to the bundled JavaScript build automatically.
 
 To skip the config picker and boot the demo directly, add `?boot=32` to the
 URL.
