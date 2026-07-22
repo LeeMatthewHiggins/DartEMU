@@ -16,6 +16,10 @@ import 'package:dart_emu/src/machine/phys_memory_map.dart';
 import 'package:dart_emu/src/machine/phys_memory_range.dart';
 import 'package:dart_emu/src/util/bit_utils.dart';
 
+/// Pair-frequency data recorded when compiled with
+/// -DDARTEMU_COUNT_PAIRS=true; indexed by (prevOp << 8) | op.
+Int64List debugPredecodePairCounts() => _CpuExecutor64.pairCounts;
+
 class CpuExecutor {
   factory CpuExecutor({required PhysMemoryMap memMap, Xlen xlen = Xlen.rv64}) =>
       switch (xlen) {
@@ -2036,6 +2040,13 @@ class CpuExecutor {
 class _CpuExecutor64 extends CpuExecutor {
   _CpuExecutor64({required super.memMap}) : super._(xlen: Xlen.rv64);
 
+  static const _countPairs = bool.fromEnvironment('DARTEMU_COUNT_PAIRS');
+
+  /// Dynamic (previous op, current op) pair frequencies; only populated
+  /// when compiled with -DDARTEMU_COUNT_PAIRS=true.
+  static final Int64List pairCounts = Int64List(1 << 16);
+  static int _prevOp = 0;
+
   /// Predecoded dispatch loop.
   ///
   /// Executes micro-ops from the [DecodedPage] paired with the current
@@ -2100,6 +2111,11 @@ class _CpuExecutor64 extends CpuExecutor {
       }
 
       cycles--;
+
+      if (_countPairs) {
+        pairCounts[(_prevOp << 8) | (m & PredecodeMeta.opMask)]++;
+        _prevOp = m & PredecodeMeta.opMask;
+      }
 
       switch (m & PredecodeMeta.opMask) {
         case PredecodeOp.nop:
