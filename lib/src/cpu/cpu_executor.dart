@@ -9,6 +9,7 @@ import 'package:dart_emu/src/cpu/extensions/d_extension.dart';
 import 'package:dart_emu/src/cpu/extensions/f_extension.dart';
 import 'package:dart_emu/src/cpu/extensions/m_extension.dart';
 import 'package:dart_emu/src/cpu/mmu.dart';
+import 'package:dart_emu/src/cpu/predecode.dart';
 import 'package:dart_emu/src/cpu/tlb.dart';
 import 'package:dart_emu/src/machine/machine_config.dart';
 import 'package:dart_emu/src/machine/phys_memory_map.dart';
@@ -58,6 +59,11 @@ class CpuExecutor {
 
   void _invalidateCodeCache() {
     _codePageTag = _invalidCodeTag;
+  }
+
+  /// Invalidates caches derived from instruction bytes (`fence.i`).
+  void _invalidateInstructionCaches() {
+    _invalidateCodeCache();
   }
 
   /// Executes up to [maxCycles] instructions.
@@ -142,19 +148,44 @@ class CpuExecutor {
     return _fetchSlowAndCache(addr);
   }
 
-  int _fetchSlowAndCache(int addr) {
-    final result = _fetchSlow(addr);
-    if (state.pendingException >= 0) return 0;
+  int _readFromCodePage(int addr) {
+    final offset = _codeBase + (addr & TlbConstants.pageMask);
+    final remaining = _codeEnd - offset;
+    if (remaining >= _fullInsnSize) {
+      return _readInsn32(_codeData, offset);
+    }
+    if (remaining >= _compressedInsnSize) {
+      final low = _codeData.getUint16(offset, Endian.little);
+      if ((low & _compressedMask) != _compressedMask) {
+        return low;
+      }
+      return _fetchCrossPage(addr, low);
+    }
+    return _fetchSlow(addr);
+  }
 
+  int _fetchSlowAndCache(int addr) {
     final tlbIdx =
         (addr >>> TlbConstants.pageSizeLog2) & TlbConstants.indexMask;
     final entry = state.tlbCode[tlbIdx];
+
+    if (entry.virtualTag == (addr & ~TlbConstants.pageMask)) {
+      _installCodePage(entry);
+      return _readFromCodePage(addr);
+    }
+
+    final result = _fetchSlow(addr);
+    if (state.pendingException >= 0) return 0;
+
+    _installCodePage(state.tlbCode[tlbIdx]);
+    return result;
+  }
+
+  void _installCodePage(TlbEntry entry) {
     _codeData = entry.hostData;
     _codeBase = entry.hostOffset;
     _codeEnd = entry.hostOffset + TlbConstants.pageSize;
     _codePageTag = entry.virtualTag;
-
-    return result;
   }
 
   int _readInsn32(ByteData data, int offset) {
@@ -1298,7 +1329,7 @@ class CpuExecutor {
         state.pc += instrSize;
         return true;
       case _FenceFunct3.fenceI:
-        _invalidateCodeCache();
+        _invalidateInstructionCaches();
         state.pc += instrSize;
         return true;
       default:
@@ -1488,6 +1519,7 @@ class CpuExecutor {
     return true;
   }
 
+  @pragma('vm:prefer-inline')
   int _memReadU8(int addr) {
     final tlbIdx =
         (addr >>> TlbConstants.pageSizeLog2) & TlbConstants.indexMask;
@@ -1501,6 +1533,7 @@ class CpuExecutor {
     return _memReadSlow(addr, _SizeLog2.byte);
   }
 
+  @pragma('vm:prefer-inline')
   int _memReadU16(int addr) {
     final tlbIdx =
         (addr >>> TlbConstants.pageSizeLog2) & TlbConstants.indexMask;
@@ -1514,6 +1547,7 @@ class CpuExecutor {
     return _memReadSlow(addr, _SizeLog2.halfWord);
   }
 
+  @pragma('vm:prefer-inline')
   int _memReadU32(int addr) {
     final tlbIdx =
         (addr >>> TlbConstants.pageSizeLog2) & TlbConstants.indexMask;
@@ -1527,6 +1561,7 @@ class CpuExecutor {
     return _memReadSlow(addr, _SizeLog2.word);
   }
 
+  @pragma('vm:prefer-inline')
   int _memReadU64(int addr) {
     final tlbIdx =
         (addr >>> TlbConstants.pageSizeLog2) & TlbConstants.indexMask;
@@ -1637,6 +1672,7 @@ class CpuExecutor {
     return range.readFunc(offset, sizeLog2);
   }
 
+  @pragma('vm:prefer-inline')
   bool _memWriteU8(int addr, int val) {
     final tlbIdx =
         (addr >>> TlbConstants.pageSizeLog2) & TlbConstants.indexMask;
@@ -1651,6 +1687,7 @@ class CpuExecutor {
     return _memWriteSlow(addr, val, _SizeLog2.byte);
   }
 
+  @pragma('vm:prefer-inline')
   bool _memWriteU16(int addr, int val) {
     final tlbIdx =
         (addr >>> TlbConstants.pageSizeLog2) & TlbConstants.indexMask;
@@ -1665,6 +1702,7 @@ class CpuExecutor {
     return _memWriteSlow(addr, val, _SizeLog2.halfWord);
   }
 
+  @pragma('vm:prefer-inline')
   bool _memWriteU32(int addr, int val) {
     final tlbIdx =
         (addr >>> TlbConstants.pageSizeLog2) & TlbConstants.indexMask;
@@ -1679,6 +1717,7 @@ class CpuExecutor {
     return _memWriteSlow(addr, val, _SizeLog2.word);
   }
 
+  @pragma('vm:prefer-inline')
   bool _memWriteU64(int addr, int val) {
     final tlbIdx =
         (addr >>> TlbConstants.pageSizeLog2) & TlbConstants.indexMask;
@@ -1753,7 +1792,13 @@ class CpuExecutor {
       ..virtualTag = addr & ~TlbConstants.pageMask
       ..hostData = range.byteData
       ..hostOffset = pageBase;
+
+    _onGuestStorePage(range.byteData, pageBase);
   }
+
+  /// Called when a guest store targets ([data], [pageBase]) for the
+  /// first time since that page's write-TLB entry was purged.
+  void _onGuestStorePage(ByteData data, int pageBase) {}
 
   void _writeToRam(RamRange range, int physAddr, int val, int sizeLog2) {
     final offset = physAddr - range.addr;
@@ -1942,7 +1987,636 @@ class CpuExecutor {
 }
 
 class _CpuExecutor64 extends CpuExecutor {
-  _CpuExecutor64({required super.memMap}) : super._(xlen: Xlen.rv64);
+  _CpuExecutor64({required PhysMemoryMap memMap})
+    : super._(memMap: memMap, xlen: Xlen.rv64) {
+    memMap.onRamWritten = _onRamWritten;
+  }
+
+  final PredecodeCache _predecodeCache = PredecodeCache();
+  DecodedPage? _decodedPage;
+
+  @override
+  void _installCodePage(TlbEntry entry) {
+    super._installCodePage(entry);
+    var page = _predecodeCache.lookup(entry.hostData, entry.hostOffset);
+    if (page == null) {
+      page = _predecodeCache.insert(entry.hostData, entry.hostOffset);
+      _purgeWriteTlbForPage(entry.hostData, entry.hostOffset);
+    }
+    _decodedPage = page;
+  }
+
+  /// Removes write-TLB entries covering a freshly decoded page, so the
+  /// next guest store to it takes the slow path and reaches
+  /// [_onGuestStorePage].
+  void _purgeWriteTlbForPage(ByteData data, int pageBase) {
+    final tlbWrite = state.tlbWrite;
+    for (var i = 0; i < tlbWrite.length; i++) {
+      final entry = tlbWrite[i];
+      if (entry.hostOffset == pageBase && identical(entry.hostData, data)) {
+        entry.invalidate();
+      }
+    }
+  }
+
+  @override
+  void _onGuestStorePage(ByteData data, int pageBase) {
+    _dropDecodedPage(data, pageBase);
+  }
+
+  void _onRamWritten(int physAddr, int length) {
+    final range = state.memMap.findRange(physAddr);
+    if (range is! RamRange) return;
+    final first = (physAddr - range.addr) & ~TlbConstants.pageMask;
+    final last = (physAddr - range.addr + length - 1) & ~TlbConstants.pageMask;
+    for (var page = first; page <= last; page += TlbConstants.pageSize) {
+      _dropDecodedPage(range.byteData, page);
+    }
+  }
+
+  void _dropDecodedPage(ByteData data, int pageBase) {
+    if (_predecodeCache.invalidatePage(data, pageBase) &&
+        pageBase == _codeBase &&
+        identical(data, _codeData)) {
+      _invalidateCodeCache();
+    }
+  }
+
+  @override
+  void _invalidateInstructionCaches() {
+    super._invalidateInstructionCaches();
+    _predecodeCache.invalidateAll();
+  }
+
+  /// Predecoded dispatch loop.
+  ///
+  /// Executes micro-ops from the [DecodedPage] paired with the current
+  /// code page: no per-instruction fetch, field extraction, or nested
+  /// opcode dispatch. Uncommon instructions (FP, atomics, system,
+  /// page-crossing fetches) fall back to the classic interpreter path.
+  /// Cycle accounting mirrors [CpuExecutor.execute] exactly.
+  @override
+  void execute(int maxCycles) {
+    if (maxCycles <= 0) return;
+
+    final counterTarget = state.instructionCounter + maxCycles;
+    state.nCycles = maxCycles;
+
+    if (_hasPendingInterrupt()) {
+      _handleInterrupt();
+      state.nCycles--;
+      _syncCounter(counterTarget);
+      return;
+    }
+
+    state.pendingException = CpuExecutor._noPendingException;
+
+    var pc = state.pc;
+    var cycles = state.nCycles;
+
+    final regs = state.regs as Int64List;
+    final signBit = state.signBit;
+    var page = _decodedPage ?? _sentinelPage;
+    var metas = page.meta;
+    var imms = page.imm;
+
+    while (cycles > 0) {
+      if (_hasPendingInterrupt()) {
+        state.pc = pc;
+        state.nCycles = cycles;
+        _handleInterrupt();
+        state.nCycles--;
+        _syncCounter(counterTarget);
+        return;
+      }
+
+      final addr = pc;
+      if ((addr & ~TlbConstants.pageMask) != _codePageTag) {
+        _fetchSlowAndCache(addr);
+        if (state.pendingException >= 0) {
+          state.pc = pc;
+          state.nCycles = cycles;
+          _handlePendingException(counterTarget);
+          return;
+        }
+        page = _decodedPage!;
+        metas = page.meta;
+        imms = page.imm;
+        continue;
+      }
+
+      final slot = (addr & TlbConstants.pageMask) >> 1;
+      var m = metas[slot];
+      if ((m & PredecodeMeta.opMask) == PredecodeOp.undecoded) {
+        m = Rv64Predecoder.decodeSlot(page, slot);
+      }
+
+      cycles--;
+
+      switch (m & PredecodeMeta.opMask) {
+        case PredecodeOp.nop:
+          pc = addr + (2 << ((m >>> PredecodeMeta.sizeShift) & 1));
+
+        case PredecodeOp.addi:
+          regs[(m >>> PredecodeMeta.rdShift) & PredecodeMeta.regMask] =
+              regs[(m >>> PredecodeMeta.rs1Shift) & PredecodeMeta.regMask] +
+              imms[slot];
+          pc = addr + (2 << ((m >>> PredecodeMeta.sizeShift) & 1));
+
+        case PredecodeOp.add:
+          regs[(m >>> PredecodeMeta.rdShift) & PredecodeMeta.regMask] =
+              regs[(m >>> PredecodeMeta.rs1Shift) & PredecodeMeta.regMask] +
+              regs[(m >>> PredecodeMeta.rs2Shift) & PredecodeMeta.regMask];
+          pc = addr + (2 << ((m >>> PredecodeMeta.sizeShift) & 1));
+
+        case PredecodeOp.sub:
+          regs[(m >>> PredecodeMeta.rdShift) & PredecodeMeta.regMask] =
+              regs[(m >>> PredecodeMeta.rs1Shift) & PredecodeMeta.regMask] -
+              regs[(m >>> PredecodeMeta.rs2Shift) & PredecodeMeta.regMask];
+          pc = addr + (2 << ((m >>> PredecodeMeta.sizeShift) & 1));
+
+        case PredecodeOp.and:
+          regs[(m >>> PredecodeMeta.rdShift) & PredecodeMeta.regMask] =
+              regs[(m >>> PredecodeMeta.rs1Shift) & PredecodeMeta.regMask] &
+              regs[(m >>> PredecodeMeta.rs2Shift) & PredecodeMeta.regMask];
+          pc = addr + (2 << ((m >>> PredecodeMeta.sizeShift) & 1));
+
+        case PredecodeOp.or:
+          regs[(m >>> PredecodeMeta.rdShift) & PredecodeMeta.regMask] =
+              regs[(m >>> PredecodeMeta.rs1Shift) & PredecodeMeta.regMask] |
+              regs[(m >>> PredecodeMeta.rs2Shift) & PredecodeMeta.regMask];
+          pc = addr + (2 << ((m >>> PredecodeMeta.sizeShift) & 1));
+
+        case PredecodeOp.xor:
+          regs[(m >>> PredecodeMeta.rdShift) & PredecodeMeta.regMask] =
+              regs[(m >>> PredecodeMeta.rs1Shift) & PredecodeMeta.regMask] ^
+              regs[(m >>> PredecodeMeta.rs2Shift) & PredecodeMeta.regMask];
+          pc = addr + (2 << ((m >>> PredecodeMeta.sizeShift) & 1));
+
+        case PredecodeOp.andi:
+          regs[(m >>> PredecodeMeta.rdShift) & PredecodeMeta.regMask] =
+              regs[(m >>> PredecodeMeta.rs1Shift) & PredecodeMeta.regMask] &
+              imms[slot];
+          pc = addr + (2 << ((m >>> PredecodeMeta.sizeShift) & 1));
+
+        case PredecodeOp.ori:
+          regs[(m >>> PredecodeMeta.rdShift) & PredecodeMeta.regMask] =
+              regs[(m >>> PredecodeMeta.rs1Shift) & PredecodeMeta.regMask] |
+              imms[slot];
+          pc = addr + (2 << ((m >>> PredecodeMeta.sizeShift) & 1));
+
+        case PredecodeOp.xori:
+          regs[(m >>> PredecodeMeta.rdShift) & PredecodeMeta.regMask] =
+              regs[(m >>> PredecodeMeta.rs1Shift) & PredecodeMeta.regMask] ^
+              imms[slot];
+          pc = addr + (2 << ((m >>> PredecodeMeta.sizeShift) & 1));
+
+        case PredecodeOp.slli:
+          regs[(m >>> PredecodeMeta.rdShift) & PredecodeMeta.regMask] =
+              regs[(m >>> PredecodeMeta.rs1Shift) & PredecodeMeta.regMask] <<
+              imms[slot];
+          pc = addr + (2 << ((m >>> PredecodeMeta.sizeShift) & 1));
+
+        case PredecodeOp.srli:
+          regs[(m >>> PredecodeMeta.rdShift) & PredecodeMeta.regMask] =
+              regs[(m >>> PredecodeMeta.rs1Shift) & PredecodeMeta.regMask] >>>
+              imms[slot];
+          pc = addr + (2 << ((m >>> PredecodeMeta.sizeShift) & 1));
+
+        case PredecodeOp.srai:
+          regs[(m >>> PredecodeMeta.rdShift) & PredecodeMeta.regMask] =
+              regs[(m >>> PredecodeMeta.rs1Shift) & PredecodeMeta.regMask] >>
+              imms[slot];
+          pc = addr + (2 << ((m >>> PredecodeMeta.sizeShift) & 1));
+
+        case PredecodeOp.sll:
+          regs[(m >>> PredecodeMeta.rdShift) & PredecodeMeta.regMask] =
+              regs[(m >>> PredecodeMeta.rs1Shift) & PredecodeMeta.regMask] <<
+              (regs[(m >>> PredecodeMeta.rs2Shift) & PredecodeMeta.regMask] &
+                  CpuExecutor._shamtMask64);
+          pc = addr + (2 << ((m >>> PredecodeMeta.sizeShift) & 1));
+
+        case PredecodeOp.srl:
+          regs[(m >>> PredecodeMeta.rdShift) & PredecodeMeta.regMask] =
+              regs[(m >>> PredecodeMeta.rs1Shift) & PredecodeMeta.regMask] >>>
+              (regs[(m >>> PredecodeMeta.rs2Shift) & PredecodeMeta.regMask] &
+                  CpuExecutor._shamtMask64);
+          pc = addr + (2 << ((m >>> PredecodeMeta.sizeShift) & 1));
+
+        case PredecodeOp.sra:
+          regs[(m >>> PredecodeMeta.rdShift) & PredecodeMeta.regMask] =
+              regs[(m >>> PredecodeMeta.rs1Shift) & PredecodeMeta.regMask] >>
+              (regs[(m >>> PredecodeMeta.rs2Shift) & PredecodeMeta.regMask] &
+                  CpuExecutor._shamtMask64);
+          pc = addr + (2 << ((m >>> PredecodeMeta.sizeShift) & 1));
+
+        case PredecodeOp.slt:
+          regs[(m >>> PredecodeMeta.rdShift) & PredecodeMeta.regMask] =
+              regs[(m >>> PredecodeMeta.rs1Shift) & PredecodeMeta.regMask] <
+                  regs[(m >>> PredecodeMeta.rs2Shift) & PredecodeMeta.regMask]
+              ? 1
+              : 0;
+          pc = addr + (2 << ((m >>> PredecodeMeta.sizeShift) & 1));
+
+        case PredecodeOp.sltu:
+          regs[(m >>> PredecodeMeta.rdShift) & PredecodeMeta.regMask] =
+              (regs[(m >>> PredecodeMeta.rs1Shift) & PredecodeMeta.regMask] ^
+                      signBit) <
+                  (regs[(m >>> PredecodeMeta.rs2Shift) &
+                          PredecodeMeta.regMask] ^
+                      signBit)
+              ? 1
+              : 0;
+          pc = addr + (2 << ((m >>> PredecodeMeta.sizeShift) & 1));
+
+        case PredecodeOp.slti:
+          regs[(m >>> PredecodeMeta.rdShift) & PredecodeMeta.regMask] =
+              regs[(m >>> PredecodeMeta.rs1Shift) & PredecodeMeta.regMask] <
+                  imms[slot]
+              ? 1
+              : 0;
+          pc = addr + (2 << ((m >>> PredecodeMeta.sizeShift) & 1));
+
+        case PredecodeOp.sltiu:
+          regs[(m >>> PredecodeMeta.rdShift) & PredecodeMeta.regMask] =
+              (regs[(m >>> PredecodeMeta.rs1Shift) & PredecodeMeta.regMask] ^
+                      signBit) <
+                  (imms[slot] ^ signBit)
+              ? 1
+              : 0;
+          pc = addr + (2 << ((m >>> PredecodeMeta.sizeShift) & 1));
+
+        case PredecodeOp.addiw:
+          regs[(m >>> PredecodeMeta.rdShift) &
+              PredecodeMeta.regMask] = BitUtils.signExtend32(
+            regs[(m >>> PredecodeMeta.rs1Shift) & PredecodeMeta.regMask] +
+                imms[slot],
+          );
+          pc = addr + (2 << ((m >>> PredecodeMeta.sizeShift) & 1));
+
+        case PredecodeOp.addw:
+          regs[(m >>> PredecodeMeta.rdShift) &
+              PredecodeMeta.regMask] = BitUtils.signExtend32(
+            regs[(m >>> PredecodeMeta.rs1Shift) & PredecodeMeta.regMask] +
+                regs[(m >>> PredecodeMeta.rs2Shift) & PredecodeMeta.regMask],
+          );
+          pc = addr + (2 << ((m >>> PredecodeMeta.sizeShift) & 1));
+
+        case PredecodeOp.subw:
+          regs[(m >>> PredecodeMeta.rdShift) &
+              PredecodeMeta.regMask] = BitUtils.signExtend32(
+            regs[(m >>> PredecodeMeta.rs1Shift) & PredecodeMeta.regMask] -
+                regs[(m >>> PredecodeMeta.rs2Shift) & PredecodeMeta.regMask],
+          );
+          pc = addr + (2 << ((m >>> PredecodeMeta.sizeShift) & 1));
+
+        case PredecodeOp.slliw:
+          regs[(m >>> PredecodeMeta.rdShift) &
+              PredecodeMeta.regMask] = BitUtils.signExtend32(
+            regs[(m >>> PredecodeMeta.rs1Shift) & PredecodeMeta.regMask] <<
+                imms[slot],
+          );
+          pc = addr + (2 << ((m >>> PredecodeMeta.sizeShift) & 1));
+
+        case PredecodeOp.srliw:
+          regs[(m >>> PredecodeMeta.rdShift) &
+              PredecodeMeta.regMask] = BitUtils.signExtend32(
+            (regs[(m >>> PredecodeMeta.rs1Shift) & PredecodeMeta.regMask] &
+                    CpuExecutor._mask32) >>>
+                imms[slot],
+          );
+          pc = addr + (2 << ((m >>> PredecodeMeta.sizeShift) & 1));
+
+        case PredecodeOp.sraiw:
+          regs[(m >>> PredecodeMeta.rdShift) & PredecodeMeta.regMask] =
+              BitUtils.signExtend32(
+                regs[(m >>> PredecodeMeta.rs1Shift) & PredecodeMeta.regMask],
+              ) >>
+              imms[slot];
+          pc = addr + (2 << ((m >>> PredecodeMeta.sizeShift) & 1));
+
+        case PredecodeOp.sllw:
+          regs[(m >>> PredecodeMeta.rdShift) &
+              PredecodeMeta.regMask] = BitUtils.signExtend32(
+            (regs[(m >>> PredecodeMeta.rs1Shift) & PredecodeMeta.regMask] &
+                    CpuExecutor._mask32) <<
+                (regs[(m >>> PredecodeMeta.rs2Shift) & PredecodeMeta.regMask] &
+                    CpuExecutor._shamtMask32),
+          );
+          pc = addr + (2 << ((m >>> PredecodeMeta.sizeShift) & 1));
+
+        case PredecodeOp.srlw:
+          regs[(m >>> PredecodeMeta.rdShift) &
+              PredecodeMeta.regMask] = BitUtils.signExtend32(
+            (regs[(m >>> PredecodeMeta.rs1Shift) & PredecodeMeta.regMask] &
+                    CpuExecutor._mask32) >>>
+                (regs[(m >>> PredecodeMeta.rs2Shift) & PredecodeMeta.regMask] &
+                    CpuExecutor._shamtMask32),
+          );
+          pc = addr + (2 << ((m >>> PredecodeMeta.sizeShift) & 1));
+
+        case PredecodeOp.sraw:
+          regs[(m >>> PredecodeMeta.rdShift) & PredecodeMeta.regMask] =
+              BitUtils.signExtend32(
+                regs[(m >>> PredecodeMeta.rs1Shift) & PredecodeMeta.regMask],
+              ) >>
+              (regs[(m >>> PredecodeMeta.rs2Shift) & PredecodeMeta.regMask] &
+                  CpuExecutor._shamtMask32);
+          pc = addr + (2 << ((m >>> PredecodeMeta.sizeShift) & 1));
+
+        case PredecodeOp.lui:
+          regs[(m >>> PredecodeMeta.rdShift) & PredecodeMeta.regMask] =
+              imms[slot];
+          pc = addr + (2 << ((m >>> PredecodeMeta.sizeShift) & 1));
+
+        case PredecodeOp.auipc:
+          regs[(m >>> PredecodeMeta.rdShift) & PredecodeMeta.regMask] =
+              addr + imms[slot];
+          pc = addr + (2 << ((m >>> PredecodeMeta.sizeShift) & 1));
+
+        case PredecodeOp.jal:
+          regs[(m >>> PredecodeMeta.rdShift) & PredecodeMeta.regMask] =
+              addr + (2 << ((m >>> PredecodeMeta.sizeShift) & 1));
+          pc = addr + imms[slot];
+
+        case PredecodeOp.j:
+          pc = addr + imms[slot];
+
+        case PredecodeOp.jalr:
+          final target =
+              (regs[(m >>> PredecodeMeta.rs1Shift) & PredecodeMeta.regMask] +
+                  imms[slot]) &
+              ~1;
+          regs[(m >>> PredecodeMeta.rdShift) & PredecodeMeta.regMask] =
+              addr + (2 << ((m >>> PredecodeMeta.sizeShift) & 1));
+          pc = target;
+
+        case PredecodeOp.jr:
+          pc =
+              (regs[(m >>> PredecodeMeta.rs1Shift) & PredecodeMeta.regMask] +
+                  imms[slot]) &
+              ~1;
+
+        case PredecodeOp.beq:
+          pc =
+              regs[(m >>> PredecodeMeta.rs1Shift) & PredecodeMeta.regMask] ==
+                  regs[(m >>> PredecodeMeta.rs2Shift) & PredecodeMeta.regMask]
+              ? addr + imms[slot]
+              : addr + (2 << ((m >>> PredecodeMeta.sizeShift) & 1));
+
+        case PredecodeOp.bne:
+          pc =
+              regs[(m >>> PredecodeMeta.rs1Shift) & PredecodeMeta.regMask] !=
+                  regs[(m >>> PredecodeMeta.rs2Shift) & PredecodeMeta.regMask]
+              ? addr + imms[slot]
+              : addr + (2 << ((m >>> PredecodeMeta.sizeShift) & 1));
+
+        case PredecodeOp.blt:
+          pc =
+              regs[(m >>> PredecodeMeta.rs1Shift) & PredecodeMeta.regMask] <
+                  regs[(m >>> PredecodeMeta.rs2Shift) & PredecodeMeta.regMask]
+              ? addr + imms[slot]
+              : addr + (2 << ((m >>> PredecodeMeta.sizeShift) & 1));
+
+        case PredecodeOp.bge:
+          pc =
+              regs[(m >>> PredecodeMeta.rs1Shift) & PredecodeMeta.regMask] >=
+                  regs[(m >>> PredecodeMeta.rs2Shift) & PredecodeMeta.regMask]
+              ? addr + imms[slot]
+              : addr + (2 << ((m >>> PredecodeMeta.sizeShift) & 1));
+
+        case PredecodeOp.bltu:
+          pc =
+              (regs[(m >>> PredecodeMeta.rs1Shift) & PredecodeMeta.regMask] ^
+                      signBit) <
+                  (regs[(m >>> PredecodeMeta.rs2Shift) &
+                          PredecodeMeta.regMask] ^
+                      signBit)
+              ? addr + imms[slot]
+              : addr + (2 << ((m >>> PredecodeMeta.sizeShift) & 1));
+
+        case PredecodeOp.bgeu:
+          pc =
+              (regs[(m >>> PredecodeMeta.rs1Shift) & PredecodeMeta.regMask] ^
+                      signBit) >=
+                  (regs[(m >>> PredecodeMeta.rs2Shift) &
+                          PredecodeMeta.regMask] ^
+                      signBit)
+              ? addr + imms[slot]
+              : addr + (2 << ((m >>> PredecodeMeta.sizeShift) & 1));
+
+        case PredecodeOp.ld:
+          final val = _memReadU64(
+            regs[(m >>> PredecodeMeta.rs1Shift) & PredecodeMeta.regMask] +
+                imms[slot],
+          );
+          if (state.pendingException >= 0) {
+            state.pc = pc;
+            state.nCycles = cycles;
+            _handlePendingException(counterTarget);
+            return;
+          }
+          regs[(m >>> PredecodeMeta.rdShift) & PredecodeMeta.regMask] = val;
+          pc = addr + (2 << ((m >>> PredecodeMeta.sizeShift) & 1));
+
+        case PredecodeOp.lw:
+          final val = _memReadU32(
+            regs[(m >>> PredecodeMeta.rs1Shift) & PredecodeMeta.regMask] +
+                imms[slot],
+          );
+          if (state.pendingException >= 0) {
+            state.pc = pc;
+            state.nCycles = cycles;
+            _handlePendingException(counterTarget);
+            return;
+          }
+          regs[(m >>> PredecodeMeta.rdShift) & PredecodeMeta.regMask] =
+              BitUtils.signExtend32(val);
+          pc = addr + (2 << ((m >>> PredecodeMeta.sizeShift) & 1));
+
+        case PredecodeOp.lwu:
+          final val = _memReadU32(
+            regs[(m >>> PredecodeMeta.rs1Shift) & PredecodeMeta.regMask] +
+                imms[slot],
+          );
+          if (state.pendingException >= 0) {
+            state.pc = pc;
+            state.nCycles = cycles;
+            _handlePendingException(counterTarget);
+            return;
+          }
+          regs[(m >>> PredecodeMeta.rdShift) & PredecodeMeta.regMask] =
+              val & CpuExecutor._mask32;
+          pc = addr + (2 << ((m >>> PredecodeMeta.sizeShift) & 1));
+
+        case PredecodeOp.lh:
+          final val = _memReadU16(
+            regs[(m >>> PredecodeMeta.rs1Shift) & PredecodeMeta.regMask] +
+                imms[slot],
+          );
+          if (state.pendingException >= 0) {
+            state.pc = pc;
+            state.nCycles = cycles;
+            _handlePendingException(counterTarget);
+            return;
+          }
+          regs[(m >>> PredecodeMeta.rdShift) & PredecodeMeta.regMask] =
+              _signExtend16(val);
+          pc = addr + (2 << ((m >>> PredecodeMeta.sizeShift) & 1));
+
+        case PredecodeOp.lhu:
+          final val = _memReadU16(
+            regs[(m >>> PredecodeMeta.rs1Shift) & PredecodeMeta.regMask] +
+                imms[slot],
+          );
+          if (state.pendingException >= 0) {
+            state.pc = pc;
+            state.nCycles = cycles;
+            _handlePendingException(counterTarget);
+            return;
+          }
+          regs[(m >>> PredecodeMeta.rdShift) & PredecodeMeta.regMask] = val;
+          pc = addr + (2 << ((m >>> PredecodeMeta.sizeShift) & 1));
+
+        case PredecodeOp.lb:
+          final val = _memReadU8(
+            regs[(m >>> PredecodeMeta.rs1Shift) & PredecodeMeta.regMask] +
+                imms[slot],
+          );
+          if (state.pendingException >= 0) {
+            state.pc = pc;
+            state.nCycles = cycles;
+            _handlePendingException(counterTarget);
+            return;
+          }
+          regs[(m >>> PredecodeMeta.rdShift) & PredecodeMeta.regMask] =
+              _signExtend8(val);
+          pc = addr + (2 << ((m >>> PredecodeMeta.sizeShift) & 1));
+
+        case PredecodeOp.lbu:
+          final val = _memReadU8(
+            regs[(m >>> PredecodeMeta.rs1Shift) & PredecodeMeta.regMask] +
+                imms[slot],
+          );
+          if (state.pendingException >= 0) {
+            state.pc = pc;
+            state.nCycles = cycles;
+            _handlePendingException(counterTarget);
+            return;
+          }
+          regs[(m >>> PredecodeMeta.rdShift) & PredecodeMeta.regMask] = val;
+          pc = addr + (2 << ((m >>> PredecodeMeta.sizeShift) & 1));
+
+        case PredecodeOp.sd:
+          if (!_memWriteU64(
+            regs[(m >>> PredecodeMeta.rs1Shift) & PredecodeMeta.regMask] +
+                imms[slot],
+            regs[(m >>> PredecodeMeta.rs2Shift) & PredecodeMeta.regMask],
+          )) {
+            state.pc = pc;
+            state.nCycles = cycles;
+            _handlePendingException(counterTarget);
+            return;
+          }
+          pc = addr + (2 << ((m >>> PredecodeMeta.sizeShift) & 1));
+
+        case PredecodeOp.sw:
+          if (!_memWriteU32(
+            regs[(m >>> PredecodeMeta.rs1Shift) & PredecodeMeta.regMask] +
+                imms[slot],
+            regs[(m >>> PredecodeMeta.rs2Shift) & PredecodeMeta.regMask],
+          )) {
+            state.pc = pc;
+            state.nCycles = cycles;
+            _handlePendingException(counterTarget);
+            return;
+          }
+          pc = addr + (2 << ((m >>> PredecodeMeta.sizeShift) & 1));
+
+        case PredecodeOp.sh:
+          if (!_memWriteU16(
+            regs[(m >>> PredecodeMeta.rs1Shift) & PredecodeMeta.regMask] +
+                imms[slot],
+            regs[(m >>> PredecodeMeta.rs2Shift) & PredecodeMeta.regMask],
+          )) {
+            state.pc = pc;
+            state.nCycles = cycles;
+            _handlePendingException(counterTarget);
+            return;
+          }
+          pc = addr + (2 << ((m >>> PredecodeMeta.sizeShift) & 1));
+
+        case PredecodeOp.sb:
+          if (!_memWriteU8(
+            regs[(m >>> PredecodeMeta.rs1Shift) & PredecodeMeta.regMask] +
+                imms[slot],
+            regs[(m >>> PredecodeMeta.rs2Shift) & PredecodeMeta.regMask],
+          )) {
+            state.pc = pc;
+            state.nCycles = cycles;
+            _handlePendingException(counterTarget);
+            return;
+          }
+          pc = addr + (2 << ((m >>> PredecodeMeta.sizeShift) & 1));
+
+        case PredecodeOp.mulDiv:
+          regs[(m >>> PredecodeMeta.rdShift) &
+              PredecodeMeta.regMask] = _mExt.executeMulDiv(
+            funct3: imms[slot],
+            rs1Val:
+                regs[(m >>> PredecodeMeta.rs1Shift) & PredecodeMeta.regMask],
+            rs2Val:
+                regs[(m >>> PredecodeMeta.rs2Shift) & PredecodeMeta.regMask],
+            isWord: false,
+          );
+          pc = addr + (2 << ((m >>> PredecodeMeta.sizeShift) & 1));
+
+        case PredecodeOp.mulDivW:
+          regs[(m >>> PredecodeMeta.rdShift) &
+              PredecodeMeta.regMask] = _mExt.executeMulDiv(
+            funct3: imms[slot],
+            rs1Val:
+                regs[(m >>> PredecodeMeta.rs1Shift) & PredecodeMeta.regMask],
+            rs2Val:
+                regs[(m >>> PredecodeMeta.rs2Shift) & PredecodeMeta.regMask],
+            isWord: true,
+          );
+          pc = addr + (2 << ((m >>> PredecodeMeta.sizeShift) & 1));
+
+        default:
+          state.pc = pc;
+          state.nCycles = cycles;
+          final insn = _fetchInstruction();
+          if (state.pendingException >= 0) {
+            state.pc = pc;
+            state.nCycles = cycles;
+            _handlePendingException(counterTarget);
+            return;
+          }
+          final size = InstructionDecoder.isCompressed(insn)
+              ? CpuExecutor._compressedInsnSize
+              : CpuExecutor._fullInsnSize;
+          if (!_executeInstruction(insn, size)) {
+            state.pc = pc;
+            state.nCycles = cycles;
+            _handlePendingException(counterTarget);
+            return;
+          }
+          pc = state.pc;
+          page = _decodedPage ?? _sentinelPage;
+          metas = page.meta;
+          imms = page.imm;
+      }
+
+      if (state.powerDown) break;
+    }
+
+    state.pc = pc;
+    state.nCycles = cycles;
+    _syncCounter(counterTarget);
+  }
+
+  static final DecodedPage _sentinelPage = DecodedPage(ByteData(0), -1);
 
   @override
   bool _executeInstruction(int insn, int instrSize) {

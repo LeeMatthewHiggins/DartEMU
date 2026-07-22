@@ -428,6 +428,7 @@ abstract class VirtioDevice {
     final ptr = memMap.getRamPointer(physAddr);
     if (ptr == null) return;
     ptr.setRange(0, count, buf, bufOffset);
+    memMap.notifyRamWritten(physAddr, count);
   }
 
   int _readDeviceFeatures() {

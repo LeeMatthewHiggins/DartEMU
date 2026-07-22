@@ -30,6 +30,7 @@
     "buildroot",
     "cmdline",
     "gatekept",
+    "memcpy",
     "optimisation",
     "optimised",
     "realise",

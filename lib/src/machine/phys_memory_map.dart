@@ -96,22 +96,35 @@ class PhysMemoryMap {
     return lo | (hi << _wordBits);
   }
 
+  /// Notified after guest RAM is mutated by a non-CPU writer
+  /// (device DMA, physical write helpers). Receives the physical
+  /// address and length of the written region.
+  void Function(int physAddr, int length)? onRamWritten;
+
+  /// Reports an external write to guest RAM (e.g. after a DMA copy).
+  void notifyRamWritten(int physAddr, int length) {
+    onRamWritten?.call(physAddr, length);
+  }
+
   void physWriteU8(int physAddr, int value) {
     final range = findRange(physAddr);
     if (range is! RamRange) return;
     range.byteData.setUint8(physAddr - range.addr, value);
+    onRamWritten?.call(physAddr, 1);
   }
 
   void physWriteU16(int physAddr, int value) {
     final range = findRange(physAddr);
     if (range is! RamRange) return;
     range.byteData.setUint16(physAddr - range.addr, value, Endian.little);
+    onRamWritten?.call(physAddr, 2);
   }
 
   void physWriteU32(int physAddr, int value) {
     final range = findRange(physAddr);
     if (range is! RamRange) return;
     range.byteData.setUint32(physAddr - range.addr, value, Endian.little);
+    onRamWritten?.call(physAddr, 4);
   }
 
   void physWriteU64(int physAddr, int value) {
@@ -124,6 +137,7 @@ class PhysMemoryMap {
       (value >> _wordBits) & _mask32,
       Endian.little,
     );
+    onRamWritten?.call(physAddr, 8);
   }
 
   static const maxRanges = 32;
