@@ -11,7 +11,9 @@ for embedding in CLI, Flutter, and web applications.
 
 - RV64IMAFDC and RV32IMAFDC instruction sets with full privilege levels (Machine, Supervisor, User)
 - SV39 (RV64) and SV32 (RV32) virtual memory with hardware page table walking
-- RV32 runs on all Dart platforms including web (no 64-bit integer dependency)
+- Predecoded instruction cache for fast interpretation (~1.7x on RV64, ~1.9x on RV32)
+- Runs on every Dart platform including the browser — RV32 on any web backend, RV64 under WebAssembly (WasmGC)
+- `AgentSandbox` facade: boot a disposable guest and run commands with captured output, exit codes, wall-clock/instruction budgets, and file exchange
 - VirtIO console, block device, and network device
 - User-mode networking with DNS, DHCP, and TCP/UDP proxy
 - Stream-based facade for platform-agnostic embedding

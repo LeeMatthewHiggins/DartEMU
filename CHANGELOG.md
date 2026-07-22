@@ -1,5 +1,32 @@
 # Changelog
 
+## 0.4.0
+
+- `AgentSandbox`: high-level facade for running untrusted or
+  agent-authored commands in a disposable Linux guest — `boot()`,
+  `exec()` with captured stdout, exit codes, and per-command
+  wall-clock and instruction budgets, and file exchange
+  (`writeFile`/`readFile`/`writeText`/`readText`) over the console
+- Air-gapped by default; opt into a `UserNetDevice` with a filtering
+  `NetBackend` for a controlled network allow-list
+- Timed-out or over-budget commands are interrupted and the sandbox
+  resyncs, so it stays reusable
+- Predecoded instruction cache for RV64 and RV32: decode each code page
+  once into micro-ops, cutting per-instruction fetch and dispatch
+  (~1.7x faster on RV64, ~1.9x on RV32 across the workload suite)
+- Physically-keyed decode cache with write-snooped invalidation, so
+  self-modifying guests stay correct without relying on `fence.i`
+- Faster instruction fetch: probe the code TLB before walking page
+  tables on a miss
+- WebAssembly (WasmGC) web build via `flutter build web --wasm`,
+  measurably faster than the JavaScript backend with automatic
+  fallback on browsers without WasmGC
+- RV64 now runs on the web under WasmGC (native 64-bit integers);
+  fixed 64-bit constant stubs being selected for the wasm backend
+- Guest-workload benchmark suite with per-subsystem workloads,
+  noise-aware baseline comparison, a VM-service CPU profiler, and
+  micro-op pair-frequency instrumentation (`tool/bench/`)
+
 ## 0.3.0
 
 - User-mode networking with DNS, DHCP, TCP/UDP proxy via `UserNetDevice`
