@@ -24,3 +24,8 @@ export 'src/machine/phys_memory_range.dart';
 export 'src/machine/plic.dart';
 export 'src/machine/riscv_machine.dart';
 export 'src/net/user_net_device.dart';
+export 'src/sandbox/agent_sandbox.dart';
+export 'src/sandbox/exec_result.dart';
+export 'src/sandbox/sandbox_config.dart';
+export 'src/sandbox/sandbox_console.dart';
+export 'src/sandbox/sandbox_files.dart';

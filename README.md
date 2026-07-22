@@ -51,6 +51,63 @@ await emulator.start();
 await emulator.dispose();
 ```
 
+## Agent Sandbox
+
+`AgentSandbox` is a higher-level facade for running untrusted or
+agent-authored commands in a disposable Linux VM. It boots a fresh
+guest from in-memory images, runs shell commands with captured output,
+exit codes, and per-command wall-clock and instruction budgets, and
+exchanges files with the guest. The guest never executes a host
+instruction and is air-gapped by default, so the whole VM is a
+throwaway isolation boundary that works identically on server,
+desktop, mobile, and web.
+
+```dart
+import 'package:dart_emu/dart_emu.dart';
+
+final sandbox = AgentSandbox(
+  SandboxConfig(
+    biosData: biosBytes,     // Uint8List
+    kernelData: kernelBytes,
+    rootfsData: rootfsBytes, // booted from a fresh copy each time
+    // ethDevices defaults to [] — air-gapped. Pass a UserNetDevice
+    // with a filtering NetBackend for a controlled allow-list.
+  ),
+);
+
+await sandbox.boot(); // ~0.5s to a ready shell
+
+// Run a command: captured stdout, exit code, cost.
+final r = await sandbox.exec('echo hello && uname -m');
+print(r.stdout);    // hello\nriscv64
+print(r.exitCode);  // 0
+print(r.succeeded); // true
+
+// Budgets: a command that overruns is interrupted and the sandbox
+// stays usable for the next exec.
+final slow = await sandbox.exec('sleep 60', timeout: Duration(seconds: 2));
+print(slow.outcome); // ExecOutcome.timedOut
+
+final busy = await sandbox.exec(
+  r'while true; do :; done',
+  maxInstructions: 50000000,
+);
+print(busy.outcome); // ExecOutcome.budgetExceeded
+
+// File exchange (base64 over the console — works everywhere).
+await sandbox.writeText('/tmp/main.c', cSource);
+final out = await sandbox.exec('cc /tmp/main.c -o /tmp/a.out && /tmp/a.out');
+final artifact = await sandbox.readFile('/tmp/a.out');
+
+await sandbox.dispose();
+```
+
+The exec loop drives emulation on the current isolate, yielding to the
+event loop periodically. A Flutter UI that needs frame-paced execution
+should drive the lower-level `Emulator` from a `Ticker` instead. See
+`test/sandbox/agent_sandbox_test.dart` for a full working example
+(run with `dart test --run-skipped -t sandbox`).
+
 ## Flutter / Web Integration
 
 Use `Xlen.rv32` for web targets. RV32 avoids 64-bit integer operations that
