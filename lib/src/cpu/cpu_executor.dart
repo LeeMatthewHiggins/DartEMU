@@ -142,19 +142,44 @@ class CpuExecutor {
     return _fetchSlowAndCache(addr);
   }
 
-  int _fetchSlowAndCache(int addr) {
-    final result = _fetchSlow(addr);
-    if (state.pendingException >= 0) return 0;
+  int _readFromCodePage(int addr) {
+    final offset = _codeBase + (addr & TlbConstants.pageMask);
+    final remaining = _codeEnd - offset;
+    if (remaining >= _fullInsnSize) {
+      return _readInsn32(_codeData, offset);
+    }
+    if (remaining >= _compressedInsnSize) {
+      final low = _codeData.getUint16(offset, Endian.little);
+      if ((low & _compressedMask) != _compressedMask) {
+        return low;
+      }
+      return _fetchCrossPage(addr, low);
+    }
+    return _fetchSlow(addr);
+  }
 
+  int _fetchSlowAndCache(int addr) {
     final tlbIdx =
         (addr >>> TlbConstants.pageSizeLog2) & TlbConstants.indexMask;
     final entry = state.tlbCode[tlbIdx];
+
+    if (entry.virtualTag == (addr & ~TlbConstants.pageMask)) {
+      _installCodePage(entry);
+      return _readFromCodePage(addr);
+    }
+
+    final result = _fetchSlow(addr);
+    if (state.pendingException >= 0) return 0;
+
+    _installCodePage(state.tlbCode[tlbIdx]);
+    return result;
+  }
+
+  void _installCodePage(TlbEntry entry) {
     _codeData = entry.hostData;
     _codeBase = entry.hostOffset;
     _codeEnd = entry.hostOffset + TlbConstants.pageSize;
     _codePageTag = entry.virtualTag;
-
-    return result;
   }
 
   int _readInsn32(ByteData data, int offset) {
