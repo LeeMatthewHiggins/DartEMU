@@ -39,11 +39,7 @@ Future<void> main(List<String> args) async {
       'workloads',
       help: 'Comma-separated workload names (default: a CPU-heavy subset).',
     )
-    ..addOption(
-      'top',
-      defaultsTo: '30',
-      help: 'Number of functions to report.',
-    )
+    ..addOption('top', defaultsTo: '30', help: 'Number of functions to report.')
     ..addFlag('help', abbr: 'h', negatable: false);
 
   final options = parser.parse(args);
@@ -70,8 +66,7 @@ Future<void> main(List<String> args) async {
   final byName = {for (final w in Workloads.all) w.name: w};
   final workloads = [
     for (final name in workloadNames)
-      byName[name.trim()] ??
-          (throw ArgumentError('unknown workload: $name')),
+      byName[name.trim()] ?? (throw ArgumentError('unknown workload: $name')),
   ];
 
   stdout.writeln('booting and running: ${workloadNames.join(', ')}...');
