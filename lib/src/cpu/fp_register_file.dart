@@ -66,6 +66,16 @@ class FpRegisterFile extends ListBase<int> {
 
   int readNanUnboxed(int reg) =>
       readHi(reg) == _NanBox.hiWord ? readLo(reg) : _NanBox.canonicalNaN32;
+
+  /// A copy of the raw register bytes, for snapshotting.
+  Uint8List exportBytes() => Uint8List.fromList(
+    _data.buffer.asUint8List(_data.offsetInBytes, _Layout.byteCount),
+  );
+
+  /// Restores register bytes captured by [exportBytes].
+  void importBytes(Uint8List bytes) => _data.buffer
+      .asUint8List(_data.offsetInBytes, _Layout.byteCount)
+      .setAll(0, bytes);
 }
 
 class _Layout {

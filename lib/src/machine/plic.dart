@@ -11,6 +11,17 @@ class Plic {
   int _pendingIrq = 0;
   int _servedIrq = 0;
 
+  /// Captures interrupt state for snapshotting.
+  ({int pending, int served}) captureState() =>
+      (pending: _pendingIrq, served: _servedIrq);
+
+  /// Restores interrupt state captured by [captureState].
+  void restoreState({required int pending, required int served}) {
+    _pendingIrq = pending;
+    _servedIrq = served;
+    _updateMip();
+  }
+
   IrqSignal irqSource(int irqNum) {
     return IrqSignal(setIrq: _setIrqLevel, irqNum: irqNum);
   }

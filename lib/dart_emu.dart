@@ -18,6 +18,7 @@ export 'src/emulator/emulator_status.dart';
 export 'src/machine/clint.dart';
 export 'src/machine/htif.dart';
 export 'src/machine/machine_config.dart';
+export 'src/machine/machine_snapshot.dart';
 export 'src/machine/memory_map_layout.dart';
 export 'src/machine/phys_memory_map.dart';
 export 'src/machine/phys_memory_range.dart';

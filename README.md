@@ -110,6 +110,32 @@ should drive the lower-level `Emulator` from a `Ticker` instead. See
 `test/sandbox/agent_sandbox_test.dart` for a full working example
 (run with `dart test --run-skipped -t sandbox`).
 
+### Snapshot and restore
+
+Boot is fast (~0.5s), but restoring a warm snapshot is faster still —
+on the order of tens of milliseconds. Boot once, snapshot the ready
+(or toolchain-warmed) VM, then stamp out independent, instant clones:
+
+```dart
+final origin = AgentSandbox(config);
+await origin.boot();
+// ... optionally warm caches, install packages, etc. ...
+final snapshot = origin.snapshot();
+
+// Each restore is a fresh, independent sandbox — no boot.
+final a = AgentSandbox.restore(config, snapshot);
+final b = AgentSandbox.restore(config, snapshot);
+await a.exec('echo from-clone-a'); // ready immediately
+```
+
+A snapshot is a deep copy of the guest's architectural state — CPU
+registers and CSRs, all of RAM, the disk, and device/timer state — so
+the source may keep running and one snapshot can seed any number of
+clones. Restored guests roll back any post-snapshot changes and keep a
+coherent clock (timers resume rather than jumping). Measured ~50x
+faster than a cold boot in the integration test
+(`test/sandbox/snapshot_restore_test.dart`).
+
 ## Flutter / Web Integration
 
 Use `Xlen.rv32` for web targets. RV32 avoids 64-bit integer operations that
