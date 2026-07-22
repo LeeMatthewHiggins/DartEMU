@@ -1,8 +1,9 @@
-/// Web-safe stubs for 64-bit integer constants.
+/// dart2js-safe stubs for 64-bit integer constants.
 ///
-/// These values are never reached at runtime because the web build
-/// only supports RV32, and all code paths referencing these constants
-/// are guarded by RV64-only checks.
+/// Selected only for the JavaScript backend (via `dart.library.html`),
+/// which cannot represent integer literals above 2^53. The WasmGC
+/// backend has native 64-bit integers and uses the real constants,
+/// which RV64 emulation and double-precision soft-float require.
 class Int64Const {
   static const signBit = 0;
   static const nanBoxMask = 0;
