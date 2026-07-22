@@ -11,10 +11,26 @@ class Clint {
 
   int _timecmpLow = 0;
   int _timecmpHigh = 0;
+  int _baseTicks = 0;
 
   int get timecmp => _timecmpLow | (_timecmpHigh << _wordBits);
 
-  int get rtcTime => _wallClock.elapsedMicroseconds * _rtcTicksPerMicrosecond;
+  int get rtcTime =>
+      _baseTicks + _wallClock.elapsedMicroseconds * _rtcTicksPerMicrosecond;
+
+  /// Captures the current timer-compare value for snapshotting.
+  int get timecmpSnapshot => timecmp;
+
+  /// Restores timer state so guest time resumes from [rtcTicks] rather
+  /// than jumping backward to zero, and reinstates the compare value.
+  void restoreTime({required int rtcTicks, required int timecmpTicks}) {
+    _baseTicks = rtcTicks;
+    _wallClock
+      ..reset()
+      ..start();
+    _timecmpLow = timecmpTicks & _mask32;
+    _timecmpHigh = (timecmpTicks >> _wordBits) & _mask32;
+  }
 
   int read(int offset, int sizeLog2) {
     if (sizeLog2 == _wordSizeLog2) {

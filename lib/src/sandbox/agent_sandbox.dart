@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:dart_emu/src/device/memory_block_device.dart';
 import 'package:dart_emu/src/machine/machine_config.dart';
+import 'package:dart_emu/src/machine/machine_snapshot.dart';
 import 'package:dart_emu/src/machine/riscv_machine.dart';
 import 'package:dart_emu/src/sandbox/exec_result.dart';
 import 'package:dart_emu/src/sandbox/sandbox_config.dart';
@@ -44,6 +45,20 @@ class SandboxTimeoutException implements Exception {
 class AgentSandbox {
   AgentSandbox(this.config);
 
+  /// Restores a sandbox from a [snapshot] taken by [AgentSandbox.snapshot].
+  ///
+  /// The returned sandbox is immediately ready for [exec] — no boot, no
+  /// waiting for a prompt. [config] must match the one the snapshot was
+  /// taken from. A single snapshot can seed any number of independent
+  /// sandboxes; each gets its own console and disk.
+  factory AgentSandbox.restore(SandboxConfig config, MachineSnapshot snapshot) {
+    final sandbox = AgentSandbox(config);
+    sandbox
+      .._machine = RiscVMachine.restore(sandbox._machineConfig(), snapshot)
+      .._booted = true;
+    return sandbox;
+  }
+
   /// The configuration this sandbox was created with.
   final SandboxConfig config;
 
@@ -58,6 +73,27 @@ class AgentSandbox {
   /// Total guest instructions retired since boot.
   int get instructionsRetired => _machine?.cpu.state.instructionCounter ?? 0;
 
+  MachineConfig _machineConfig() => MachineConfig(
+    xlen: config.xlen,
+    memorySizeMb: config.memorySizeMb,
+    biosData: config.biosData,
+    kernelData: config.kernelData,
+    cmdLine: config.cmdLine,
+    console: _console,
+    blockDevices: [MemoryBlockDevice.fromData(config.rootfsData)],
+    ethDevices: config.ethDevices,
+  );
+
+  /// Captures the running guest's full state for later restore.
+  ///
+  /// Take this once the sandbox is warm (e.g. after boot and any
+  /// toolchain warm-up) and reuse it via [AgentSandbox.restore] to spin
+  /// up ready sandboxes in milliseconds instead of re-booting.
+  MachineSnapshot snapshot() {
+    _ensureReady();
+    return _machine!.snapshot();
+  }
+
   /// Boots the guest and waits for its first shell prompt.
   ///
   /// Boots from a fresh copy of the rootfs image, so repeated sandboxes
@@ -66,18 +102,7 @@ class AgentSandbox {
     if (_machine != null) {
       throw StateError('Sandbox already booted');
     }
-    _machine = RiscVMachine.fromConfig(
-      MachineConfig(
-        xlen: config.xlen,
-        memorySizeMb: config.memorySizeMb,
-        biosData: config.biosData,
-        kernelData: config.kernelData,
-        cmdLine: config.cmdLine,
-        console: _console,
-        blockDevices: [MemoryBlockDevice.fromData(config.rootfsData)],
-        ethDevices: config.ethDevices,
-      ),
-    );
+    _machine = RiscVMachine.fromConfig(_machineConfig());
     _console.beginWait(config.shellPrompt);
     await _drive(
       timeout: config.bootTimeout,

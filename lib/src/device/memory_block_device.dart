@@ -28,4 +28,10 @@ class MemoryBlockDevice implements BlockDevice {
     final byteCount = count * BlockDevice.sectorSize;
     _data.setRange(byteOffset, byteOffset + byteCount, buffer);
   }
+
+  /// A copy of the full device contents, for snapshotting.
+  Uint8List exportBytes() => Uint8List.fromList(_data);
+
+  /// Restores contents captured by [exportBytes].
+  void importBytes(Uint8List bytes) => _data.setAll(0, bytes);
 }

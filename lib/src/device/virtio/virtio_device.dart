@@ -88,6 +88,44 @@ abstract class VirtioDevice {
     }
   }
 
+  /// Captures MMIO/queue/config state for snapshotting.
+  VirtioDeviceSnapshot captureState() => VirtioDeviceSnapshot(
+    intStatus: intStatus,
+    status: status,
+    deviceFeaturesSel: deviceFeaturesSel,
+    queueSel: queueSel,
+    queues: [
+      for (final qs in queues)
+        QueueState()
+          ..ready = qs.ready
+          ..num = qs.num
+          ..lastAvailIdx = qs.lastAvailIdx
+          ..descAddr = qs.descAddr
+          ..availAddr = qs.availAddr
+          ..usedAddr = qs.usedAddr,
+    ],
+    configSpace: Uint8List.fromList(configSpace),
+  );
+
+  /// Restores state captured by [captureState].
+  void restoreState(VirtioDeviceSnapshot snapshot) {
+    intStatus = snapshot.intStatus;
+    status = snapshot.status;
+    deviceFeaturesSel = snapshot.deviceFeaturesSel;
+    queueSel = snapshot.queueSel;
+    for (var i = 0; i < queues.length; i++) {
+      final src = snapshot.queues[i];
+      queues[i]
+        ..ready = src.ready
+        ..num = src.num
+        ..lastAvailIdx = src.lastAvailIdx
+        ..descAddr = src.descAddr
+        ..availAddr = src.availAddr
+        ..usedAddr = src.usedAddr;
+    }
+    configSpace.setAll(0, snapshot.configSpace);
+  }
+
   int readConfig(int offset, int sizeLog2) {
     switch (sizeLog2) {
       case 0:
@@ -481,4 +519,23 @@ enum _AddrField {
         qs.usedAddr = value;
     }
   }
+}
+
+/// Captured MMIO, queue, and config state of a [VirtioDevice].
+class VirtioDeviceSnapshot {
+  VirtioDeviceSnapshot({
+    required this.intStatus,
+    required this.status,
+    required this.deviceFeaturesSel,
+    required this.queueSel,
+    required this.queues,
+    required this.configSpace,
+  });
+
+  final int intStatus;
+  final int status;
+  final int deviceFeaturesSel;
+  final int queueSel;
+  final List<QueueState> queues;
+  final Uint8List configSpace;
 }
