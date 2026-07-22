@@ -2077,12 +2077,8 @@ class _CpuExecutor64 extends CpuExecutor {
     final regs = state.regs as Int64List;
     final signBit = state.signBit;
     var page = _decodedPage ?? _sentinelPage;
-    var ops = page.op;
-    var rds = page.rd;
-    var rs1s = page.rs1;
-    var rs2s = page.rs2;
+    var metas = page.meta;
     var imms = page.imm;
-    var sizes = page.size;
 
     while (cycles > 0) {
       if (_hasPendingInterrupt()) {
@@ -2104,349 +2100,488 @@ class _CpuExecutor64 extends CpuExecutor {
           return;
         }
         page = _decodedPage!;
-        ops = page.op;
-        rds = page.rd;
-        rs1s = page.rs1;
-        rs2s = page.rs2;
+        metas = page.meta;
         imms = page.imm;
-        sizes = page.size;
         continue;
       }
 
       final slot = (addr & TlbConstants.pageMask) >> 1;
-      var op = ops[slot];
-      if (op == PredecodeOp.undecoded) {
-        op = Rv64Predecoder.decodeSlot(page, slot);
+      var m = metas[slot];
+      if ((m & PredecodeMeta.opMask) == PredecodeOp.undecoded) {
+        m = Rv64Predecoder.decodeSlot(page, slot);
       }
 
       cycles--;
 
-      switch (op) {
+      switch (m & PredecodeMeta.opMask) {
         case PredecodeOp.nop:
-          pc = addr + sizes[slot];
+          pc = addr + (2 << ((m >>> PredecodeMeta.sizeShift) & 1));
 
         case PredecodeOp.addi:
-          regs[rds[slot]] = regs[rs1s[slot]] + imms[slot];
-          pc = addr + sizes[slot];
+          regs[(m >>> PredecodeMeta.rdShift) & PredecodeMeta.regMask] =
+              regs[(m >>> PredecodeMeta.rs1Shift) & PredecodeMeta.regMask] +
+              imms[slot];
+          pc = addr + (2 << ((m >>> PredecodeMeta.sizeShift) & 1));
 
         case PredecodeOp.add:
-          regs[rds[slot]] = regs[rs1s[slot]] + regs[rs2s[slot]];
-          pc = addr + sizes[slot];
+          regs[(m >>> PredecodeMeta.rdShift) & PredecodeMeta.regMask] =
+              regs[(m >>> PredecodeMeta.rs1Shift) & PredecodeMeta.regMask] +
+              regs[(m >>> PredecodeMeta.rs2Shift) & PredecodeMeta.regMask];
+          pc = addr + (2 << ((m >>> PredecodeMeta.sizeShift) & 1));
 
         case PredecodeOp.sub:
-          regs[rds[slot]] = regs[rs1s[slot]] - regs[rs2s[slot]];
-          pc = addr + sizes[slot];
+          regs[(m >>> PredecodeMeta.rdShift) & PredecodeMeta.regMask] =
+              regs[(m >>> PredecodeMeta.rs1Shift) & PredecodeMeta.regMask] -
+              regs[(m >>> PredecodeMeta.rs2Shift) & PredecodeMeta.regMask];
+          pc = addr + (2 << ((m >>> PredecodeMeta.sizeShift) & 1));
 
         case PredecodeOp.and:
-          regs[rds[slot]] = regs[rs1s[slot]] & regs[rs2s[slot]];
-          pc = addr + sizes[slot];
+          regs[(m >>> PredecodeMeta.rdShift) & PredecodeMeta.regMask] =
+              regs[(m >>> PredecodeMeta.rs1Shift) & PredecodeMeta.regMask] &
+              regs[(m >>> PredecodeMeta.rs2Shift) & PredecodeMeta.regMask];
+          pc = addr + (2 << ((m >>> PredecodeMeta.sizeShift) & 1));
 
         case PredecodeOp.or:
-          regs[rds[slot]] = regs[rs1s[slot]] | regs[rs2s[slot]];
-          pc = addr + sizes[slot];
+          regs[(m >>> PredecodeMeta.rdShift) & PredecodeMeta.regMask] =
+              regs[(m >>> PredecodeMeta.rs1Shift) & PredecodeMeta.regMask] |
+              regs[(m >>> PredecodeMeta.rs2Shift) & PredecodeMeta.regMask];
+          pc = addr + (2 << ((m >>> PredecodeMeta.sizeShift) & 1));
 
         case PredecodeOp.xor:
-          regs[rds[slot]] = regs[rs1s[slot]] ^ regs[rs2s[slot]];
-          pc = addr + sizes[slot];
+          regs[(m >>> PredecodeMeta.rdShift) & PredecodeMeta.regMask] =
+              regs[(m >>> PredecodeMeta.rs1Shift) & PredecodeMeta.regMask] ^
+              regs[(m >>> PredecodeMeta.rs2Shift) & PredecodeMeta.regMask];
+          pc = addr + (2 << ((m >>> PredecodeMeta.sizeShift) & 1));
 
         case PredecodeOp.andi:
-          regs[rds[slot]] = regs[rs1s[slot]] & imms[slot];
-          pc = addr + sizes[slot];
+          regs[(m >>> PredecodeMeta.rdShift) & PredecodeMeta.regMask] =
+              regs[(m >>> PredecodeMeta.rs1Shift) & PredecodeMeta.regMask] &
+              imms[slot];
+          pc = addr + (2 << ((m >>> PredecodeMeta.sizeShift) & 1));
 
         case PredecodeOp.ori:
-          regs[rds[slot]] = regs[rs1s[slot]] | imms[slot];
-          pc = addr + sizes[slot];
+          regs[(m >>> PredecodeMeta.rdShift) & PredecodeMeta.regMask] =
+              regs[(m >>> PredecodeMeta.rs1Shift) & PredecodeMeta.regMask] |
+              imms[slot];
+          pc = addr + (2 << ((m >>> PredecodeMeta.sizeShift) & 1));
 
         case PredecodeOp.xori:
-          regs[rds[slot]] = regs[rs1s[slot]] ^ imms[slot];
-          pc = addr + sizes[slot];
+          regs[(m >>> PredecodeMeta.rdShift) & PredecodeMeta.regMask] =
+              regs[(m >>> PredecodeMeta.rs1Shift) & PredecodeMeta.regMask] ^
+              imms[slot];
+          pc = addr + (2 << ((m >>> PredecodeMeta.sizeShift) & 1));
 
         case PredecodeOp.slli:
-          regs[rds[slot]] = regs[rs1s[slot]] << imms[slot];
-          pc = addr + sizes[slot];
+          regs[(m >>> PredecodeMeta.rdShift) & PredecodeMeta.regMask] =
+              regs[(m >>> PredecodeMeta.rs1Shift) & PredecodeMeta.regMask] <<
+              imms[slot];
+          pc = addr + (2 << ((m >>> PredecodeMeta.sizeShift) & 1));
 
         case PredecodeOp.srli:
-          regs[rds[slot]] = regs[rs1s[slot]] >>> imms[slot];
-          pc = addr + sizes[slot];
+          regs[(m >>> PredecodeMeta.rdShift) & PredecodeMeta.regMask] =
+              regs[(m >>> PredecodeMeta.rs1Shift) & PredecodeMeta.regMask] >>>
+              imms[slot];
+          pc = addr + (2 << ((m >>> PredecodeMeta.sizeShift) & 1));
 
         case PredecodeOp.srai:
-          regs[rds[slot]] = regs[rs1s[slot]] >> imms[slot];
-          pc = addr + sizes[slot];
+          regs[(m >>> PredecodeMeta.rdShift) & PredecodeMeta.regMask] =
+              regs[(m >>> PredecodeMeta.rs1Shift) & PredecodeMeta.regMask] >>
+              imms[slot];
+          pc = addr + (2 << ((m >>> PredecodeMeta.sizeShift) & 1));
 
         case PredecodeOp.sll:
-          regs[rds[slot]] =
-              regs[rs1s[slot]] << (regs[rs2s[slot]] & CpuExecutor._shamtMask64);
-          pc = addr + sizes[slot];
+          regs[(m >>> PredecodeMeta.rdShift) & PredecodeMeta.regMask] =
+              regs[(m >>> PredecodeMeta.rs1Shift) & PredecodeMeta.regMask] <<
+              (regs[(m >>> PredecodeMeta.rs2Shift) & PredecodeMeta.regMask] &
+                  CpuExecutor._shamtMask64);
+          pc = addr + (2 << ((m >>> PredecodeMeta.sizeShift) & 1));
 
         case PredecodeOp.srl:
-          regs[rds[slot]] =
-              regs[rs1s[slot]] >>>
-              (regs[rs2s[slot]] & CpuExecutor._shamtMask64);
-          pc = addr + sizes[slot];
+          regs[(m >>> PredecodeMeta.rdShift) & PredecodeMeta.regMask] =
+              regs[(m >>> PredecodeMeta.rs1Shift) & PredecodeMeta.regMask] >>>
+              (regs[(m >>> PredecodeMeta.rs2Shift) & PredecodeMeta.regMask] &
+                  CpuExecutor._shamtMask64);
+          pc = addr + (2 << ((m >>> PredecodeMeta.sizeShift) & 1));
 
         case PredecodeOp.sra:
-          regs[rds[slot]] =
-              regs[rs1s[slot]] >> (regs[rs2s[slot]] & CpuExecutor._shamtMask64);
-          pc = addr + sizes[slot];
+          regs[(m >>> PredecodeMeta.rdShift) & PredecodeMeta.regMask] =
+              regs[(m >>> PredecodeMeta.rs1Shift) & PredecodeMeta.regMask] >>
+              (regs[(m >>> PredecodeMeta.rs2Shift) & PredecodeMeta.regMask] &
+                  CpuExecutor._shamtMask64);
+          pc = addr + (2 << ((m >>> PredecodeMeta.sizeShift) & 1));
 
         case PredecodeOp.slt:
-          regs[rds[slot]] = regs[rs1s[slot]] < regs[rs2s[slot]] ? 1 : 0;
-          pc = addr + sizes[slot];
-
-        case PredecodeOp.sltu:
-          regs[rds[slot]] =
-              (regs[rs1s[slot]] ^ signBit) < (regs[rs2s[slot]] ^ signBit)
+          regs[(m >>> PredecodeMeta.rdShift) & PredecodeMeta.regMask] =
+              regs[(m >>> PredecodeMeta.rs1Shift) & PredecodeMeta.regMask] <
+                  regs[(m >>> PredecodeMeta.rs2Shift) & PredecodeMeta.regMask]
               ? 1
               : 0;
-          pc = addr + sizes[slot];
+          pc = addr + (2 << ((m >>> PredecodeMeta.sizeShift) & 1));
+
+        case PredecodeOp.sltu:
+          regs[(m >>> PredecodeMeta.rdShift) & PredecodeMeta.regMask] =
+              (regs[(m >>> PredecodeMeta.rs1Shift) & PredecodeMeta.regMask] ^
+                      signBit) <
+                  (regs[(m >>> PredecodeMeta.rs2Shift) &
+                          PredecodeMeta.regMask] ^
+                      signBit)
+              ? 1
+              : 0;
+          pc = addr + (2 << ((m >>> PredecodeMeta.sizeShift) & 1));
 
         case PredecodeOp.slti:
-          regs[rds[slot]] = regs[rs1s[slot]] < imms[slot] ? 1 : 0;
-          pc = addr + sizes[slot];
+          regs[(m >>> PredecodeMeta.rdShift) & PredecodeMeta.regMask] =
+              regs[(m >>> PredecodeMeta.rs1Shift) & PredecodeMeta.regMask] <
+                  imms[slot]
+              ? 1
+              : 0;
+          pc = addr + (2 << ((m >>> PredecodeMeta.sizeShift) & 1));
 
         case PredecodeOp.sltiu:
-          regs[rds[slot]] =
-              (regs[rs1s[slot]] ^ signBit) < (imms[slot] ^ signBit) ? 1 : 0;
-          pc = addr + sizes[slot];
+          regs[(m >>> PredecodeMeta.rdShift) & PredecodeMeta.regMask] =
+              (regs[(m >>> PredecodeMeta.rs1Shift) & PredecodeMeta.regMask] ^
+                      signBit) <
+                  (imms[slot] ^ signBit)
+              ? 1
+              : 0;
+          pc = addr + (2 << ((m >>> PredecodeMeta.sizeShift) & 1));
 
         case PredecodeOp.addiw:
-          regs[rds[slot]] = BitUtils.signExtend32(
-            regs[rs1s[slot]] + imms[slot],
+          regs[(m >>> PredecodeMeta.rdShift) &
+              PredecodeMeta.regMask] = BitUtils.signExtend32(
+            regs[(m >>> PredecodeMeta.rs1Shift) & PredecodeMeta.regMask] +
+                imms[slot],
           );
-          pc = addr + sizes[slot];
+          pc = addr + (2 << ((m >>> PredecodeMeta.sizeShift) & 1));
 
         case PredecodeOp.addw:
-          regs[rds[slot]] = BitUtils.signExtend32(
-            regs[rs1s[slot]] + regs[rs2s[slot]],
+          regs[(m >>> PredecodeMeta.rdShift) &
+              PredecodeMeta.regMask] = BitUtils.signExtend32(
+            regs[(m >>> PredecodeMeta.rs1Shift) & PredecodeMeta.regMask] +
+                regs[(m >>> PredecodeMeta.rs2Shift) & PredecodeMeta.regMask],
           );
-          pc = addr + sizes[slot];
+          pc = addr + (2 << ((m >>> PredecodeMeta.sizeShift) & 1));
 
         case PredecodeOp.subw:
-          regs[rds[slot]] = BitUtils.signExtend32(
-            regs[rs1s[slot]] - regs[rs2s[slot]],
+          regs[(m >>> PredecodeMeta.rdShift) &
+              PredecodeMeta.regMask] = BitUtils.signExtend32(
+            regs[(m >>> PredecodeMeta.rs1Shift) & PredecodeMeta.regMask] -
+                regs[(m >>> PredecodeMeta.rs2Shift) & PredecodeMeta.regMask],
           );
-          pc = addr + sizes[slot];
+          pc = addr + (2 << ((m >>> PredecodeMeta.sizeShift) & 1));
 
         case PredecodeOp.slliw:
-          regs[rds[slot]] = BitUtils.signExtend32(
-            regs[rs1s[slot]] << imms[slot],
+          regs[(m >>> PredecodeMeta.rdShift) &
+              PredecodeMeta.regMask] = BitUtils.signExtend32(
+            regs[(m >>> PredecodeMeta.rs1Shift) & PredecodeMeta.regMask] <<
+                imms[slot],
           );
-          pc = addr + sizes[slot];
+          pc = addr + (2 << ((m >>> PredecodeMeta.sizeShift) & 1));
 
         case PredecodeOp.srliw:
-          regs[rds[slot]] = BitUtils.signExtend32(
-            (regs[rs1s[slot]] & CpuExecutor._mask32) >>> imms[slot],
+          regs[(m >>> PredecodeMeta.rdShift) &
+              PredecodeMeta.regMask] = BitUtils.signExtend32(
+            (regs[(m >>> PredecodeMeta.rs1Shift) & PredecodeMeta.regMask] &
+                    CpuExecutor._mask32) >>>
+                imms[slot],
           );
-          pc = addr + sizes[slot];
+          pc = addr + (2 << ((m >>> PredecodeMeta.sizeShift) & 1));
 
         case PredecodeOp.sraiw:
-          regs[rds[slot]] =
-              BitUtils.signExtend32(regs[rs1s[slot]]) >> imms[slot];
-          pc = addr + sizes[slot];
+          regs[(m >>> PredecodeMeta.rdShift) & PredecodeMeta.regMask] =
+              BitUtils.signExtend32(
+                regs[(m >>> PredecodeMeta.rs1Shift) & PredecodeMeta.regMask],
+              ) >>
+              imms[slot];
+          pc = addr + (2 << ((m >>> PredecodeMeta.sizeShift) & 1));
 
         case PredecodeOp.sllw:
-          regs[rds[slot]] = BitUtils.signExtend32(
-            (regs[rs1s[slot]] & CpuExecutor._mask32) <<
-                (regs[rs2s[slot]] & CpuExecutor._shamtMask32),
+          regs[(m >>> PredecodeMeta.rdShift) &
+              PredecodeMeta.regMask] = BitUtils.signExtend32(
+            (regs[(m >>> PredecodeMeta.rs1Shift) & PredecodeMeta.regMask] &
+                    CpuExecutor._mask32) <<
+                (regs[(m >>> PredecodeMeta.rs2Shift) & PredecodeMeta.regMask] &
+                    CpuExecutor._shamtMask32),
           );
-          pc = addr + sizes[slot];
+          pc = addr + (2 << ((m >>> PredecodeMeta.sizeShift) & 1));
 
         case PredecodeOp.srlw:
-          regs[rds[slot]] = BitUtils.signExtend32(
-            (regs[rs1s[slot]] & CpuExecutor._mask32) >>>
-                (regs[rs2s[slot]] & CpuExecutor._shamtMask32),
+          regs[(m >>> PredecodeMeta.rdShift) &
+              PredecodeMeta.regMask] = BitUtils.signExtend32(
+            (regs[(m >>> PredecodeMeta.rs1Shift) & PredecodeMeta.regMask] &
+                    CpuExecutor._mask32) >>>
+                (regs[(m >>> PredecodeMeta.rs2Shift) & PredecodeMeta.regMask] &
+                    CpuExecutor._shamtMask32),
           );
-          pc = addr + sizes[slot];
+          pc = addr + (2 << ((m >>> PredecodeMeta.sizeShift) & 1));
 
         case PredecodeOp.sraw:
-          regs[rds[slot]] =
-              BitUtils.signExtend32(regs[rs1s[slot]]) >>
-              (regs[rs2s[slot]] & CpuExecutor._shamtMask32);
-          pc = addr + sizes[slot];
+          regs[(m >>> PredecodeMeta.rdShift) & PredecodeMeta.regMask] =
+              BitUtils.signExtend32(
+                regs[(m >>> PredecodeMeta.rs1Shift) & PredecodeMeta.regMask],
+              ) >>
+              (regs[(m >>> PredecodeMeta.rs2Shift) & PredecodeMeta.regMask] &
+                  CpuExecutor._shamtMask32);
+          pc = addr + (2 << ((m >>> PredecodeMeta.sizeShift) & 1));
 
         case PredecodeOp.lui:
-          regs[rds[slot]] = imms[slot];
-          pc = addr + sizes[slot];
+          regs[(m >>> PredecodeMeta.rdShift) & PredecodeMeta.regMask] =
+              imms[slot];
+          pc = addr + (2 << ((m >>> PredecodeMeta.sizeShift) & 1));
 
         case PredecodeOp.auipc:
-          regs[rds[slot]] = addr + imms[slot];
-          pc = addr + sizes[slot];
+          regs[(m >>> PredecodeMeta.rdShift) & PredecodeMeta.regMask] =
+              addr + imms[slot];
+          pc = addr + (2 << ((m >>> PredecodeMeta.sizeShift) & 1));
 
         case PredecodeOp.jal:
-          regs[rds[slot]] = addr + sizes[slot];
+          regs[(m >>> PredecodeMeta.rdShift) & PredecodeMeta.regMask] =
+              addr + (2 << ((m >>> PredecodeMeta.sizeShift) & 1));
           pc = addr + imms[slot];
 
         case PredecodeOp.j:
           pc = addr + imms[slot];
 
         case PredecodeOp.jalr:
-          final target = (regs[rs1s[slot]] + imms[slot]) & ~1;
-          regs[rds[slot]] = addr + sizes[slot];
+          final target =
+              (regs[(m >>> PredecodeMeta.rs1Shift) & PredecodeMeta.regMask] +
+                  imms[slot]) &
+              ~1;
+          regs[(m >>> PredecodeMeta.rdShift) & PredecodeMeta.regMask] =
+              addr + (2 << ((m >>> PredecodeMeta.sizeShift) & 1));
           pc = target;
 
         case PredecodeOp.jr:
-          pc = (regs[rs1s[slot]] + imms[slot]) & ~1;
+          pc =
+              (regs[(m >>> PredecodeMeta.rs1Shift) & PredecodeMeta.regMask] +
+                  imms[slot]) &
+              ~1;
 
         case PredecodeOp.beq:
-          pc = regs[rs1s[slot]] == regs[rs2s[slot]]
+          pc =
+              regs[(m >>> PredecodeMeta.rs1Shift) & PredecodeMeta.regMask] ==
+                  regs[(m >>> PredecodeMeta.rs2Shift) & PredecodeMeta.regMask]
               ? addr + imms[slot]
-              : addr + sizes[slot];
+              : addr + (2 << ((m >>> PredecodeMeta.sizeShift) & 1));
 
         case PredecodeOp.bne:
-          pc = regs[rs1s[slot]] != regs[rs2s[slot]]
+          pc =
+              regs[(m >>> PredecodeMeta.rs1Shift) & PredecodeMeta.regMask] !=
+                  regs[(m >>> PredecodeMeta.rs2Shift) & PredecodeMeta.regMask]
               ? addr + imms[slot]
-              : addr + sizes[slot];
+              : addr + (2 << ((m >>> PredecodeMeta.sizeShift) & 1));
 
         case PredecodeOp.blt:
-          pc = regs[rs1s[slot]] < regs[rs2s[slot]]
+          pc =
+              regs[(m >>> PredecodeMeta.rs1Shift) & PredecodeMeta.regMask] <
+                  regs[(m >>> PredecodeMeta.rs2Shift) & PredecodeMeta.regMask]
               ? addr + imms[slot]
-              : addr + sizes[slot];
+              : addr + (2 << ((m >>> PredecodeMeta.sizeShift) & 1));
 
         case PredecodeOp.bge:
-          pc = regs[rs1s[slot]] >= regs[rs2s[slot]]
+          pc =
+              regs[(m >>> PredecodeMeta.rs1Shift) & PredecodeMeta.regMask] >=
+                  regs[(m >>> PredecodeMeta.rs2Shift) & PredecodeMeta.regMask]
               ? addr + imms[slot]
-              : addr + sizes[slot];
+              : addr + (2 << ((m >>> PredecodeMeta.sizeShift) & 1));
 
         case PredecodeOp.bltu:
-          pc = (regs[rs1s[slot]] ^ signBit) < (regs[rs2s[slot]] ^ signBit)
+          pc =
+              (regs[(m >>> PredecodeMeta.rs1Shift) & PredecodeMeta.regMask] ^
+                      signBit) <
+                  (regs[(m >>> PredecodeMeta.rs2Shift) &
+                          PredecodeMeta.regMask] ^
+                      signBit)
               ? addr + imms[slot]
-              : addr + sizes[slot];
+              : addr + (2 << ((m >>> PredecodeMeta.sizeShift) & 1));
 
         case PredecodeOp.bgeu:
-          pc = (regs[rs1s[slot]] ^ signBit) >= (regs[rs2s[slot]] ^ signBit)
+          pc =
+              (regs[(m >>> PredecodeMeta.rs1Shift) & PredecodeMeta.regMask] ^
+                      signBit) >=
+                  (regs[(m >>> PredecodeMeta.rs2Shift) &
+                          PredecodeMeta.regMask] ^
+                      signBit)
               ? addr + imms[slot]
-              : addr + sizes[slot];
+              : addr + (2 << ((m >>> PredecodeMeta.sizeShift) & 1));
 
         case PredecodeOp.ld:
-          final val = _memReadU64(regs[rs1s[slot]] + imms[slot]);
+          final val = _memReadU64(
+            regs[(m >>> PredecodeMeta.rs1Shift) & PredecodeMeta.regMask] +
+                imms[slot],
+          );
           if (state.pendingException >= 0) {
             state.pc = pc;
             state.nCycles = cycles;
             _handlePendingException(counterTarget);
             return;
           }
-          regs[rds[slot]] = val;
-          pc = addr + sizes[slot];
+          regs[(m >>> PredecodeMeta.rdShift) & PredecodeMeta.regMask] = val;
+          pc = addr + (2 << ((m >>> PredecodeMeta.sizeShift) & 1));
 
         case PredecodeOp.lw:
-          final val = _memReadU32(regs[rs1s[slot]] + imms[slot]);
+          final val = _memReadU32(
+            regs[(m >>> PredecodeMeta.rs1Shift) & PredecodeMeta.regMask] +
+                imms[slot],
+          );
           if (state.pendingException >= 0) {
             state.pc = pc;
             state.nCycles = cycles;
             _handlePendingException(counterTarget);
             return;
           }
-          regs[rds[slot]] = BitUtils.signExtend32(val);
-          pc = addr + sizes[slot];
+          regs[(m >>> PredecodeMeta.rdShift) & PredecodeMeta.regMask] =
+              BitUtils.signExtend32(val);
+          pc = addr + (2 << ((m >>> PredecodeMeta.sizeShift) & 1));
 
         case PredecodeOp.lwu:
-          final val = _memReadU32(regs[rs1s[slot]] + imms[slot]);
+          final val = _memReadU32(
+            regs[(m >>> PredecodeMeta.rs1Shift) & PredecodeMeta.regMask] +
+                imms[slot],
+          );
           if (state.pendingException >= 0) {
             state.pc = pc;
             state.nCycles = cycles;
             _handlePendingException(counterTarget);
             return;
           }
-          regs[rds[slot]] = val & CpuExecutor._mask32;
-          pc = addr + sizes[slot];
+          regs[(m >>> PredecodeMeta.rdShift) & PredecodeMeta.regMask] =
+              val & CpuExecutor._mask32;
+          pc = addr + (2 << ((m >>> PredecodeMeta.sizeShift) & 1));
 
         case PredecodeOp.lh:
-          final val = _memReadU16(regs[rs1s[slot]] + imms[slot]);
+          final val = _memReadU16(
+            regs[(m >>> PredecodeMeta.rs1Shift) & PredecodeMeta.regMask] +
+                imms[slot],
+          );
           if (state.pendingException >= 0) {
             state.pc = pc;
             state.nCycles = cycles;
             _handlePendingException(counterTarget);
             return;
           }
-          regs[rds[slot]] = _signExtend16(val);
-          pc = addr + sizes[slot];
+          regs[(m >>> PredecodeMeta.rdShift) & PredecodeMeta.regMask] =
+              _signExtend16(val);
+          pc = addr + (2 << ((m >>> PredecodeMeta.sizeShift) & 1));
 
         case PredecodeOp.lhu:
-          final val = _memReadU16(regs[rs1s[slot]] + imms[slot]);
+          final val = _memReadU16(
+            regs[(m >>> PredecodeMeta.rs1Shift) & PredecodeMeta.regMask] +
+                imms[slot],
+          );
           if (state.pendingException >= 0) {
             state.pc = pc;
             state.nCycles = cycles;
             _handlePendingException(counterTarget);
             return;
           }
-          regs[rds[slot]] = val;
-          pc = addr + sizes[slot];
+          regs[(m >>> PredecodeMeta.rdShift) & PredecodeMeta.regMask] = val;
+          pc = addr + (2 << ((m >>> PredecodeMeta.sizeShift) & 1));
 
         case PredecodeOp.lb:
-          final val = _memReadU8(regs[rs1s[slot]] + imms[slot]);
+          final val = _memReadU8(
+            regs[(m >>> PredecodeMeta.rs1Shift) & PredecodeMeta.regMask] +
+                imms[slot],
+          );
           if (state.pendingException >= 0) {
             state.pc = pc;
             state.nCycles = cycles;
             _handlePendingException(counterTarget);
             return;
           }
-          regs[rds[slot]] = _signExtend8(val);
-          pc = addr + sizes[slot];
+          regs[(m >>> PredecodeMeta.rdShift) & PredecodeMeta.regMask] =
+              _signExtend8(val);
+          pc = addr + (2 << ((m >>> PredecodeMeta.sizeShift) & 1));
 
         case PredecodeOp.lbu:
-          final val = _memReadU8(regs[rs1s[slot]] + imms[slot]);
+          final val = _memReadU8(
+            regs[(m >>> PredecodeMeta.rs1Shift) & PredecodeMeta.regMask] +
+                imms[slot],
+          );
           if (state.pendingException >= 0) {
             state.pc = pc;
             state.nCycles = cycles;
             _handlePendingException(counterTarget);
             return;
           }
-          regs[rds[slot]] = val;
-          pc = addr + sizes[slot];
+          regs[(m >>> PredecodeMeta.rdShift) & PredecodeMeta.regMask] = val;
+          pc = addr + (2 << ((m >>> PredecodeMeta.sizeShift) & 1));
 
         case PredecodeOp.sd:
-          if (!_memWriteU64(regs[rs1s[slot]] + imms[slot], regs[rs2s[slot]])) {
+          if (!_memWriteU64(
+            regs[(m >>> PredecodeMeta.rs1Shift) & PredecodeMeta.regMask] +
+                imms[slot],
+            regs[(m >>> PredecodeMeta.rs2Shift) & PredecodeMeta.regMask],
+          )) {
             state.pc = pc;
             state.nCycles = cycles;
             _handlePendingException(counterTarget);
             return;
           }
-          pc = addr + sizes[slot];
+          pc = addr + (2 << ((m >>> PredecodeMeta.sizeShift) & 1));
 
         case PredecodeOp.sw:
-          if (!_memWriteU32(regs[rs1s[slot]] + imms[slot], regs[rs2s[slot]])) {
+          if (!_memWriteU32(
+            regs[(m >>> PredecodeMeta.rs1Shift) & PredecodeMeta.regMask] +
+                imms[slot],
+            regs[(m >>> PredecodeMeta.rs2Shift) & PredecodeMeta.regMask],
+          )) {
             state.pc = pc;
             state.nCycles = cycles;
             _handlePendingException(counterTarget);
             return;
           }
-          pc = addr + sizes[slot];
+          pc = addr + (2 << ((m >>> PredecodeMeta.sizeShift) & 1));
 
         case PredecodeOp.sh:
-          if (!_memWriteU16(regs[rs1s[slot]] + imms[slot], regs[rs2s[slot]])) {
+          if (!_memWriteU16(
+            regs[(m >>> PredecodeMeta.rs1Shift) & PredecodeMeta.regMask] +
+                imms[slot],
+            regs[(m >>> PredecodeMeta.rs2Shift) & PredecodeMeta.regMask],
+          )) {
             state.pc = pc;
             state.nCycles = cycles;
             _handlePendingException(counterTarget);
             return;
           }
-          pc = addr + sizes[slot];
+          pc = addr + (2 << ((m >>> PredecodeMeta.sizeShift) & 1));
 
         case PredecodeOp.sb:
-          if (!_memWriteU8(regs[rs1s[slot]] + imms[slot], regs[rs2s[slot]])) {
+          if (!_memWriteU8(
+            regs[(m >>> PredecodeMeta.rs1Shift) & PredecodeMeta.regMask] +
+                imms[slot],
+            regs[(m >>> PredecodeMeta.rs2Shift) & PredecodeMeta.regMask],
+          )) {
             state.pc = pc;
             state.nCycles = cycles;
             _handlePendingException(counterTarget);
             return;
           }
-          pc = addr + sizes[slot];
+          pc = addr + (2 << ((m >>> PredecodeMeta.sizeShift) & 1));
 
         case PredecodeOp.mulDiv:
-          regs[rds[slot]] = _mExt.executeMulDiv(
+          regs[(m >>> PredecodeMeta.rdShift) &
+              PredecodeMeta.regMask] = _mExt.executeMulDiv(
             funct3: imms[slot],
-            rs1Val: regs[rs1s[slot]],
-            rs2Val: regs[rs2s[slot]],
+            rs1Val:
+                regs[(m >>> PredecodeMeta.rs1Shift) & PredecodeMeta.regMask],
+            rs2Val:
+                regs[(m >>> PredecodeMeta.rs2Shift) & PredecodeMeta.regMask],
             isWord: false,
           );
-          pc = addr + sizes[slot];
+          pc = addr + (2 << ((m >>> PredecodeMeta.sizeShift) & 1));
 
         case PredecodeOp.mulDivW:
-          regs[rds[slot]] = _mExt.executeMulDiv(
+          regs[(m >>> PredecodeMeta.rdShift) &
+              PredecodeMeta.regMask] = _mExt.executeMulDiv(
             funct3: imms[slot],
-            rs1Val: regs[rs1s[slot]],
-            rs2Val: regs[rs2s[slot]],
+            rs1Val:
+                regs[(m >>> PredecodeMeta.rs1Shift) & PredecodeMeta.regMask],
+            rs2Val:
+                regs[(m >>> PredecodeMeta.rs2Shift) & PredecodeMeta.regMask],
             isWord: true,
           );
-          pc = addr + sizes[slot];
+          pc = addr + (2 << ((m >>> PredecodeMeta.sizeShift) & 1));
 
         default:
           state.pc = pc;
@@ -2469,12 +2604,8 @@ class _CpuExecutor64 extends CpuExecutor {
           }
           pc = state.pc;
           page = _decodedPage ?? _sentinelPage;
-          ops = page.op;
-          rds = page.rd;
-          rs1s = page.rs1;
-          rs2s = page.rs2;
+          metas = page.meta;
           imms = page.imm;
-          sizes = page.size;
       }
 
       if (state.powerDown) break;

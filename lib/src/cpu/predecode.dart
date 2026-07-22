@@ -91,11 +91,8 @@ class DecodedPage {
   /// Byte offset of the page within [source].
   final int sourceOffset;
 
-  final Uint8List op = Uint8List(slotCount);
-  final Uint8List rd = Uint8List(slotCount);
-  final Uint8List rs1 = Uint8List(slotCount);
-  final Uint8List rs2 = Uint8List(slotCount);
-  final Uint8List size = Uint8List(slotCount);
+  /// Packed micro-op words: see [PredecodeMeta] for the field layout.
+  final Int32List meta = Int32List(slotCount);
   final Int32List imm = Int32List(slotCount);
 
   static const slotCount = TlbConstants.pageSize ~/ 2;
@@ -159,6 +156,20 @@ class PredecodeCache {
   static const _indexMask = _entryCount - 1;
 }
 
+/// Field layout of a packed micro-op word in [DecodedPage.meta].
+///
+/// op occupies the low byte so `meta & opMask` is the dispatch key;
+/// an undecoded slot is all zeroes. The size bit selects between a
+/// 2-byte and a 4-byte instruction: `2 << ((meta >>> sizeShift) & 1)`.
+class PredecodeMeta {
+  static const opMask = 0xFF;
+  static const rdShift = 8;
+  static const rs1Shift = 13;
+  static const rs2Shift = 18;
+  static const sizeShift = 23;
+  static const regMask = 0x1F;
+}
+
 /// Decodes RV64 instructions (including compressed) into micro-ops.
 class Rv64Predecoder {
   /// Decodes the instruction at [slot] of [page] and stores the result.
@@ -171,19 +182,18 @@ class Rv64Predecoder {
 
     if ((low & _compressedMask) != _compressedMask) {
       _decodeCompressed(page, slot, low);
-      return page.op[slot];
+      return page.meta[slot];
     }
 
     if (slot == DecodedPage.slotCount - 1) {
-      page.op[slot] = PredecodeOp.fallback;
-      page.size[slot] = 4;
-      return PredecodeOp.fallback;
+      _fallback(page, slot, 4);
+      return page.meta[slot];
     }
 
     final insn =
         low | (page.source.getUint16(byteOffset + 2, Endian.little) << 16);
     _decodeFull(page, slot, insn);
-    return page.op[slot];
+    return page.meta[slot];
   }
 
   static void _store(
@@ -196,12 +206,13 @@ class Rv64Predecoder {
     int rs2 = 0,
     int imm = 0,
   }) {
-    page.rd[slot] = rd;
-    page.rs1[slot] = rs1;
-    page.rs2[slot] = rs2;
     page.imm[slot] = imm;
-    page.size[slot] = size;
-    page.op[slot] = op;
+    page.meta[slot] =
+        op |
+        (rd << PredecodeMeta.rdShift) |
+        (rs1 << PredecodeMeta.rs1Shift) |
+        (rs2 << PredecodeMeta.rs2Shift) |
+        ((size == 4 ? 1 : 0) << PredecodeMeta.sizeShift);
   }
 
   static void _fallback(DecodedPage page, int slot, int size) {
