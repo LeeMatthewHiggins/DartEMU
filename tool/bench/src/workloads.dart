@@ -85,7 +85,9 @@ class Workloads {
     ),
     Workload(
       'disk_read_4m',
-      'dd if=/dev/vda of=/dev/null bs=65536',
+      // Fixed 4MB read (64 x 64KB) so the phase stays comparable across
+      // rootfs images of different sizes.
+      'dd if=/dev/vda of=/dev/null bs=65536 count=64',
       description: 'VirtIO block device sequential read',
     ),
     Workload(

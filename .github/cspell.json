@@ -30,6 +30,7 @@
     "buildroot",
     "cmdline",
     "gatekept",
+    "libc",
     "memcpy",
     "optimisation",
     "predecode",

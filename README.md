@@ -14,6 +14,7 @@ for embedding in CLI, Flutter, and web applications.
 - Predecoded instruction cache for fast interpretation (~1.7x on RV64, ~1.9x on RV32)
 - Runs on every Dart platform including the browser — RV32 on any web backend, RV64 under WebAssembly (WasmGC)
 - `AgentSandbox` facade: boot a disposable guest and run commands with captured output, exit codes, wall-clock/instruction budgets, and file exchange
+- Bundled RV64 image ships a C compiler (TCC), so guests can compile and run C
 - VirtIO console, block device, and network device
 - User-mode networking with DNS, DHCP, and TCP/UDP proxy
 - Stream-based facade for platform-agnostic embedding
@@ -96,10 +97,11 @@ final busy = await sandbox.exec(
 );
 print(busy.outcome); // ExecOutcome.budgetExceeded
 
-// File exchange (base64 over the console — works everywhere).
+// File exchange (base64 over the console — works everywhere). The
+// bundled RV64 image includes a C compiler (TCC) as `cc`.
 await sandbox.writeText('/tmp/main.c', cSource);
 final out = await sandbox.exec('cc /tmp/main.c -o /tmp/a.out && /tmp/a.out');
-final artifact = await sandbox.readFile('/tmp/a.out');
+final artifact = await sandbox.readFile('/tmp/a.out'); // a real ELF
 
 await sandbox.dispose();
 ```
@@ -206,8 +208,10 @@ emulator measurably faster than the JavaScript backend (~1.4-1.7x on
 guest workloads and kernel boot); browsers without WasmGC support fall
 back to the bundled JavaScript build automatically.
 
-To skip the config picker and boot the demo directly, add `?boot=32` to the
-URL.
+To skip the config picker and boot the demo directly, add `?boot=32` or
+`?boot=64` to the URL. RV64 needs the WasmGC build (native 64-bit
+integers) and is the variant whose image ships a C compiler, so
+`?boot=64` gives you a browser tab that can compile and run C.
 
 ## Benchmarking
 
@@ -251,6 +255,20 @@ and gitignored.
 
 Docker-based image builders are included for creating rootfs images.
 
+**RV64 with a C compiler (Alpine + TCC)** — this is the image bundled as
+`example/assets/root-riscv64.bin`:
+
+```sh
+tool/image_builder/build_tcc.sh               # ~23MB, includes cc (TCC)
+```
+
+TCC is a few hundred KB and links binaries itself, so the image stays
+small enough to ship as a demo/test asset. The build cross-compiles a
+statically-linked riscv64 TCC and pairs it with `musl-dev` headers and
+crt objects, so `cc hello.c -o hello` works in the guest. (`tcc -static`
+is unavailable — musl's 28MB `libc.a` is dropped to keep the image
+small.)
+
 **RV64 (Alpine Linux):**
 
 ```sh
@@ -262,11 +280,12 @@ tool/image_builder/build.sh riscv64 dev       # with gcc, make, git, nano (512MB
 
 ```sh
 tool/image_builder/build_buildroot.sh         # minimal (256MB)
-tool/image_builder/build_buildroot.sh dev     # with tcc, make, git, nano (512MB)
+tool/image_builder/build_buildroot.sh dev     # native gcc toolchain (512MB)
 ```
 
-The RV32 dev image includes TCC (Tiny C Compiler) instead of GCC for
-practical compile times inside the emulator.
+The `dev` variants build a full native GCC (a Canadian cross for RV32),
+which takes 15-30 minutes and produces a large image. TCC is only
+available for RV64 — upstream TCC has no riscv32 backend.
 
 Images are packaged as ZIP bundles in `data/` that the Flutter app can load
 via drag-and-drop or file picker.

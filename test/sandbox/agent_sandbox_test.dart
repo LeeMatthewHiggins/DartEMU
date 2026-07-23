@@ -112,6 +112,42 @@ void main() {
         final r = await sandbox.exec('sh /tmp/prog.sh');
         expect(r.stdout, 'from-a-script');
       });
+
+      test('compiles and runs a C program with the bundled cc', () async {
+        const source = r'''
+#include <stdio.h>
+int main(void) {
+  int sum = 0;
+  for (int i = 1; i <= 100; i++) sum += i;
+  printf("sum=%d\n", sum);
+  return 0;
+}
+''';
+        await sandbox.writeText('/tmp/sum.c', source);
+        final r = await sandbox.exec(
+          'cc -o /tmp/sum /tmp/sum.c && /tmp/sum',
+          timeout: const Duration(seconds: 120),
+        );
+        expect(r.outcome, ExecOutcome.completed, reason: r.stdout);
+        expect(r.exitCode, 0, reason: r.stdout);
+        expect(r.stdout, 'sum=5050');
+      });
+
+      test('compiled binaries can be read back out of the guest', () async {
+        await sandbox.writeText('/tmp/hi.c', 'int main(void){return 7;}\n');
+        final build = await sandbox.exec(
+          'cc -o /tmp/hi /tmp/hi.c',
+          timeout: const Duration(seconds: 120),
+        );
+        expect(build.succeeded, isTrue, reason: build.stdout);
+
+        final binary = await sandbox.readFile('/tmp/hi');
+        // ELF magic: the artifact really is a compiled executable.
+        expect(binary.sublist(0, 4), orderedEquals([0x7F, 0x45, 0x4C, 0x46]));
+
+        final run = await sandbox.exec('/tmp/hi');
+        expect(run.exitCode, 7);
+      });
     },
     skip: hasAssets ? false : 'guest images not present in $assets',
   );
