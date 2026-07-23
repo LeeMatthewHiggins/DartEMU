@@ -322,6 +322,20 @@ eth0:
   driver: user
 ```
 
+## Licence
+
+The `dart_emu` source code is MIT licensed (see `LICENSE`).
+
+The prebuilt **guest images** shipped in `example/assets/` are a separate
+matter: they bundle third-party software under its own terms — notably
+the Tiny C Compiler (LGPL-2.1-or-later), BusyBox (GPL-2.0-only), musl
+libc (MIT), and a Linux kernel (GPL-2.0-only). See
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for the full list,
+upstream sources, and pinned revisions.
+
+If you use this package as a library and supply your own guest images,
+only the MIT licence applies to you.
+
 [license_badge]: https://img.shields.io/badge/license-MIT-blue.svg
 [license_link]: https://opensource.org/licenses/MIT
 [very_good_analysis_badge]: https://img.shields.io/badge/style-very_good_analysis-B22C89.svg
