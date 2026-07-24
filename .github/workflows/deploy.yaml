@@ -27,7 +27,11 @@ jobs:
 
       - name: Build web
         working-directory: example
-        run: flutter build web --wasm --release
+        # --pwa-strategy=none disables the service worker. The demo has no
+        # offline requirement, and the offline-first worker otherwise
+        # serves its own cached copies, so returning visitors would not
+        # pick up a redeploy until the worker happened to update.
+        run: flutter build web --wasm --release --pwa-strategy=none
 
       - name: Deploy to Firebase Hosting
         uses: FirebaseExtended/action-hosting-deploy@v0
