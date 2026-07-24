@@ -1975,7 +1975,7 @@ class CpuExecutor {
       ..mstatus = (_mxlRv64 << _uxlShift) | (_mxlRv64 << _sxlShift);
   }
 
-  static const _isaExtBits =
+  static const int _isaExtBits =
       _IsaBits.i |
       _IsaBits.m |
       _IsaBits.a |
@@ -2012,7 +2012,7 @@ class CpuExecutor {
   static const _subFunct7 = 0x20;
   static const _funct3Width = 3;
   static const _bit30Shift = 30;
-  static const _bit30InFunct3 = 1 << 3;
+  static const int _bit30InFunct3 = 1 << 3;
 
   static const _mask32 = 0xFFFFFFFF;
   static const _byteMask = 0xFF;
@@ -3589,13 +3589,13 @@ class _AluFunct3 {
 
 class _RegAluFunct {
   static const add = 0;
-  static const sub = 0 | 8;
+  static const int sub = 0 | 8;
   static const sll = 1;
   static const slt = 2;
   static const sltu = 3;
   static const xor = 4;
   static const srl = 5;
-  static const sra = 5 | 8;
+  static const int sra = 5 | 8;
   static const or = 6;
   static const and = 7;
 }
@@ -3638,14 +3638,14 @@ class _SizeLog2 {
 }
 
 class _IsaBits {
-  static const i = 1 << 8;
-  static const m = 1 << 12;
-  static const a = 1 << 0;
-  static const c = 1 << 2;
-  static const f = 1 << 5;
-  static const d = 1 << 3;
-  static const s = 1 << 18;
-  static const u = 1 << 20;
+  static const int i = 1 << 8;
+  static const int m = 1 << 12;
+  static const int a = 1 << 0;
+  static const int c = 1 << 2;
+  static const int f = 1 << 5;
+  static const int d = 1 << 3;
+  static const int s = 1 << 18;
+  static const int u = 1 << 20;
 }
 
 class _MstatusFp {

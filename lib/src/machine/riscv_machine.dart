@@ -423,15 +423,15 @@ class RiscVMachine {
   int get _kernelAlignment =>
       config.xlen == Xlen.rv32 ? _kernelAlign4Mb : _kernelAlign2Mb;
 
-  static const _kernelAlign2Mb = 2 * 1024 * 1024;
-  static const _kernelAlign4Mb = 4 * 1024 * 1024;
+  static const int _kernelAlign2Mb = 2 * 1024 * 1024;
+  static const int _kernelAlign4Mb = 4 * 1024 * 1024;
 }
 
 class _BootAddr {
   static const lowRamBase = 0;
   static const trampolineBase = 0x1000;
-  static const fdtBase = trampolineBase + _fdtOffset;
-  static const _fdtOffset = 8 * 8;
+  static const int fdtBase = trampolineBase + _fdtOffset;
+  static const int _fdtOffset = 8 * 8;
 }
 
 class _BootInsn {
@@ -441,13 +441,13 @@ class _BootInsn {
   static const csrrA0Offset = 12;
   static const jalrT0Offset = 16;
 
-  static const _addiA1Imm =
+  static const int _addiA1Imm =
       _BootAddr.fdtBase - _BootAddr.trampolineBase - auipcA1Offset;
 
-  static const auipcT0 =
+  static const int auipcT0 =
       0x297 + MemoryMapLayout.ramBaseAddr - _BootAddr.trampolineBase;
   static const auipcA1 = 0x597;
-  static const addiA1 = 0x58593 | (_addiA1Imm << 20);
+  static const int addiA1 = 0x58593 | (_addiA1Imm << 20);
   static const csrrA0Mhartid = 0xF1402573;
   static const jalrZeroT0 = 0x00028067;
 }

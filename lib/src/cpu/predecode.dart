@@ -95,7 +95,7 @@ class DecodedPage {
   final Int32List meta = Int32List(slotCount);
   final Int32List imm = Int32List(slotCount);
 
-  static const slotCount = TlbConstants.pageSize ~/ 2;
+  static const int slotCount = TlbConstants.pageSize ~/ 2;
 }
 
 /// Direct-mapped cache of [DecodedPage]s keyed by physical page.
@@ -153,7 +153,7 @@ class PredecodeCache {
   }
 
   static const _entryCount = 256;
-  static const _indexMask = _entryCount - 1;
+  static const int _indexMask = _entryCount - 1;
 }
 
 /// Field layout of a packed micro-op word in [DecodedPage.meta].

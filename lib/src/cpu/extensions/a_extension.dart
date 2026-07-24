@@ -284,6 +284,6 @@ class _Shifts {
 class _Masks {
   static const word = 0xFFFFFFFF;
   static const wordSignBit = 0x80000000;
-  static const wordSignExtension = ~word;
-  static const doubleSignBit = Int64Const.signBit;
+  static const int wordSignExtension = ~word;
+  static const int doubleSignBit = Int64Const.signBit;
 }

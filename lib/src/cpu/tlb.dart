@@ -19,8 +19,8 @@ class TlbConstants {
   const TlbConstants._();
 
   static const size = 256;
-  static const indexMask = size - 1;
+  static const int indexMask = size - 1;
   static const pageSizeLog2 = 12;
-  static const pageSize = 1 << pageSizeLog2;
-  static const pageMask = pageSize - 1;
+  static const int pageSize = 1 << pageSizeLog2;
+  static const int pageMask = pageSize - 1;
 }

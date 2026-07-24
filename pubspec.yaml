@@ -21,7 +21,7 @@ dependencies:
 
 dev_dependencies:
   test: ^1.25.0
-  very_good_analysis: ^7.0.0
+  very_good_analysis: ^10.3.0
   vm_service: ^15.2.0
 
 executables:

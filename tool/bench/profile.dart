@@ -91,7 +91,7 @@ Future<void> main(List<String> args) async {
 }
 
 const _defaultWorkloads = ['sh_loop_10k', 'awk_fp_50k', 'gzip_512k'];
-const _maxTimeExtentMicros = 1 << 60;
+const int _maxTimeExtentMicros = 1 << 60;
 
 void _report(CpuSamples samples, int top) {
   final functions = samples.functions ?? [];

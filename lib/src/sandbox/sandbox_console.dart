@@ -20,7 +20,7 @@ class SandboxConsole implements CharacterDevice {
   int _markerEnd = 0;
   int _phaseStart = 0;
 
-  static const _initialCapacity = 64 * 1024;
+  static const int _initialCapacity = 64 * 1024;
 
   /// Begins waiting for [marker], scanning from the current end.
   void beginWait(String marker) {

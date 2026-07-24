@@ -3,7 +3,7 @@
 /// On native platforms these are compile-time constants.
 /// On web this file is replaced by a stub via conditional import.
 class Int64Const {
-  static const signBit = 1 << 63;
+  static const int signBit = 1 << 63;
   static const nanBoxMask = 0xFFFFFFFF00000000;
   static const maxSigned = 0x7FFFFFFFFFFFFFFF;
   static const minSigned = -0x8000000000000000;

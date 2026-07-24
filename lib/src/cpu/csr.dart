@@ -269,30 +269,30 @@ class _Addr {
 }
 
 class _Mstatus {
-  static const uieBit = 1 << 0;
-  static const sieBit = 1 << 1;
-  static const mieBit = 1 << 3;
-  static const upieBit = 1 << 4;
-  static const spieBit = 1 << 5;
-  static const mpieBit = 1 << 7;
-  static const sppBit = 1 << 8;
-  static const mppMask = 3 << 11;
-  static const fsMask = 3 << 13;
-  static const xsMask = 3 << 15;
-  static const mprvBit = 1 << 17;
-  static const sumBit = 1 << 18;
-  static const mxrBit = 1 << 19;
+  static const int uieBit = 1 << 0;
+  static const int sieBit = 1 << 1;
+  static const int mieBit = 1 << 3;
+  static const int upieBit = 1 << 4;
+  static const int spieBit = 1 << 5;
+  static const int mpieBit = 1 << 7;
+  static const int sppBit = 1 << 8;
+  static const int mppMask = 3 << 11;
+  static const int fsMask = 3 << 13;
+  static const int xsMask = 3 << 15;
+  static const int mprvBit = 1 << 17;
+  static const int sumBit = 1 << 18;
+  static const int mxrBit = 1 << 19;
 
   static const uxlShift = 32;
   static const sxlShift = 34;
   static const xlMask = 3;
-  static const uxlMask = 3 << 32;
-  static const sxlMask = 3 << 34;
+  static const int uxlMask = 3 << 32;
+  static const int sxlMask = 3 << 34;
 
-  static const sdBit32 = 1 << 31;
-  static const sdBit64 = Int64Const.signBit;
+  static const int sdBit32 = 1 << 31;
+  static const int sdBit64 = Int64Const.signBit;
 
-  static const _sstatusMaskBase =
+  static const int _sstatusMaskBase =
       uieBit |
       sieBit |
       upieBit |
@@ -303,10 +303,10 @@ class _Mstatus {
       sumBit |
       mxrBit;
 
-  static const sstatusMask32 = _sstatusMaskBase;
-  static const sstatusMask64 = _sstatusMaskBase | uxlMask;
+  static const int sstatusMask32 = _sstatusMaskBase;
+  static const int sstatusMask64 = _sstatusMaskBase | uxlMask;
 
-  static const writeMask =
+  static const int writeMask =
       uieBit |
       sieBit |
       mieBit |
@@ -320,7 +320,7 @@ class _Mstatus {
       sumBit |
       mxrBit;
 
-  static const tlbFlushBits = mprvBit | sumBit | mxrBit;
+  static const int tlbFlushBits = mprvBit | sumBit | mxrBit;
 
   static const allBits = -1;
 }

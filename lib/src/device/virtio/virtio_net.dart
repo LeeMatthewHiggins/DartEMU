@@ -9,7 +9,7 @@ class _VirtioNet {
   static const vendorId = 0xFFFF;
   static const receiveQueueIdx = 0;
   static const transmitQueueIdx = 1;
-  static const featureMac = 1 << 5;
+  static const int featureMac = 1 << 5;
   static const headerSize = 12;
   static const macLength = 6;
   static const configStatusOffset = 6;
