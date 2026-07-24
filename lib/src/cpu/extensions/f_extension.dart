@@ -438,9 +438,9 @@ class _Limits {
   static const maxI32 = 0x7FFFFFFF;
   static const minI32 = -0x80000000;
   static const maxU32 = 0xFFFFFFFF;
-  static const maxI64 = Int64Const.maxSigned;
-  static const minI64 = Int64Const.minSigned;
-  static final maxU64Big = BigInt.from(1) << 64;
+  static const int maxI64 = Int64Const.maxSigned;
+  static const int minI64 = Int64Const.minSigned;
+  static final BigInt maxU64Big = BigInt.from(1) << 64;
 }
 
 class _Bits {

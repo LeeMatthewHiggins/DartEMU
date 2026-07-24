@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -18,10 +19,14 @@ class NativeNetBackend implements NetBackend {
     final ipStr = destIp.join('.');
     final connection = NativeTcpConnection._(id: _nextId++);
     _tcpConnections[connection._id] = connection;
-    Socket.connect(
-      ipStr,
-      destPort,
-    ).then(connection._onConnected, onError: connection._onError);
+    // Fire-and-forget: the handle is returned synchronously and the
+    // callback wires up the socket once it connects.
+    unawaited(
+      Socket.connect(
+        ipStr,
+        destPort,
+      ).then(connection._onConnected, onError: connection._onError),
+    );
     return connection;
   }
 
@@ -33,21 +38,25 @@ class NativeNetBackend implements NetBackend {
     DataCallback onResponse,
   ) {
     final ipStr = destIp.join('.');
-    RawDatagramSocket.bind(InternetAddress.anyIPv4, 0).then((socket) {
-      socket
-        ..send(data, InternetAddress(ipStr), destPort)
-        ..listen((event) {
-          if (event == RawSocketEvent.read) {
-            final datagram = socket.receive();
-            if (datagram != null) {
-              onResponse(datagram.data);
-              socket.close();
+    // Fire-and-forget: the datagram is sent and the response delivered
+    // via [onResponse] once the async bind completes.
+    unawaited(
+      RawDatagramSocket.bind(InternetAddress.anyIPv4, 0).then((socket) {
+        socket
+          ..send(data, InternetAddress(ipStr), destPort)
+          ..listen((event) {
+            if (event == RawSocketEvent.read) {
+              final datagram = socket.receive();
+              if (datagram != null) {
+                onResponse(datagram.data);
+                socket.close();
+              }
             }
-          }
-        }, onDone: socket.close);
-      // Auto-close after timeout.
-      Future<void>.delayed(const Duration(seconds: 5), socket.close);
-    }, onError: (_) {});
+          }, onDone: socket.close);
+        // Auto-close after timeout.
+        Future<void>.delayed(const Duration(seconds: 5), socket.close);
+      }, onError: (_) {}),
+    );
   }
 
   @override
@@ -56,17 +65,21 @@ class NativeNetBackend implements NetBackend {
     if (cached != null) return cached;
     if (_dnsPending[hostname] ?? false) return null;
     _dnsPending[hostname] = true;
-    InternetAddress.lookup(hostname).then(
-      (addresses) {
-        _dnsCache[hostname] = addresses
-            .where((a) => a.type == InternetAddressType.IPv4)
-            .map((a) => Uint8List.fromList(a.rawAddress))
-            .toList();
-        _dnsPending.remove(hostname);
-      },
-      onError: (_) {
-        _dnsPending.remove(hostname);
-      },
+    // Fire-and-forget: returns null now; the cache is filled when the
+    // lookup resolves and a later call returns the result.
+    unawaited(
+      InternetAddress.lookup(hostname).then(
+        (addresses) {
+          _dnsCache[hostname] = addresses
+              .where((a) => a.type == InternetAddressType.IPv4)
+              .map((a) => Uint8List.fromList(a.rawAddress))
+              .toList();
+          _dnsPending.remove(hostname);
+        },
+        onError: (_) {
+          _dnsPending.remove(hostname);
+        },
+      ),
     );
     return null;
   }

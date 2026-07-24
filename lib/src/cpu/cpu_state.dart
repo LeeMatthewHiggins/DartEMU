@@ -161,7 +161,7 @@ class _CpuState64 extends RiscVCpuState {
   @override
   final FpRegisterFile fpRegs = FpRegisterFile();
 
-  static const _signBit64 = Int64Const.signBit;
+  static const int _signBit64 = Int64Const.signBit;
   static const _regMask64 = -1;
 }
 

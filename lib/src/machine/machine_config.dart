@@ -108,10 +108,10 @@ class MachineConfig {
     );
   }
 
-  static const _bytesPerMb = 1024 * 1024;
+  static const int _bytesPerMb = 1024 * 1024;
   static const defaultMemorySizeMb = 256;
   static const defaultMachineType = 'riscv64';
-  static const defaultXlen = Xlen.rv64;
+  static const Xlen defaultXlen = Xlen.rv64;
 }
 
 /// Configuration for a VirtIO 9P shared filesystem.

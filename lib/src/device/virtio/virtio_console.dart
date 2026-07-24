@@ -7,7 +7,7 @@ import 'package:dart_emu/src/machine/phys_memory_map.dart';
 class _ConsoleConst {
   static const deviceIdConsole = 3;
   static const vendorIdDefault = 0xFFFF;
-  static const featureSizeBit = 1 << 0;
+  static const int featureSizeBit = 1 << 0;
   static const defaultColumns = 80;
   static const defaultRows = 24;
   static const receiveQueueIdx = 0;

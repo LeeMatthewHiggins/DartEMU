@@ -369,13 +369,13 @@ class _ExceptionCause {
 
 class _Satp32 {
   static const modeShift = 31;
-  static const ppnMask = (1 << 22) - 1;
+  static const int ppnMask = (1 << 22) - 1;
 }
 
 class _Satp64 {
   static const modeShift = 60;
   static const modeMask = 0xF;
-  static const ppnMask = (1 << 44) - 1;
+  static const int ppnMask = (1 << 44) - 1;
 }
 
 class _SatpMode {
@@ -386,31 +386,31 @@ class _SatpMode {
 class _Sv32 {
   static const pageShift = 12;
   static const vpnBits = 10;
-  static const vpnMask = (1 << vpnBits) - 1;
+  static const int vpnMask = (1 << vpnBits) - 1;
   static const levelCount = 2;
-  static const rootLevel = levelCount - 1;
+  static const int rootLevel = levelCount - 1;
   static const pteSizeBytes = 4;
-  static const ppnMask = (1 << 22) - 1;
+  static const int ppnMask = (1 << 22) - 1;
 }
 
 class _Sv39 {
   static const pageShift = 12;
   static const vpnBits = 9;
-  static const vpnMask = (1 << vpnBits) - 1;
+  static const int vpnMask = (1 << vpnBits) - 1;
   static const levelCount = 3;
-  static const rootLevel = levelCount - 1;
+  static const int rootLevel = levelCount - 1;
   static const vaWidth = 39;
-  static const signExtShift = 64 - vaWidth;
+  static const int signExtShift = 64 - vaWidth;
   static const pteSizeBytes = 8;
-  static const ppnMask = (1 << 44) - 1;
+  static const int ppnMask = (1 << 44) - 1;
 }
 
 class _Pte {
-  static const validMask = 1 << 0;
+  static const int validMask = 1 << 0;
   static const readBit = 1;
-  static const accessedMask = 1 << 6;
-  static const dirtyMask = 1 << 7;
-  static const userMask = 1 << 4;
+  static const int accessedMask = 1 << 6;
+  static const int dirtyMask = 1 << 7;
+  static const int userMask = 1 << 4;
   static const xwrMask = 0x7;
   static const xwrWriteOnly = 0x2;
   static const xwrWriteExecute = 0x6;
@@ -422,9 +422,9 @@ class _Pte {
 }
 
 class _Mstatus {
-  static const mprvMask = 1 << 17;
-  static const sumMask = 1 << 18;
-  static const mxrMask = 1 << 19;
+  static const int mprvMask = 1 << 17;
+  static const int sumMask = 1 << 18;
+  static const int mxrMask = 1 << 19;
   static const mppShift = 11;
   static const privMask = 0x3;
 }

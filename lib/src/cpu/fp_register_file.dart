@@ -82,7 +82,7 @@ class _Layout {
   static const regCount = 32;
   static const bytesPerReg = 8;
   static const hiOffset = 4;
-  static const byteCount = regCount * bytesPerReg;
+  static const int byteCount = regCount * bytesPerReg;
 }
 
 class _Bits {

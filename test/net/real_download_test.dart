@@ -2,6 +2,7 @@
 @Tags(['e2e'])
 library;
 
+import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -40,8 +41,8 @@ void main() {
     server.listen((req) {
       req.response
         ..headers.contentLength = expectedBody.length
-        ..add(expectedBody)
-        ..close();
+        ..add(expectedBody);
+      unawaited(req.response.close());
     });
   });
 

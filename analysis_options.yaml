@@ -3,3 +3,7 @@ linter:
   rules:
     one_member_abstracts: false
     public_member_api_docs: false
+    # very_good_analysis 10.x enables this, but rewriting these
+    # side-effecting loops (e.g. enqueueing each item) as
+    # forEach + tear-off reads worse, not better.
+    prefer_foreach: false

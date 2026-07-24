@@ -19,7 +19,7 @@ class BenchConsole implements CharacterDevice {
   int _markerEnd = 0;
   int _phaseStart = 0;
 
-  static const _initialCapacity = 64 * 1024;
+  static const int _initialCapacity = 64 * 1024;
 
   /// Starts waiting for [marker], scanning from the current position.
   void beginWait(String marker) {

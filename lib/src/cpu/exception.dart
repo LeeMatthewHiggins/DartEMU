@@ -131,5 +131,5 @@ class _Mstatus {
   static const sppShift = 8;
   static const mppShift = 11;
   static const privMask = 3;
-  static const mprvMask = 1 << 17;
+  static const int mprvMask = 1 << 17;
 }

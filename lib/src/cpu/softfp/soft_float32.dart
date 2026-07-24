@@ -220,14 +220,14 @@ class _Float32Bits {
 }
 
 class _FClass {
-  static const negInf = 1 << 0;
-  static const negNormal = 1 << 1;
-  static const negSubnormal = 1 << 2;
-  static const negZero = 1 << 3;
-  static const posZero = 1 << 4;
-  static const posSubnormal = 1 << 5;
-  static const posNormal = 1 << 6;
-  static const posInf = 1 << 7;
-  static const signalingNaN = 1 << 8;
-  static const quietNaN = 1 << 9;
+  static const int negInf = 1 << 0;
+  static const int negNormal = 1 << 1;
+  static const int negSubnormal = 1 << 2;
+  static const int negZero = 1 << 3;
+  static const int posZero = 1 << 4;
+  static const int posSubnormal = 1 << 5;
+  static const int posNormal = 1 << 6;
+  static const int posInf = 1 << 7;
+  static const int signalingNaN = 1 << 8;
+  static const int quietNaN = 1 << 9;
 }

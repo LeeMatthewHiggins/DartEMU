@@ -209,24 +209,24 @@ class SoftFloat64 {
 }
 
 class _Float64Bits {
-  static const signMask = Int64Const.signBit;
-  static const expMask = Int64Const.f64ExpMask;
-  static const mantMask = Int64Const.f64MantMask;
-  static const qNanBit = Int64Const.f64QNanBit;
+  static const int signMask = Int64Const.signBit;
+  static const int expMask = Int64Const.f64ExpMask;
+  static const int mantMask = Int64Const.f64MantMask;
+  static const int qNanBit = Int64Const.f64QNanBit;
   static const expShift = 52;
   static const biasedExpMax = 0x7FF;
-  static const canonicalNaN = Int64Const.f64CanonicalNaN;
+  static const int canonicalNaN = Int64Const.f64CanonicalNaN;
 }
 
 class _FClass {
-  static const negInf = 1 << 0;
-  static const negNormal = 1 << 1;
-  static const negSubnormal = 1 << 2;
-  static const negZero = 1 << 3;
-  static const posZero = 1 << 4;
-  static const posSubnormal = 1 << 5;
-  static const posNormal = 1 << 6;
-  static const posInf = 1 << 7;
-  static const signalingNaN = 1 << 8;
-  static const quietNaN = 1 << 9;
+  static const int negInf = 1 << 0;
+  static const int negNormal = 1 << 1;
+  static const int negSubnormal = 1 << 2;
+  static const int negZero = 1 << 3;
+  static const int posZero = 1 << 4;
+  static const int posSubnormal = 1 << 5;
+  static const int posNormal = 1 << 6;
+  static const int posInf = 1 << 7;
+  static const int signalingNaN = 1 << 8;
+  static const int quietNaN = 1 << 9;
 }

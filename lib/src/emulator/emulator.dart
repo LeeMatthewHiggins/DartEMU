@@ -153,6 +153,6 @@ class Emulator {
   }
 
   static const _cyclesPerStep = 50000;
-  static const _activeDelay = Duration.zero;
+  static const Duration _activeDelay = Duration.zero;
   static const _idleDelay = Duration(milliseconds: 10);
 }

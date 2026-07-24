@@ -14,11 +14,11 @@ enum RoundingMode {
 class FpFlags {
   const FpFlags._();
 
-  static const inexact = 1 << 0;
-  static const underflow = 1 << 1;
-  static const overflow = 1 << 2;
-  static const divideByZero = 1 << 3;
-  static const invalidOp = 1 << 4;
+  static const int inexact = 1 << 0;
+  static const int underflow = 1 << 1;
+  static const int overflow = 1 << 2;
+  static const int divideByZero = 1 << 3;
+  static const int invalidOp = 1 << 4;
 }
 
 class FpFlagsAccumulator {

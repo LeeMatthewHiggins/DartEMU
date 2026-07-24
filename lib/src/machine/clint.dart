@@ -74,7 +74,7 @@ class Clint {
   static const regionSize = 0x000C0000;
   static const rtcFreq = 10000000;
 
-  static const _rtcTicksPerMicrosecond = rtcFreq ~/ 1000000;
+  static const int _rtcTicksPerMicrosecond = rtcFreq ~/ 1000000;
   static const _wordBits = 32;
   static const _mask32 = 0xFFFFFFFF;
   static const _wordSizeLog2 = 2;
@@ -88,5 +88,5 @@ class _Offsets {
 }
 
 class _MipBits {
-  static const mtip = 1 << 7;
+  static const int mtip = 1 << 7;
 }

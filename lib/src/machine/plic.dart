@@ -81,10 +81,10 @@ class Plic {
 }
 
 class _Offsets {
-  static const claimComplete = Plic.hartBase + 4;
+  static const int claimComplete = Plic.hartBase + 4;
 }
 
 class _MipBits {
-  static const seip = 1 << 9;
-  static const meip = 1 << 11;
+  static const int seip = 1 << 9;
+  static const int meip = 1 << 11;
 }

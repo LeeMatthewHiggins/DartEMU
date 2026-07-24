@@ -32,8 +32,8 @@ class DirtyBits {
   }
 
   static const _pageSizeLog2 = 12;
-  static const _pageSize = 1 << _pageSizeLog2;
+  static const int _pageSize = 1 << _pageSizeLog2;
   static const _bitsPerWord = 32;
   static const _bitsPerWordLog2 = 5;
-  static const _bitMask = _bitsPerWord - 1;
+  static const int _bitMask = _bitsPerWord - 1;
 }
