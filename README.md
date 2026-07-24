@@ -22,6 +22,51 @@ for embedding in CLI, Flutter, and web applications.
 - YAML-based machine configuration with ZIP bundle support
 - Supports both file-path and in-memory BIOS/kernel loading
 
+## Performance
+
+Guest throughput, measured with the bundled benchmark suite
+(`tool/bench/bench.dart`, best of 3 runs) on an Apple M3 Pro,
+Dart 3.12.2. These numbers are host-specific — re-run the suite on your
+own hardware rather than trusting the table.
+
+| Workload | RV64 | RV32 |
+| --- | --- | --- |
+| boot to shell | **0.57 s** | **0.54 s** |
+| sha256 of 1 MB | 109 MIPS | 158 MIPS |
+| gzip 512 KB | 108 MIPS | 131 MIPS |
+| soft-float (awk) | 93 MIPS | 106 MIPS |
+| pipes + context switches | 91 MIPS | 113 MIPS |
+| process creation (100 forks) | 81 MIPS | 83 MIPS |
+| shell arithmetic loop | 77 MIPS | 107 MIPS |
+
+RV32 is consistently faster than RV64: 32-bit arithmetic avoids the
+64-bit paths the Dart VM handles less cheaply.
+
+Restoring a snapshot beats booting by a wide margin — **29 ms versus a
+1.1 s cold boot (~37x)** in `test/sandbox/snapshot_restore_test.dart`.
+See [Snapshot and restore](#snapshot-and-restore).
+
+### Web download size
+
+Served with brotli from Firebase Hosting:
+
+| Artifact | Raw | Over the wire |
+| --- | --- | --- |
+| Engine — WasmGC (`main.dart.wasm` + loader) | 2.3 MB | **639 KB** |
+| Engine — JavaScript fallback (`main.dart.js`) | 2.7 MB | **599 KB** |
+| RV64 guest image (Linux + TCC) | 24 MB | 3.8 MB |
+| RV64 kernel | 3.8 MB | 1.7 MB |
+| RV32 guest image | 4 MB | 1.4 MB |
+
+A browser downloads one engine, never both — the `--wasm` build ships
+the JavaScript build as an automatic fallback. Uncompressed the wasm is
+the smaller of the two, but JavaScript compresses better, so over the
+wire they land within ~40 KB of each other; wasm buys roughly 1.5x
+faster execution for that.
+
+The guest images dominate the payload: the RV64 rootfs alone is about
+six times the engine over the wire.
+
 ## Library Usage
 
 ```dart
