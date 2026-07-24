@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.5.0
+
+- Machine snapshot/restore: `RiscVMachine.snapshot()` captures full
+  architectural state (CPU registers and CSRs, RAM, block devices,
+  timer, interrupt controller, and VirtIO device state) into a
+  `MachineSnapshot`; `RiscVMachine.restore(config, snapshot)` rebuilds
+  an equivalent machine with derived caches rebuilt on demand
+- `AgentSandbox.snapshot()` and `AgentSandbox.restore()`: boot once,
+  snapshot the warm VM, then spin up independent clones in ~tens of
+  milliseconds (~37x faster than a cold boot) instead of re-booting;
+  restored guests roll back changes and keep a coherent clock
+- The bundled RV64 guest image now ships a C compiler (TCC), so guests
+  can compile and run C; a new builder (`tool/image_builder/build_tcc.sh`)
+  cross-builds a lean ~23MB image
+- The example terminal shows a branded startup banner while the guest
+  boots
+- `THIRD_PARTY_NOTICES.md` documents the licences of software bundled in
+  the guest images (TCC, BusyBox, musl, the Linux kernel), and the TCC
+  build is pinned to an exact upstream revision
+- README gains a Performance section with measured throughput and web
+  download sizes
+
 ## 0.4.0
 
 - `AgentSandbox`: high-level facade for running untrusted or
