@@ -75,7 +75,7 @@ ln -sf /bin/busybox "${MOUNT_DIR}/sbin/init"
 cat > "${MOUNT_DIR}/etc/inittab" << 'INITTAB_EOF'
 ::sysinit:/bin/mount -t proc proc /proc
 ::sysinit:/bin/mount -t sysfs sys /sys
-::sysinit:/bin/mount -t devtmpfs dev /dev
+::sysinit:/bin/sh -c 'mount -t devtmpfs dev /dev 2>/dev/null || true'
 ::sysinit:/bin/hostname dartemu
 hvc0::respawn:-/bin/sh
 ::shutdown:/bin/umount -a -r

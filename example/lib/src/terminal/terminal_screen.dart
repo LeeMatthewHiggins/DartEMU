@@ -6,6 +6,7 @@ import 'package:dart_emu/dart_emu.dart';
 import 'package:dart_emu_example/src/crt/crt_effect.dart';
 import 'package:dart_emu_example/src/crt/crt_effect_widget.dart';
 import 'package:dart_emu_example/src/emulator/emulator_controller.dart';
+import 'package:dart_emu_example/src/terminal/greeting.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:xterm/xterm.dart';
@@ -110,6 +111,10 @@ class _TerminalScreenState extends State<TerminalScreen>
   }
 
   Future<void> _startEmulator() async {
+    // Branded banner first, so the terminal is never blank while the
+    // guest boots (and the demo is identifiable when embedded).
+    _terminal.write(dartEmuGreeting(widget.config.xlen));
+
     _statusSub = _controller!.status.listen((status) {
       if (!mounted) return;
       setState(() => _status = status);
