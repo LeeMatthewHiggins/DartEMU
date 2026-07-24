@@ -4,7 +4,10 @@ library;
 import 'dart:convert';
 import 'dart:typed_data';
 
-import 'package:dart_emu/dart_emu.dart';
+import 'package:dart_emu/src/device/virtio/ninep/ninep_fs.dart';
+import 'package:dart_emu/src/device/virtio/ninep/ninep_memory_backend.dart';
+import 'package:dart_emu/src/device/virtio/virtio_9p.dart';
+import 'package:dart_emu/src/machine/phys_memory_map.dart';
 import 'package:test/test.dart';
 
 /// 9P message type codes exercised by the tests.
@@ -36,12 +39,98 @@ class _R {
 const _rootFid = 0;
 const _qidSize = 13;
 
-/// Minimal 9P2000.u client that frames requests and parses replies by
-/// driving [Virtio9pDevice.processRequest] directly.
-class _Client {
-  _Client(this.device);
+/// Drives a [Virtio9pDevice] through its real MMIO registers and a split
+/// virtqueue laid out in guest RAM, exactly as the kernel `v9fs` client
+/// would: it writes a request into a readable descriptor, chains a
+/// writable descriptor for the reply, rings the avail index, notifies the
+/// queue, then reads the reply back from the used ring.
+class _Harness {
+  _Harness(NinePBackend backend) : mem = PhysMemoryMap() {
+    device = Virtio9pDevice(memMap: mem, backend: backend, tag: 'test');
+    mem.registerRam(addr: _ramBase, size: _ramSize);
+    _configureQueue();
+  }
 
-  final Virtio9pDevice device;
+  final PhysMemoryMap mem;
+  late final Virtio9pDevice device;
+  int _avail = 0;
+  int _used = 0;
+
+  void _mmio(int offset, int value) => device.writeMmio(offset, value, 2);
+
+  void _configureQueue() {
+    _mmio(_Mmio.queueSel, 0);
+    _mmio(_Mmio.queueNum, _queueSize);
+    _mmio(_Mmio.descLow, _descAddr & _mask32);
+    _mmio(_Mmio.descHigh, _descAddr >> 32);
+    _mmio(_Mmio.availLow, _availAddr & _mask32);
+    _mmio(_Mmio.availHigh, _availAddr >> 32);
+    _mmio(_Mmio.usedLow, _usedAddr & _mask32);
+    _mmio(_Mmio.usedHigh, _usedAddr >> 32);
+    _mmio(_Mmio.queueReady, 1);
+  }
+
+  void _writeDescriptor(int index, int addr, int len, int flags, int next) {
+    final base = _descAddr + index * _descBytes;
+    mem
+      ..physWriteU64(base, addr)
+      ..physWriteU32(base + 8, len)
+      ..physWriteU16(base + 12, flags)
+      ..physWriteU16(base + 14, next);
+  }
+
+  Uint8List send(Uint8List request) {
+    mem.getRamPointer(_reqAddr)!.setRange(0, request.length, request);
+    _writeDescriptor(0, _reqAddr, request.length, _descNext, 1);
+    _writeDescriptor(1, _replyAddr, _replyCap, _descWrite, 0);
+
+    mem
+      ..physWriteU16(_availAddr + 4 + (_avail % _queueSize) * 2, 0)
+      ..physWriteU16(_availAddr + 2, ++_avail);
+    _mmio(_Mmio.queueNotify, 0);
+
+    final entry = _usedAddr + 4 + (_used % _queueSize) * 8;
+    final len = mem.physReadU32(entry + 4);
+    _used++;
+    return Uint8List.fromList(mem.getRamPointer(_replyAddr)!.sublist(0, len));
+  }
+
+  static const _ramBase = 0x80000000;
+  static const _ramSize = 0x100000;
+  static const int _descAddr = _ramBase + 0x10000;
+  static const int _availAddr = _ramBase + 0x20000;
+  static const int _usedAddr = _ramBase + 0x30000;
+  static const int _reqAddr = _ramBase + 0x40000;
+  static const int _replyAddr = _ramBase + 0x50000;
+  static const _replyCap = 0x10000;
+  static const _queueSize = 128;
+  static const _descBytes = 16;
+  static const _descNext = 1;
+  static const _descWrite = 2;
+  static const _mask32 = 0xFFFFFFFF;
+}
+
+/// Virtio-MMIO register offsets used to configure and notify the queue.
+class _Mmio {
+  static const queueSel = 0x030;
+  static const queueNum = 0x038;
+  static const queueReady = 0x044;
+  static const queueNotify = 0x050;
+  static const descLow = 0x080;
+  static const descHigh = 0x084;
+  static const availLow = 0x090;
+  static const availHigh = 0x094;
+  static const usedLow = 0x0a0;
+  static const usedHigh = 0x0a4;
+}
+
+/// Minimal 9P2000.u client that frames requests and parses replies,
+/// sending each request through a transport ([_Harness.send] or
+/// [Virtio9pDevice.processRequest]).
+class _Client {
+  _Client(this.send);
+
+  final Uint8List Function(Uint8List request) send;
   int _tag = 1;
   int _fid = 1;
 
@@ -50,7 +139,7 @@ class _Client {
   ({int type, int tag, _Reader body}) _call(int type, _Builder body) {
     final tag = _tag++;
     final request = _frame(type, tag, body.bytes);
-    final reply = device.processRequest(request);
+    final reply = send(request);
     final reader = _Reader(reply)..skip(4);
     final replyType = reader.u8();
     final replyTag = reader.u16();
@@ -262,8 +351,11 @@ class _Reader {
   }
 }
 
-Virtio9pDevice _device(MemoryNinePBackend backend) =>
-    Virtio9pDevice(memMap: PhysMemoryMap(), backend: backend, tag: 'test');
+MemoryNinePBackend _seededFs() => MemoryNinePBackend()
+  ..addTextFile('/hello.txt', 'hello 9p')
+  ..addDirectory('/sub')
+  ..addTextFile('/sub/a.txt', 'aaa')
+  ..addTextFile('/sub/b.txt', 'bbbb');
 
 void main() {
   group('Virtio9pDevice 9P2000.u codec', () {
@@ -271,12 +363,9 @@ void main() {
     late _Client client;
 
     setUp(() {
-      fs = MemoryNinePBackend()
-        ..addTextFile('/hello.txt', 'hello 9p')
-        ..addDirectory('/sub')
-        ..addTextFile('/sub/a.txt', 'aaa')
-        ..addTextFile('/sub/b.txt', 'bbbb');
-      client = _Client(_device(fs));
+      fs = _seededFs();
+      // Drive through the real MMIO + virtqueue transport.
+      client = _Client(_Harness(fs).send);
     });
 
     test('negotiates 9P2000.u and clamps msize', () {
@@ -380,6 +469,38 @@ void main() {
         ..walk(_rootFid, fid, ['hello.txt'])
         ..open(fid, 0);
       expect(client.read(fid, 1000, 100), isEmpty);
+    });
+  });
+
+  group('Virtio9pDevice.processRequest (transport-independent)', () {
+    test('round-trips a file over the raw entry point', () {
+      final device = Virtio9pDevice(
+        memMap: PhysMemoryMap(),
+        backend: _seededFs(),
+        tag: 'test',
+      );
+      final client = _Client(device.processRequest)
+        ..version(65536, '9P2000.u')
+        ..attach(_rootFid);
+      final fid = client.newFid();
+      expect(client.walk(_rootFid, fid, ['hello.txt']), 1);
+      client.open(fid, 0);
+      expect(utf8.decode(client.read(fid, 0, 100)), 'hello 9p');
+    });
+
+    test('advertises the mount tag in config space', () {
+      final device = Virtio9pDevice(
+        memMap: PhysMemoryMap(),
+        backend: MemoryNinePBackend(),
+        tag: 'share42',
+      );
+      // Config space begins at MMIO offset 0x100: u16 tag_len then tag.
+      final tagLen = device.readMmio(0x100, 1);
+      expect(tagLen, 'share42'.length);
+      final bytes = [
+        for (var i = 0; i < tagLen; i++) device.readMmio(0x102 + i, 0),
+      ];
+      expect(utf8.decode(Uint8List.fromList(bytes)), 'share42');
     });
   });
 }
