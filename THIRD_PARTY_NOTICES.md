@@ -33,6 +33,11 @@ recipe used to produce the redistributed binary is in this repository at
 `tool/image_builder/tcc/Dockerfile` (the revision is pinned, so the
 build is reproducible). TCC is redistributed unmodified.
 
+The repository also vendors a curated subset of TCC's test suite
+(`tests/tests2/`) under `test/sandbox/tcc_tests2/`, from the same pinned
+revision and under the same LGPL-2.1-or-later licence. These are test
+inputs, used to check the emulator; they are unmodified.
+
 ### Alpine Linux base system
 
 The image is assembled from an official Alpine Linux `riscv64`
