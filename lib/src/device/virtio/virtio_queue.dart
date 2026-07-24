@@ -36,6 +36,13 @@ class VirtioQueueConstants {
   const VirtioQueueConstants._();
 
   static const maxQueues = 8;
-  static const maxQueueNum = 16;
+
+  /// Advertised maximum virtqueue size (must be a power of two).
+  ///
+  /// Sized so a virtio-9p client can fit a full `msize` request in one
+  /// scatter-gather list: a 64 KiB message spans ~16 data pages plus
+  /// request/reply headers, which overflows a smaller ring and trips the
+  /// guest's `virtqueue_add_sgs` check.
+  static const maxQueueNum = 128;
   static const maxConfigSpaceSize = 256;
 }

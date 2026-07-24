@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased
+
+- VirtIO-9P shared filesystem: a new `Virtio9pDevice` speaks 9P2000.u to
+  the guest's `v9fs` client, exposing a host folder (or an in-memory tree)
+  as a mountable share. Add shares via `MachineConfig.sharedFolders`
+  (`NinePShare(tag, backend)`); back them with
+  `createDirectoryNinePBackend(path)` for host passthrough or
+  `MemoryNinePBackend` for a web-safe in-memory tree
+- `AgentSandbox` gains `SandboxConfig.sharedFolder`: the share is mounted
+  automatically at boot (`/mnt/shared` by default), and host-side reads
+  and writes appear in the guest live with no console round-trip —
+  replacing the base64-over-console path for bulk file exchange. Call
+  `mountSharedFolder()` to remount after `AgentSandbox.restore`
+- The advertised VirtIO virtqueue size grew from 16 to 128 descriptors so
+  a 9P client can fit a full `msize` request in one scatter-gather list
+
 ## 0.5.0
 
 - Machine snapshot/restore: `RiscVMachine.snapshot()` captures full

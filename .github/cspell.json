@@ -50,6 +50,27 @@
     "riscv",
     "rootfs",
     "timeh",
-    "xlen"
+    "xlen",
+    "afid",
+    "aname",
+    "clunk",
+    "dotu",
+    "embedders",
+    "fids",
+    "iounit",
+    "msize",
+    "muid",
+    "newfid",
+    "ninep",
+    "normalise",
+    "normalised",
+    "nwqid",
+    "passthrough",
+    "qids",
+    "readdir",
+    "remount",
+    "serialises",
+    "virtqueue",
+    "wstat"
   ]
 }

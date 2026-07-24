@@ -11,7 +11,9 @@ import 'package:dart_emu/src/sandbox/exec_result.dart';
 /// run `base64` in the guest and decode its stdout. This needs nothing
 /// beyond the busybox `base64` applet already in the rootfs, so it
 /// works on every platform including the browser. It is convenient
-/// rather than fast; for bulk data, attach a second block device.
+/// rather than fast; for bulk data or live host access, configure a
+/// `SandboxConfig.sharedFolder` and read/write through
+/// [AgentSandbox.sharedFiles] instead.
 extension SandboxFiles on AgentSandbox {
   /// Writes [data] to [guestPath] inside the guest.
   ///

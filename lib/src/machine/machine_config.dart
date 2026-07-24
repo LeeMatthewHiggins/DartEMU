@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:dart_emu/src/device/block_device.dart';
 import 'package:dart_emu/src/device/character_device.dart';
 import 'package:dart_emu/src/device/ethernet_device.dart';
+import 'package:dart_emu/src/device/virtio/ninep/ninep_fs.dart';
 
 /// Register width for the RISC-V CPU.
 enum Xlen {
@@ -26,6 +27,7 @@ class MachineConfig {
     this.console,
     this.blockDevices = const [],
     this.ethDevices = const [],
+    this.sharedFolders = const [],
     this.driveConfigs = const [],
     this.filesystemConfigs = const [],
     this.ethernetConfigs = const [],
@@ -52,6 +54,10 @@ class MachineConfig {
   final List<BlockDevice> blockDevices;
   final List<EthernetDevice> ethDevices;
 
+  /// VirtIO-9P shared folders exposed to the guest, each mountable by its
+  /// [NinePShare.tag]. Registered as `virtio-9p` devices at boot.
+  final List<NinePShare> sharedFolders;
+
   final List<DriveConfig> driveConfigs;
   final List<FilesystemConfig> filesystemConfigs;
   final List<EthernetConfig> ethernetConfigs;
@@ -74,6 +80,7 @@ class MachineConfig {
     CharacterDevice? console,
     List<BlockDevice>? blockDevices,
     List<EthernetDevice>? ethDevices,
+    List<NinePShare>? sharedFolders,
     List<DriveConfig>? driveConfigs,
     List<FilesystemConfig>? filesystemConfigs,
     List<EthernetConfig>? ethernetConfigs,
@@ -93,6 +100,7 @@ class MachineConfig {
       console: console ?? this.console,
       blockDevices: blockDevices ?? this.blockDevices,
       ethDevices: ethDevices ?? this.ethDevices,
+      sharedFolders: sharedFolders ?? this.sharedFolders,
       driveConfigs: driveConfigs ?? this.driveConfigs,
       filesystemConfigs: filesystemConfigs ?? this.filesystemConfigs,
       ethernetConfigs: ethernetConfigs ?? this.ethernetConfigs,
@@ -112,6 +120,25 @@ class MachineConfig {
   static const defaultMemorySizeMb = 256;
   static const defaultMachineType = 'riscv64';
   static const Xlen defaultXlen = Xlen.rv64;
+}
+
+/// A VirtIO-9P share: a mount [tag] paired with the [backend] that serves
+/// it to the guest.
+///
+/// Use a directory-passthrough backend to expose a host folder, or an
+/// in-memory backend (web-safe) to seed files. The guest mounts it with:
+///
+/// ```sh
+/// mount -t 9p -o trans=virtio,version=9p2000.u <tag> /mnt
+/// ```
+class NinePShare {
+  const NinePShare({required this.tag, required this.backend});
+
+  /// Mount tag the guest uses to select this share.
+  final String tag;
+
+  /// Filesystem served over this share.
+  final NinePBackend backend;
 }
 
 /// Configuration for a VirtIO 9P shared filesystem.

@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import 'package:dart_emu/src/cpu/cpu_executor.dart';
 import 'package:dart_emu/src/device/memory_block_device.dart';
+import 'package:dart_emu/src/device/virtio/virtio_9p.dart';
 import 'package:dart_emu/src/device/virtio/virtio_block.dart';
 import 'package:dart_emu/src/device/virtio/virtio_console.dart';
 import 'package:dart_emu/src/device/virtio/virtio_device.dart';
@@ -339,6 +340,16 @@ class RiscVMachine {
       );
       _netDevices.add(netDevice);
       _addVirtioDevice(netDevice);
+    }
+
+    for (final share in config.sharedFolders) {
+      _addVirtioDevice(
+        Virtio9pDevice(
+          memMap: memMap,
+          backend: share.backend,
+          tag: share.tag,
+        ),
+      );
     }
   }
 
