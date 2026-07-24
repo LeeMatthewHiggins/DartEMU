@@ -27,7 +27,16 @@
         "headers": [
           {
             "key": "Cache-Control",
-            "value": "public, max-age=31536000, immutable"
+            "value": "public, no-cache"
+          }
+        ]
+      },
+      {
+        "source": "**/*.{js,mjs,wasm,json}",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "public, no-cache"
           }
         ]
       }
