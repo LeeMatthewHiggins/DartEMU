@@ -77,11 +77,15 @@ class Virtio9pDevice extends VirtioDevice {
       _dispatch(request, replyCapacity ?? _msize);
 
   Uint8List _dispatch(Uint8List request, int writeSize) {
-    final reader = _MsgReader(request)..skip(_sizeField);
-    final type = reader.u8();
-    final tagId = reader.u16();
-
+    final reader = _MsgReader(request);
+    var tagId = _noTag;
     try {
+      final declaredSize = reader.u32();
+      final type = reader.u8();
+      tagId = reader.u16();
+      if (declaredSize < _headerSize || declaredSize > request.length) {
+        return _error(tagId, 'bad 9P message size', _Errno.einval);
+      }
       return switch (type) {
         _T.version => _version(reader, tagId),
         _T.auth => _error(tagId, _Virtio9p.authNotRequired, _Errno.eacces),
@@ -387,6 +391,7 @@ class Virtio9pDevice extends VirtioDevice {
 
   static const _headerSize = 7; // size[4] type[1] tag[2]
   static const _sizeField = 4;
+  static const _noTag = 0xFFFF; // NOTAG, used when the tag is unreadable
   static const _qidSize = 13;
   static const _readReplyHeader = 11; // header[7] + count[4]
   static const _tagOffset = 2; // after tag_len[2]
@@ -463,12 +468,18 @@ class _Virtio9p {
 class _Errno {
   const _Errno._();
 
+  static const einval = 22;
   static const eacces = 13;
   static const ebadf = 9;
   static const enosys = 38;
 }
 
-/// Little-endian cursor reader over a 9P message.
+/// Bounds-checked little-endian cursor reader over a 9P message.
+///
+/// Every read validates it stays within the message, so a truncated or
+/// otherwise malformed guest-supplied frame raises [NinePError] (which the
+/// device turns into an `Rerror`) instead of an uncaught `RangeError` that
+/// would crash the host.
 class _MsgReader {
   _MsgReader(this._bytes) : _view = ByteData.sublistView(_bytes);
 
@@ -476,17 +487,31 @@ class _MsgReader {
   final ByteData _view;
   int _pos = 0;
 
-  void skip(int n) => _pos += n;
+  void _require(int n) {
+    if (n < 0 || _pos + n > _bytes.length) {
+      throw const NinePError('truncated 9P message', errno: _Errno.einval);
+    }
+  }
 
-  int u8() => _view.getUint8(_pos++);
+  void skip(int n) {
+    _require(n);
+    _pos += n;
+  }
+
+  int u8() {
+    _require(1);
+    return _view.getUint8(_pos++);
+  }
 
   int u16() {
+    _require(2);
     final v = _view.getUint16(_pos, Endian.little);
     _pos += 2;
     return v;
   }
 
   int u32() {
+    _require(4);
     final v = _view.getUint32(_pos, Endian.little);
     _pos += 4;
     return v;
@@ -500,6 +525,7 @@ class _MsgReader {
 
   String string() {
     final len = u16();
+    _require(len);
     final s = utf8.decode(
       Uint8List.sublistView(_bytes, _pos, _pos + len),
       allowMalformed: true,
@@ -510,7 +536,7 @@ class _MsgReader {
 
   Uint8List take(int count) {
     final available = _bytes.length - _pos;
-    final n = count < available ? count : available;
+    final n = count < 0 ? 0 : (count < available ? count : available);
     final slice = Uint8List.sublistView(_bytes, _pos, _pos + n);
     _pos += n;
     return slice;

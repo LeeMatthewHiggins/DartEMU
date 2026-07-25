@@ -503,6 +503,48 @@ void main() {
       expect(utf8.decode(Uint8List.fromList(bytes)), 'share42');
     });
   });
+
+  group('Virtio9pDevice malformed-frame handling', () {
+    Virtio9pDevice freshDevice() => Virtio9pDevice(
+      memMap: PhysMemoryMap(),
+      backend: MemoryNinePBackend(),
+      tag: 'test',
+    );
+
+    int replyType(Uint8List reply) => (_Reader(reply)..skip(4)).u8();
+
+    test('a truncated Tattach (header only) yields Rerror, not a crash', () {
+      final reply = freshDevice().processRequest(
+        _frame(_T.attach, 1, const []),
+      );
+      expect(replyType(reply), _R.error);
+      // tag is echoed so the guest can correlate the error.
+      expect((_Reader(reply)..skip(5)).u16(), 1);
+    });
+
+    test('a message shorter than a header does not throw', () {
+      final reply = freshDevice().processRequest(
+        Uint8List.fromList([1, 2, 3]),
+      );
+      expect(reply, isNotEmpty);
+      expect(replyType(reply), _R.error);
+    });
+
+    test('a declared size larger than the buffer yields Rerror', () {
+      final frame = _frame(_T.walk, 2, const []);
+      ByteData.sublistView(frame).setUint32(0, 0x7fffffff, Endian.little);
+      final reply = freshDevice().processRequest(frame);
+      expect(replyType(reply), _R.error);
+    });
+
+    test('a truncated frame over the real virtqueue yields Rerror', () {
+      final harness = _Harness(_seededFs());
+      final reply = harness.send(_frame(_T.attach, 5, const []));
+      final reader = _Reader(reply)..skip(4);
+      expect(reader.u8(), _R.error);
+      expect(reader.u16(), 5);
+    });
+  });
 }
 
 /// Parses concatenated 9P stat structures, returning entry names.

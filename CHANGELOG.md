@@ -15,6 +15,10 @@
   `mountSharedFolder()` to remount after `AgentSandbox.restore`
 - The advertised VirtIO virtqueue size grew from 16 to 128 descriptors so
   a 9P client can fit a full `msize` request in one scatter-gather list
+- Hardened against untrusted guests: the directory backend now rejects
+  symlink traversal (final or intermediate) that escapes the shared root,
+  and the 9P reader is fully bounds-checked so malformed or truncated
+  frames return `Rerror` instead of crashing the host emulator
 
 ## 0.5.0
 

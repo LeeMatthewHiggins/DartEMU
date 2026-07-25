@@ -16,6 +16,12 @@ NinePBackend createDirectoryNinePBackendImpl(
 /// resolved beneath [hostRoot]. Writes are rejected when [readOnly] is
 /// set. Operations use synchronous `dart:io` calls because the emulator
 /// services 9P requests from its synchronous step loop.
+///
+/// The guest is untrusted, so every operation is checked for containment
+/// after symlink resolution: a link (final or intermediate) that resolves
+/// outside the canonical root is rejected with `EACCES`, closing the
+/// escape where `openSync`/`Directory`/mutation calls would otherwise
+/// follow a link even though `stat`/`readdir` use `followLinks: false`.
 class DirectoryNinePBackend implements NinePBackend {
   DirectoryNinePBackend(String hostRoot, {this.readOnly = false})
     : hostRoot = _stripTrailingSlash(hostRoot);
@@ -28,16 +34,65 @@ class DirectoryNinePBackend implements NinePBackend {
 
   final NinePQidAllocator _qids = NinePQidAllocator();
 
+  late final String _rootReal = _canonicalRoot();
+
+  String _canonicalRoot() {
+    try {
+      return _stripTrailingSlash(
+        Directory(hostRoot).resolveSymbolicLinksSync(),
+      );
+    } on FileSystemException {
+      return hostRoot;
+    }
+  }
+
   String _hostPath(String guestPath) {
     final norm = NinePPath.normalise(guestPath);
     if (norm == NinePPath.root) return hostRoot;
     return '$hostRoot$norm';
   }
 
+  /// Fully resolves [hostPath] (following every symlink), or `null` if it
+  /// does not exist.
+  String? _resolveReal(String hostPath) {
+    try {
+      return File(hostPath).resolveSymbolicLinksSync();
+    } on FileSystemException {
+      return null;
+    }
+  }
+
+  bool _within(String realPath) =>
+      realPath == _rootReal ||
+      realPath.startsWith('$_rootReal${Platform.pathSeparator}');
+
+  /// Verifies the fully-resolved [host] exists and stays beneath the
+  /// canonical root; used for content access that follows links.
+  void _assertResolvedWithin(String host) {
+    final real = _resolveReal(host);
+    if (real == null) throw NinePError.enoent;
+    if (!_within(real)) throw NinePError.eacces;
+  }
+
+  /// Verifies the container of [host] — the root itself, or its resolved
+  /// parent directory — stays beneath the canonical root; used for
+  /// metadata reads and entry mutations that must not follow an escaping
+  /// ancestor link.
+  void _assertContainerWithin(String host) {
+    final container = host == hostRoot ? host : File(host).parent.path;
+    final real = _resolveReal(container);
+    if (real == null) throw NinePError.enoent;
+    if (!_within(real)) throw NinePError.eacces;
+  }
+
   @override
   NinePStat? stat(String path) {
     final norm = NinePPath.normalise(path);
     final host = _hostPath(norm);
+    final container = host == hostRoot ? host : File(host).parent.path;
+    final real = _resolveReal(container);
+    if (real == null) return null;
+    if (!_within(real)) throw NinePError.eacces;
     final type = FileSystemEntity.typeSync(host, followLinks: false);
     if (type == FileSystemEntityType.notFound) return null;
     return _statFor(norm, host, type);
@@ -47,6 +102,7 @@ class DirectoryNinePBackend implements NinePBackend {
   List<NinePStat> readdir(String path) {
     final norm = NinePPath.normalise(path);
     final host = _hostPath(norm);
+    _assertResolvedWithin(host);
     final dir = Directory(host);
     if (!dir.existsSync()) throw NinePError.enoent;
     final entries = <NinePStat>[];
@@ -62,6 +118,7 @@ class DirectoryNinePBackend implements NinePBackend {
   @override
   Uint8List read(String path, int offset, int count) {
     final host = _hostPath(path);
+    _assertResolvedWithin(host);
     RandomAccessFile? raf;
     try {
       raf = File(host).openSync();
@@ -81,6 +138,7 @@ class DirectoryNinePBackend implements NinePBackend {
   int write(String path, int offset, Uint8List data) {
     _guardWritable();
     final host = _hostPath(path);
+    _assertResolvedWithin(host);
     RandomAccessFile? raf;
     try {
       raf = File(host).openSync(mode: FileMode.append)
@@ -104,6 +162,7 @@ class DirectoryNinePBackend implements NinePBackend {
     _guardWritable();
     final guest = NinePPath.join(parent, name);
     final host = _hostPath(guest);
+    _assertContainerWithin(host);
     if (FileSystemEntity.typeSync(host, followLinks: false) !=
         FileSystemEntityType.notFound) {
       throw NinePError.eexist;
@@ -125,6 +184,7 @@ class DirectoryNinePBackend implements NinePBackend {
   void remove(String path) {
     _guardWritable();
     final host = _hostPath(path);
+    _assertContainerWithin(host);
     final type = FileSystemEntity.typeSync(host, followLinks: false);
     if (type == FileSystemEntityType.notFound) throw NinePError.enoent;
     try {
@@ -144,6 +204,7 @@ class DirectoryNinePBackend implements NinePBackend {
   void setLength(String path, int length) {
     _guardWritable();
     final host = _hostPath(path);
+    _assertResolvedWithin(host);
     RandomAccessFile? raf;
     try {
       raf = File(host).openSync(mode: FileMode.append)..truncateSync(length);
@@ -158,6 +219,9 @@ class DirectoryNinePBackend implements NinePBackend {
   void setMtime(String path, int mtimeSeconds) {
     if (readOnly) return;
     final host = _hostPath(path);
+    final real = _resolveReal(host);
+    // Best-effort, and never through a link that escapes the root.
+    if (real == null || !_within(real)) return;
     try {
       File(host).setLastModifiedSync(
         DateTime.fromMillisecondsSinceEpoch(mtimeSeconds * 1000),
