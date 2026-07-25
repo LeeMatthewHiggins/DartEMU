@@ -59,8 +59,18 @@ Future<void> _readInto(
 }
 
 /// Persists guest mutations back to the chosen directory over the File
-/// System Access API. Writes are debounced per path (the guest writes files
-/// in `msize` chunks) and all failures are swallowed — persistence is
+/// System Access API.
+///
+/// Operations on a given path run **serially** through a per-path async
+/// chain, so a later write or remove can never overtake an in-flight one:
+/// writes cannot complete out of order or drop the latest content, and a
+/// remove always runs after the writes queued before it. File writes are
+/// debounced (the guest writes in `msize` chunks) and coalesced to the
+/// latest content; a remove cancels any still-pending write for the path
+/// and its descendants so a stale flush cannot recreate a deleted entry.
+/// Removal is **non-recursive** — a directory the guest believes is empty
+/// but that the host has since filled is left intact rather than
+/// recursively deleted. All failures are swallowed; persistence is
 /// best-effort and must never crash the emulator.
 class _FsaaWriteSink implements NinePWriteSink {
   _FsaaWriteSink(this._root);
@@ -68,24 +78,48 @@ class _FsaaWriteSink implements NinePWriteSink {
   final _DirHandle _root;
   final Map<String, Uint8List> _pending = {};
   final Map<String, Timer> _timers = {};
+  final Map<String, Future<void>> _tail = {};
 
   @override
   void flushFile(String path, Uint8List bytes) {
     _pending[path] = bytes;
     _timers[path]?.cancel();
     _timers[path] = Timer(_flushDelay, () {
-      final data = _pending.remove(path);
       _timers.remove(path);
-      if (data != null) unawaited(_writeFile(path, data));
+      final data = _pending.remove(path);
+      if (data != null) _enqueue(path, () => _writeFile(path, data));
     });
   }
 
   @override
   void createEntry(String path, {required bool isDir}) =>
-      unawaited(isDir ? _ensureDir(path) : _ensureFile(path));
+      _enqueue(path, () => isDir ? _ensureDir(path) : _ensureFile(path));
 
   @override
-  void removeEntry(String path) => unawaited(_removeEntry(path));
+  void removeEntry(String path) {
+    _cancelPending(path);
+    _enqueue(path, () => _removeEntry(path));
+  }
+
+  /// Appends [op] to the serial chain for [path], so operations on the same
+  /// path never run concurrently.
+  void _enqueue(String path, Future<void> Function() op) {
+    final prev = _tail[path] ?? Future<void>.value();
+    _tail[path] = prev.then((_) => op()).catchError((Object _) {});
+  }
+
+  /// Drops any still-pending write for [path] and its descendants, so a
+  /// debounced flush cannot recreate an entry the guest just removed.
+  void _cancelPending(String path) {
+    final prefix = '$path/';
+    final stale = _timers.keys
+        .where((k) => k == path || k.startsWith(prefix))
+        .toList();
+    for (final key in stale) {
+      _timers.remove(key)?.cancel();
+      _pending.remove(key);
+    }
+  }
 
   Future<_DirHandle> _dirFor(List<String> segments) async {
     var dir = _root;
@@ -137,9 +171,12 @@ class _FsaaWriteSink implements NinePWriteSink {
       final segments = _segments(path);
       final name = segments.removeLast();
       final dir = await _dirFor(segments);
-      await dir.removeEntry(name, _RemoveOptions(recursive: true)).toDart;
+      // Non-recursive: a directory the host has filled since the pick
+      // (unseen by the guest's snapshot) is left intact rather than
+      // recursively deleted.
+      await dir.removeEntry(name).toDart;
     } on Object {
-      // Best-effort.
+      // Best-effort; a non-empty host directory is left intact.
     }
   }
 
@@ -163,10 +200,6 @@ extension type _CreateOptions._(JSObject _) implements JSObject {
   external factory _CreateOptions({bool create});
 }
 
-extension type _RemoveOptions._(JSObject _) implements JSObject {
-  external factory _RemoveOptions({bool recursive});
-}
-
 extension type _Handle(JSObject _) implements JSObject {
   external String get kind;
   external String get name;
@@ -182,7 +215,7 @@ extension type _DirHandle(JSObject _) implements JSObject {
     String name, [
     JSObject options,
   ]);
-  external JSPromise<JSAny?> removeEntry(String name, [JSObject options]);
+  external JSPromise<JSAny?> removeEntry(String name);
 }
 
 extension type _FileHandle(JSObject _) implements JSObject {
