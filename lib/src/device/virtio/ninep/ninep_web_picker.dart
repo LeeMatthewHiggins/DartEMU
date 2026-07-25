@@ -1,9 +1,19 @@
 import 'dart:async';
 import 'dart:js_interop';
+import 'dart:js_interop_unsafe';
 import 'dart:typed_data';
 
 import 'package:dart_emu/src/device/virtio/ninep/ninep_path.dart';
 import 'package:dart_emu/src/device/virtio/ninep/ninep_web_share.dart';
+
+/// Whether this browser actually exposes the File System Access directory
+/// picker.
+///
+/// Compiling for the web is not enough — some browsers and embedded
+/// webviews provide `dart.library.js_interop` yet lack
+/// `showDirectoryPicker`. This checks for the global directly so callers
+/// can hide UI that would otherwise do nothing.
+bool get isDirectoryPickerSupported => globalContext.has('showDirectoryPicker');
 
 /// Prompts the user to choose a directory via the browser's File System
 /// Access API and loads its files into a 9P share. Web only.
