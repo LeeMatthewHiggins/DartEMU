@@ -69,6 +69,7 @@
     "qids",
     "readdir",
     "remount",
+    "Rerror",
     "serialises",
     "Virtio",
     "virtqueue",
