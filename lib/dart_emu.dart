@@ -15,6 +15,7 @@ export 'src/device/irq_signal.dart';
 export 'src/device/memory_block_device.dart';
 export 'src/device/virtio/ninep/ninep_fs.dart';
 export 'src/device/virtio/ninep/ninep_memory_backend.dart';
+export 'src/device/virtio/ninep/ninep_web_share.dart';
 export 'src/device/virtio/virtio_9p.dart';
 export 'src/emulator/emulator.dart';
 export 'src/emulator/emulator_status.dart';

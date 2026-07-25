@@ -46,6 +46,7 @@ class TerminalScreen extends StatefulWidget {
   const TerminalScreen({
     required this.config,
     this.useBundledDemoAssets = false,
+    this.sharedFolders = const [],
     this.initialCrtEffect,
     this.onStopped,
     super.key,
@@ -56,6 +57,12 @@ class TerminalScreen extends StatefulWidget {
 
   /// If true, boot built-in bundled demo assets for this config's architecture.
   final bool useBundledDemoAssets;
+
+  /// VirtIO-9P shares to expose and auto-mount once the shell is ready.
+  ///
+  /// Only used together with [useBundledDemoAssets]; each is mounted at
+  /// `/mnt/<tag>` when the first shell prompt appears.
+  final List<NinePShare> sharedFolders;
 
   /// If set, start with this CRT effect mode instead of off.
   final CrtEffect? initialCrtEffect;
@@ -125,14 +132,42 @@ class _TerminalScreenState extends State<TerminalScreen>
 
     _outputSub = _controller!.output.listen((bytes) {
       _terminal.write(utf8.decode(bytes, allowMalformed: true));
+      _maybeAutoMount(utf8.decode(bytes, allowMalformed: true));
     });
 
     if (widget.useBundledDemoAssets) {
-      await _controller!.start(xlen: widget.config.xlen);
+      await _controller!.start(
+        xlen: widget.config.xlen,
+        sharedFolders: widget.sharedFolders,
+      );
     } else {
       await _controller!.startWithConfig(widget.config);
     }
   }
+
+  final StringBuffer _bootTail = StringBuffer();
+  var _mounted9p = false;
+
+  /// Sends the 9P mount command(s) once the first shell prompt appears, so
+  /// the demo lands with the shared folders already mounted at `/mnt/<tag>`.
+  void _maybeAutoMount(String chunk) {
+    if (_mounted9p || widget.sharedFolders.isEmpty) return;
+    _bootTail.write(chunk);
+    final tail = _bootTail.toString();
+    if (!tail.contains(_shellPrompt)) return;
+    _mounted9p = true;
+    for (final share in widget.sharedFolders) {
+      final tag = share.tag;
+      _controller?.sendInput(
+        'mkdir -p /mnt/$tag && '
+        'mount -t 9p -o trans=virtio,version=9p2000.u,msize=65536 '
+        '$tag /mnt/$tag && '
+        'echo "[9p] $tag mounted at /mnt/$tag" && ls -la /mnt/$tag\n',
+      );
+    }
+  }
+
+  static const _shellPrompt = '# ';
 
   double _measureCharWidth() {
     final painter = TextPainter(

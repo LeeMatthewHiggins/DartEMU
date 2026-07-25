@@ -64,7 +64,13 @@ class EmulatorController {
   }
 
   /// Loads VM images from bundled assets and starts emulation.
-  Future<void> start({Xlen xlen = Xlen.rv64}) async {
+  ///
+  /// Any [sharedFolders] are exposed to the guest as VirtIO-9P shares; the
+  /// terminal mounts them once the shell is ready.
+  Future<void> start({
+    Xlen xlen = Xlen.rv64,
+    List<NinePShare> sharedFolders = const [],
+  }) async {
     final results = await Future.wait([
       rootBundle.load(_Assets.bios(xlen)),
       rootBundle.load(_Assets.kernel(xlen)),
@@ -82,6 +88,7 @@ class EmulatorController {
       cmdLine: _Defaults.cmdLine,
       blockDevices: [MemoryBlockDevice.fromData(rootfsData)],
       ethDevices: [UserNetDevice()],
+      sharedFolders: sharedFolders,
     );
 
     await startWithConfig(config);

@@ -5,6 +5,8 @@ import 'package:dart_emu_example/src/config/config_resolver_adapter.dart'
     as resolver;
 import 'package:dart_emu_example/src/config/config_summary_card.dart';
 import 'package:dart_emu_example/src/config/drop_target_area.dart';
+import 'package:dart_emu_example/src/config/folder_share_adapter.dart'
+    as folder_share;
 import 'package:dart_emu_example/src/config/zip_config_loader.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
@@ -35,6 +37,7 @@ class ConfigPickerScreen extends StatefulWidget {
   const ConfigPickerScreen({
     required this.onConfigLoaded,
     required this.onDemoSelected,
+    required this.onDemoWithShare,
     super.key,
   });
 
@@ -43,6 +46,9 @@ class ConfigPickerScreen extends StatefulWidget {
 
   /// Called with the selected [Xlen] when a built-in demo is chosen.
   final ValueChanged<Xlen> onDemoSelected;
+
+  /// Called to boot a demo with a browser-picked folder mounted over 9P.
+  final void Function(Xlen xlen, NinePShare share) onDemoWithShare;
 
   @override
   State<ConfigPickerScreen> createState() => _ConfigPickerScreenState();
@@ -92,6 +98,10 @@ class _ConfigPickerScreenState extends State<ConfigPickerScreen> {
                 _buildDemoDivider(),
                 const SizedBox(height: _PickerLayout.spacing),
                 _buildDemoSection(),
+                if (folder_share.isFolderPickerSupported) ...[
+                  const SizedBox(height: _PickerLayout.spacing),
+                  _buildMountFolderButton(),
+                ],
               ],
             ),
           ),
@@ -226,6 +236,45 @@ class _ConfigPickerScreenState extends State<ConfigPickerScreen> {
       ],
     );
   }
+
+  Widget _buildMountFolderButton() {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        OutlinedButton.icon(
+          onPressed: _loading ? null : _mountFolderAndBoot,
+          icon: const Icon(Icons.drive_folder_upload, size: 18),
+          label: const Text('Mount a folder & boot RV64'),
+        ),
+        const SizedBox(height: _PickerLayout.smallSpacing),
+        Text(
+          'shares a local folder into the guest at /mnt/host over 9P',
+          textAlign: TextAlign.center,
+          style: TextStyle(color: Colors.grey.shade600, fontSize: 11),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _mountFolderAndBoot() async {
+    _setLoading();
+    try {
+      final picked = await folder_share.pickFolderShare();
+      if (!mounted) return;
+      if (picked == null) {
+        setState(() => _loading = false);
+        return;
+      }
+      widget.onDemoWithShare(
+        Xlen.rv64,
+        NinePShare(tag: _shareTag, backend: picked.backend),
+      );
+    } on Object catch (e) {
+      _setError(e.toString());
+    }
+  }
+
+  static const _shareTag = 'host';
 
   Future<void> _browseForConfig() async {
     final result = await FilePicker.platform.pickFiles(

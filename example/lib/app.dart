@@ -26,6 +26,7 @@ class App extends StatefulWidget {
 class _AppState extends State<App> {
   MachineConfig? _config;
   late Xlen? _demoXlen = widget.bootXlen;
+  List<NinePShare> _demoShares = const [];
 
   @override
   Widget build(BuildContext context) {
@@ -41,6 +42,7 @@ class _AppState extends State<App> {
     setState(() {
       _config = null;
       _demoXlen = null;
+      _demoShares = const [];
     });
   }
 
@@ -56,6 +58,7 @@ class _AppState extends State<App> {
       return TerminalScreen(
         config: MachineConfig(xlen: _demoXlen!),
         useBundledDemoAssets: true,
+        sharedFolders: _demoShares,
         initialCrtEffect: widget.initialCrtEffect,
         onStopped: _reset,
       );
@@ -63,6 +66,10 @@ class _AppState extends State<App> {
     return ConfigPickerScreen(
       onConfigLoaded: (config) => setState(() => _config = config),
       onDemoSelected: (xlen) => setState(() => _demoXlen = xlen),
+      onDemoWithShare: (xlen, share) => setState(() {
+        _demoXlen = xlen;
+        _demoShares = [share];
+      }),
     );
   }
 }
