@@ -18,6 +18,9 @@ class SandboxConfig {
     this.cmdLine = 'console=hvc0 root=/dev/vda rw',
     this.shellPrompt = '~ # ',
     this.ethDevices = const [],
+    this.sharedFolder,
+    this.sharedMountPoint = '/mnt/shared',
+    this.autoMountShared = true,
     this.bootTimeout = const Duration(seconds: 30),
     this.defaultTimeout = const Duration(seconds: 30),
     this.defaultMaxInstructions,
@@ -50,6 +53,21 @@ class SandboxConfig {
   /// all. For controlled connectivity, pass a `UserNetDevice` — supply
   /// it a filtering `NetBackend` to enforce an allow-list.
   final List<EthernetDevice> ethDevices;
+
+  /// Optional VirtIO-9P shared folder mounted into the guest.
+  ///
+  /// Pass a directory-passthrough backend to share a host folder, or an
+  /// in-memory backend (web-safe) to seed files. Host-side reads and
+  /// writes go straight through the backend and appear in the guest at
+  /// [sharedMountPoint] with no console round-trip. `null` (the default)
+  /// exposes no share.
+  final NinePShare? sharedFolder;
+
+  /// Guest path where [sharedFolder] is mounted.
+  final String sharedMountPoint;
+
+  /// Whether `AgentSandbox.boot` mounts [sharedFolder] automatically.
+  final bool autoMountShared;
 
   /// Time budget for `boot`.
   final Duration bootTimeout;

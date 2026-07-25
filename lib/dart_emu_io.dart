@@ -6,4 +6,5 @@ library;
 
 export 'dart_emu.dart';
 export 'src/device/file_block_device.dart';
+export 'src/device/virtio/ninep/ninep_directory_backend.dart';
 export 'src/machine/config_loader.dart';

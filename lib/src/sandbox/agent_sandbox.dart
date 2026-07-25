@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:dart_emu/src/device/memory_block_device.dart';
+import 'package:dart_emu/src/device/virtio/ninep/ninep_fs.dart';
 import 'package:dart_emu/src/machine/machine_config.dart';
 import 'package:dart_emu/src/machine/machine_snapshot.dart';
 import 'package:dart_emu/src/machine/riscv_machine.dart';
@@ -73,6 +74,13 @@ class AgentSandbox {
   /// Total guest instructions retired since boot.
   int get instructionsRetired => _machine?.cpu.state.instructionCounter ?? 0;
 
+  /// The shared folder's backend, or `null` if no share is configured.
+  ///
+  /// Read and write host-side through this to exchange files with the
+  /// guest live: changes appear under [SandboxConfig.sharedMountPoint]
+  /// with no console round-trip.
+  NinePBackend? get sharedFiles => config.sharedFolder?.backend;
+
   MachineConfig _machineConfig() => MachineConfig(
     xlen: config.xlen,
     memorySizeMb: config.memorySizeMb,
@@ -82,6 +90,9 @@ class AgentSandbox {
     console: _console,
     blockDevices: [MemoryBlockDevice.fromData(config.rootfsData)],
     ethDevices: config.ethDevices,
+    sharedFolders: [
+      if (config.sharedFolder != null) config.sharedFolder!,
+    ],
   );
 
   /// Captures the running guest's full state for later restore.
@@ -113,7 +124,43 @@ class AgentSandbox {
     // pure command output: no tty echo of the fed command, no prompt,
     // no line-continuation prompt.
     await exec("stty -echo 2>/dev/null; PS1=''; PS2=''");
+    if (config.sharedFolder != null && config.autoMountShared) {
+      await mountSharedFolder();
+    }
   }
+
+  /// Mounts the configured [SandboxConfig.sharedFolder] in the guest at
+  /// [SandboxConfig.sharedMountPoint].
+  ///
+  /// Called automatically by [boot] unless
+  /// [SandboxConfig.autoMountShared] is disabled. Call it explicitly after
+  /// [AgentSandbox.restore] to re-establish the mount, since an active 9P
+  /// mount is not carried across snapshot/restore. Throws [StateError] if
+  /// no share is configured, or [SandboxMountException] if the guest
+  /// `mount` fails.
+  Future<void> mountSharedFolder({Duration? timeout}) async {
+    final share = config.sharedFolder;
+    if (share == null) {
+      throw StateError('No shared folder configured');
+    }
+    final mount = config.sharedMountPoint;
+    final result = await exec(
+      'mkdir -p ${_shellQuote(mount)} && '
+      'mount -t 9p -o trans=virtio,version=9p2000.u,msize=$_sharedMsize '
+      '${_shellQuote(share.tag)} ${_shellQuote(mount)}',
+      timeout: timeout,
+    );
+    if (!result.succeeded) {
+      throw SandboxMountException(
+        'failed to mount 9P share "${share.tag}" at $mount '
+        '(exit ${result.exitCode})',
+        result.stdout,
+      );
+    }
+  }
+
+  static String _shellQuote(String value) =>
+      "'${value.replaceAll("'", r"'\''")}'";
 
   /// Runs [command] in the guest shell and returns its result.
   ///
@@ -299,4 +346,18 @@ class AgentSandbox {
   static const _yieldEvery = 8;
   static const _ctrlC = 0x03;
   static const _recoverTimeout = Duration(seconds: 10);
+  static const _sharedMsize = 65536;
+}
+
+/// Thrown when mounting a shared folder in the guest fails.
+class SandboxMountException implements Exception {
+  SandboxMountException(this.message, this.consoleOutput);
+
+  final String message;
+
+  /// Guest output captured during the failed mount.
+  final String consoleOutput;
+
+  @override
+  String toString() => 'SandboxMountException: $message';
 }
