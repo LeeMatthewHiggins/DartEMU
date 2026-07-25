@@ -19,6 +19,12 @@
   symlink traversal (final or intermediate) that escapes the shared root,
   and the 9P reader is fully bounds-checked so malformed or truncated
   frames return `Rerror` instead of crashing the host emulator
+- Web File System Access: `package:dart_emu/dart_emu_web.dart` adds
+  `pickDirectoryShare()`, which prompts the browser's directory picker and
+  loads the chosen folder into an in-memory 9P share (the tree is read
+  once up front, since the 9P device is synchronous). The example demo
+  gains a "Mount a folder & boot" button that shares a local folder into
+  the guest at `/mnt/host`
 
 ## 0.5.0
 
