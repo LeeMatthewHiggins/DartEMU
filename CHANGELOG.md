@@ -30,8 +30,11 @@
 - A picked web share can be refreshed: `PickedShare.refresh` (and a
   "Reload folder" control in the demo) re-reads the chosen directory and
   merges host-side additions and edits into the guest's view — additive
-  and host-wins, so unsynced guest files are never clobbered. This softens
-  the one-shot snapshot for host→guest changes without a live-sync rewrite
+  and host-wins, so unsynced guest files are never clobbered. The re-sync
+  is mtime-diffed, re-reading only files whose `lastModified` changed, and
+  the demo polls it in the background so host changes reach the guest
+  automatically. This softens the one-shot snapshot for host→guest changes
+  without a live-sync rewrite
 
 ## 0.5.0
 

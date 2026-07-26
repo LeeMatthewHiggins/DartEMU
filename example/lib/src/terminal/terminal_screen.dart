@@ -98,7 +98,36 @@ class _TerminalScreenState extends State<TerminalScreen>
     super.initState();
     _launchEmulator();
     _loadShader();
+    _startAutoRefresh();
   }
+
+  /// Periodically re-syncs the mounted share so host-side changes reach the
+  /// guest without a manual reload. The sync is mtime-diffed, so an
+  /// unchanged folder costs only a directory walk.
+  void _startAutoRefresh() {
+    if (widget.onReloadShare == null) return;
+    _reloadTimer = Timer.periodic(_autoRefreshInterval, (_) {
+      unawaited(_refreshShare());
+    });
+  }
+
+  Timer? _reloadTimer;
+  var _refreshInFlight = false;
+
+  Future<void> _refreshShare() async {
+    final reload = widget.onReloadShare;
+    if (reload == null || _refreshInFlight) return;
+    _refreshInFlight = true;
+    try {
+      await reload();
+    } on Object catch (e) {
+      debugPrint('Share refresh failed: $e');
+    } finally {
+      _refreshInFlight = false;
+    }
+  }
+
+  static const _autoRefreshInterval = Duration(seconds: 3);
 
   Future<void> _loadShader() async {
     try {
@@ -203,6 +232,7 @@ class _TerminalScreenState extends State<TerminalScreen>
 
   @override
   void dispose() {
+    _reloadTimer?.cancel();
     _outputSub?.cancel();
     _statusSub?.cancel();
     _controller?.dispose();
@@ -301,18 +331,15 @@ class _TerminalScreenState extends State<TerminalScreen>
 
   var _reloading = false;
 
-  /// Re-reads the mounted host folder, then re-lists it in the guest so the
+  /// Forces a re-sync now, then re-lists the share in the guest so the
   /// refreshed contents are visible (v9fs runs uncached, so the next read
-  /// reflects the updated backend).
+  /// reflects the updated backend). Auto-refresh already keeps the backend
+  /// current; this is the "show me now" action.
   Future<void> _reloadShare() async {
-    final reload = widget.onReloadShare;
-    if (reload == null || _reloading) return;
+    if (widget.onReloadShare == null || _reloading) return;
     setState(() => _reloading = true);
-    try {
-      await reload();
-    } finally {
-      if (mounted) setState(() => _reloading = false);
-    }
+    await _refreshShare();
+    if (mounted) setState(() => _reloading = false);
     if (widget.sharedFolders.isNotEmpty) {
       final tag = widget.sharedFolders.first.tag;
       _controller?.sendInput('ls -la /mnt/$tag\n');
