@@ -42,6 +42,11 @@ Future<PickedShare?> pickDirectoryShare() async {
   return PickedShare(
     name: _Handle(handle).name,
     backend: WriteBackNinePBackend(memory, sink),
+    refresh: () async {
+      final fresh = <WebFileEntry>[];
+      await _readInto(handle, NinePPath.root, fresh);
+      mergeEntries(memory, fresh);
+    },
   );
 }
 

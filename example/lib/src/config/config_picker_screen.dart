@@ -48,7 +48,15 @@ class ConfigPickerScreen extends StatefulWidget {
   final ValueChanged<Xlen> onDemoSelected;
 
   /// Called to boot a demo with a browser-picked folder mounted over 9P.
-  final void Function(Xlen xlen, NinePShare share) onDemoWithShare;
+  ///
+  /// The `refresh` argument re-reads the folder to pull in host-side
+  /// changes, or is `null` when the share cannot be refreshed.
+  final void Function(
+    Xlen xlen,
+    NinePShare share,
+    Future<void> Function()? refresh,
+  )
+  onDemoWithShare;
 
   @override
   State<ConfigPickerScreen> createState() => _ConfigPickerScreenState();
@@ -268,6 +276,7 @@ class _ConfigPickerScreenState extends State<ConfigPickerScreen> {
       widget.onDemoWithShare(
         Xlen.rv64,
         NinePShare(tag: _shareTag, backend: picked.backend),
+        picked.refresh,
       );
     } on Object catch (e) {
       _setError(e.toString());

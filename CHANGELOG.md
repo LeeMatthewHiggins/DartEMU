@@ -27,6 +27,11 @@
   truncations back to the folder asynchronously. The example demo gains a
   "Mount a folder & boot" button that shares a local folder into the guest
   at `/mnt/host`
+- A picked web share can be refreshed: `PickedShare.refresh` (and a
+  "Reload folder" control in the demo) re-reads the chosen directory and
+  merges host-side additions and edits into the guest's view — additive
+  and host-wins, so unsynced guest files are never clobbered. This softens
+  the one-shot snapshot for host→guest changes without a live-sync rewrite
 
 ## 0.5.0
 
