@@ -274,9 +274,21 @@ class FdtBuilder {
     endNode();
   }
 
+  /// Emits the HTIF console node.
+  ///
+  /// The `reg` property matters for firmware, not for the bundled kernel: the
+  /// original TinyEMU-era Linux locates HTIF through its `tohost`/`fromhost`
+  /// ELF symbols, but standalone firmware such as OpenSBI has no kernel
+  /// symbols to consult and can only find the registers through the device
+  /// tree. Advertising the range makes the console usable by both.
   void _buildHtifNode() {
-    beginNode('htif');
+    beginNodeNum('htif', MemoryMapLayout.htifBaseAddr);
     propStr('compatible', _DeviceTree.htifCompatible);
+    propU64Pair(
+      'reg',
+      MemoryMapLayout.htifBaseAddr,
+      MemoryMapLayout.htifSize,
+    );
     endNode();
   }
 

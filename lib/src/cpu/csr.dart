@@ -8,7 +8,17 @@ class CsrHandler {
 
   int read(int csrAddr) {
     _checkAccess(csrAddr);
+    final pmp = _readPmp(csrAddr);
+    if (pmp != null) return pmp;
     return switch (csrAddr) {
+      _Addr.mvendorid || _Addr.marchid || _Addr.mimpid || _Addr.mconfigptr => 0,
+      _Addr.menvcfg => state.menvcfg,
+      _Addr.menvcfgh => state.menvcfgh,
+      _Addr.mcountinhibit => state.mcountinhibit,
+      _Addr.mstatush => 0,
+      _Addr.mseccfg || _Addr.mseccfgh => 0,
+      _Addr.tselect => state.tselect,
+      _Addr.tdata1 || _Addr.tdata2 || _Addr.tdata3 || _Addr.tinfo => 0,
       _Addr.fflags => state.fflags,
       _Addr.frm => state.frm,
       _Addr.fcsr => state.fflags | (state.frm << _frmShift),
@@ -47,7 +57,30 @@ class CsrHandler {
 
   void write(int csrAddr, int value) {
     _checkAccess(csrAddr);
+    if (_writePmp(csrAddr, value)) return;
     switch (csrAddr) {
+      // Machine information registers are read-only; writes are ignored
+      // rather than faulting, matching common hardware behaviour.
+      case _Addr.mvendorid:
+      case _Addr.marchid:
+      case _Addr.mimpid:
+      case _Addr.mconfigptr:
+      case _Addr.mstatush:
+      case _Addr.mseccfg:
+      case _Addr.mseccfgh:
+      case _Addr.tdata1:
+      case _Addr.tdata2:
+      case _Addr.tdata3:
+      case _Addr.tinfo:
+        break;
+      case _Addr.menvcfg:
+        state.menvcfg = value;
+      case _Addr.menvcfgh:
+        state.menvcfgh = value;
+      case _Addr.mcountinhibit:
+        state.mcountinhibit = value;
+      case _Addr.tselect:
+        state.tselect = value;
       case _Addr.fflags:
         state.fflags = value & _fflagsMask;
       case _Addr.frm:
@@ -229,6 +262,47 @@ class CsrAccessException implements Exception {
       'at privilege ${privilege.name}';
 }
 
+/// Physical memory protection register access.
+///
+/// Reads return `null` when the address is outside a PMP window, letting the
+/// caller fall through to the ordinary CSR switch. On RV64 only even-numbered
+/// pmpcfg registers exist, so odd ones read as zero; registers beyond the
+/// implemented entry count also read as zero, so firmware enumerating the
+/// full architectural range terminates cleanly instead of faulting.
+///
+/// See `RiscVCpuState.pmpCfg` for why PMP is stored but not enforced.
+extension _PmpAccess on CsrHandler {
+  int? _readPmp(int csrAddr) {
+    if (csrAddr >= _Addr.pmpCfgBase && csrAddr <= _Addr.pmpCfgEnd) {
+      final index = csrAddr - _Addr.pmpCfgBase;
+      if (state.curXlen == 64 && index.isOdd) return 0;
+      final slot = state.curXlen == 64 ? index ~/ 2 : index;
+      return slot < RiscVCpuState.pmpCfgCount ? state.pmpCfg[slot] : 0;
+    }
+    if (csrAddr >= _Addr.pmpAddrBase && csrAddr <= _Addr.pmpAddrEnd) {
+      final index = csrAddr - _Addr.pmpAddrBase;
+      return index < RiscVCpuState.pmpEntryCount ? state.pmpAddr[index] : 0;
+    }
+    return null;
+  }
+
+  bool _writePmp(int csrAddr, int value) {
+    if (csrAddr >= _Addr.pmpCfgBase && csrAddr <= _Addr.pmpCfgEnd) {
+      final index = csrAddr - _Addr.pmpCfgBase;
+      if (state.curXlen == 64 && index.isOdd) return true;
+      final slot = state.curXlen == 64 ? index ~/ 2 : index;
+      if (slot < RiscVCpuState.pmpCfgCount) state.pmpCfg[slot] = value;
+      return true;
+    }
+    if (csrAddr >= _Addr.pmpAddrBase && csrAddr <= _Addr.pmpAddrEnd) {
+      final index = csrAddr - _Addr.pmpAddrBase;
+      if (index < RiscVCpuState.pmpEntryCount) state.pmpAddr[index] = value;
+      return true;
+    }
+    return false;
+  }
+}
+
 class _Addr {
   static const fflags = 0x001;
   static const frm = 0x002;
@@ -265,7 +339,34 @@ class _Addr {
   static const minstret = 0xB02;
   static const mcycleh = 0xB80;
   static const minstreth = 0xB82;
+
+  static const menvcfg = 0x30A;
+  static const menvcfgh = 0x31A;
+  static const mcountinhibit = 0x320;
+  static const mstatush = 0x310;
+  static const mseccfg = 0x747;
+  static const mseccfgh = 0x757;
+
+  /// Debug trigger module. No triggers are implemented; these exist so that
+  /// firmware probing them receives zero rather than an illegal instruction.
+  static const tselect = 0x7A0;
+  static const tdata1 = 0x7A1;
+  static const tdata2 = 0x7A2;
+  static const tdata3 = 0x7A3;
+  static const tinfo = 0x7A4;
+
+  /// Machine information registers — mandatory and read-only.
+  static const mvendorid = 0xF11;
+  static const marchid = 0xF12;
+  static const mimpid = 0xF13;
   static const mhartid = 0xF14;
+  static const mconfigptr = 0xF15;
+
+  /// Physical memory protection register windows.
+  static const pmpCfgBase = 0x3A0;
+  static const pmpCfgEnd = 0x3AF;
+  static const pmpAddrBase = 0x3B0;
+  static const pmpAddrEnd = 0x3EF;
 }
 
 class _Mstatus {
