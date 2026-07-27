@@ -3,6 +3,7 @@ import 'dart:js_interop';
 import 'dart:js_interop_unsafe';
 import 'dart:typed_data';
 
+import 'package:dart_emu/src/device/virtio/ninep/ninep_memory_backend.dart';
 import 'package:dart_emu/src/device/virtio/ninep/ninep_path.dart';
 import 'package:dart_emu/src/device/virtio/ninep/ninep_web_share.dart';
 
@@ -35,20 +36,28 @@ Future<PickedShare?> pickDirectoryShare() async {
   } on Object {
     return null; // user dismissed the picker or the API is unavailable
   }
-  final entries = <WebFileEntry>[];
-  await _readInto(handle, NinePPath.root, entries);
-  final memory = buildMemoryShare(entries);
+  final memory = MemoryNinePBackend();
+  final mtimes = <String, double>{};
+  await _syncInto(handle, NinePPath.root, memory, mtimes);
   final sink = _FsaaWriteSink(_DirHandle(handle));
   return PickedShare(
     name: _Handle(handle).name,
     backend: WriteBackNinePBackend(memory, sink),
+    refresh: () => _syncInto(handle, NinePPath.root, memory, mtimes),
   );
 }
 
-Future<void> _readInto(
+/// Walks [dirHandle] and merges it into [memory], re-reading only files
+/// whose `lastModified` changed since the last sync (tracked in [mtimes]).
+///
+/// Additive and host-wins: host entries are added or updated while
+/// guest-only entries are left untouched, so an unchanged tree costs one
+/// cheap directory walk with no file re-reads — suitable for polling.
+Future<void> _syncInto(
   JSObject dirHandle,
   String prefix,
-  List<WebFileEntry> out,
+  MemoryNinePBackend memory,
+  Map<String, double> mtimes,
 ) async {
   final iterator = _AsyncIterator(_DirHandle(dirHandle).values());
   while (true) {
@@ -58,12 +67,15 @@ Future<void> _readInto(
     final handle = _Handle(entry);
     final childPath = NinePPath.join(prefix, handle.name);
     if (handle.kind == _directoryKind) {
-      out.add(WebFileEntry.directory(childPath));
-      await _readInto(entry, childPath, out);
+      memory.addDirectory(childPath);
+      await _syncInto(entry, childPath, memory, mtimes);
     } else {
       final file = await _FileHandle(entry).getFile().toDart;
+      final mtime = file.lastModified;
+      if (mtimes[childPath] == mtime) continue; // unchanged since last sync
       final buffer = await file.arrayBuffer().toDart;
-      out.add(WebFileEntry.file(childPath, buffer.toDart.asUint8List()));
+      memory.addFile(childPath, buffer.toDart.asUint8List());
+      mtimes[childPath] = mtime;
     }
   }
 }
@@ -239,6 +251,7 @@ extension type _Writable(JSObject _) implements JSObject {
 }
 
 extension type _File(JSObject _) implements JSObject {
+  external double get lastModified;
   external JSPromise<JSArrayBuffer> arrayBuffer();
 }
 

@@ -28,7 +28,7 @@ class WebFileEntry {
 
 /// A directory the user chose in the browser, loaded into a 9P share.
 class PickedShare {
-  const PickedShare({required this.name, required this.backend});
+  const PickedShare({required this.name, required this.backend, this.refresh});
 
   /// Display name of the chosen directory.
   final String name;
@@ -37,6 +37,15 @@ class PickedShare {
   /// opened read-write this is a [WriteBackNinePBackend] that mirrors guest
   /// changes back to the folder; otherwise a read-only in-memory snapshot.
   final NinePBackend backend;
+
+  /// Re-reads the chosen directory and merges host-side changes into the
+  /// backend, or `null` when the share cannot be refreshed.
+  ///
+  /// The initial read is a one-shot snapshot, so files added or edited on
+  /// the host afterwards are not visible until this runs. It is additive:
+  /// host files are added or updated (host content wins) and guest-only
+  /// entries are left untouched, so unsynced guest work is never clobbered.
+  final Future<void> Function()? refresh;
 }
 
 /// Builds an in-memory 9P share from a directory tree's [entries].
@@ -46,6 +55,18 @@ class PickedShare {
 /// for a `NinePShare` on any platform.
 MemoryNinePBackend buildMemoryShare(Iterable<WebFileEntry> entries) {
   final backend = MemoryNinePBackend();
+  mergeEntries(backend, entries);
+  return backend;
+}
+
+/// Merges a re-read directory tree's [entries] into an existing [backend].
+///
+/// Additive and host-wins: each entry is created or overwritten so host
+/// files and directories reflect their current contents, while entries the
+/// [backend] has but the tree does not (e.g. files the guest created that
+/// are not yet on the host) are left untouched. Used to refresh a mounted
+/// share without discarding unsynced guest work.
+void mergeEntries(MemoryNinePBackend backend, Iterable<WebFileEntry> entries) {
   for (final entry in entries) {
     if (entry.isDirectory) {
       backend.addDirectory(entry.path);
@@ -53,7 +74,6 @@ MemoryNinePBackend buildMemoryShare(Iterable<WebFileEntry> entries) {
       backend.addFile(entry.path, entry.bytes!);
     }
   }
-  return backend;
 }
 
 /// Receives guest mutations so they can be persisted outside the in-memory

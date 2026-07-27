@@ -64,6 +64,43 @@ void main() {
     });
   });
 
+  group('mergeEntries (refresh)', () {
+    test('adds host-only entries and overwrites changed files', () {
+      final backend = buildMemoryShare([_file('/a.txt', 'old')]);
+      mergeEntries(backend, [
+        _file('/a.txt', 'new host content'),
+        _file('/added.txt', 'appeared on host'),
+        const WebFileEntry.directory('/subdir'),
+      ]);
+      expect(utf8.decode(backend.bytesOf('/a.txt')!), 'new host content');
+      expect(utf8.decode(backend.bytesOf('/added.txt')!), 'appeared on host');
+      expect(backend.stat('/subdir')?.isDir, isTrue);
+    });
+
+    test('leaves guest-only entries untouched (no clobber)', () {
+      // The guest created guest_only.txt after mounting; it is not on the
+      // host, so a refresh must not remove it.
+      final backend = buildMemoryShare([_file('/host.txt', 'host')])
+        ..addTextFile('/guest_only.txt', 'unsynced guest work');
+      mergeEntries(backend, [_file('/host.txt', 'host v2')]);
+      expect(backend.bytesOf('/guest_only.txt'), isNotNull);
+      expect(
+        utf8.decode(backend.bytesOf('/guest_only.txt')!),
+        'unsynced guest work',
+      );
+      expect(utf8.decode(backend.bytesOf('/host.txt')!), 'host v2');
+    });
+
+    test('refreshing a directory keeps its existing children', () {
+      final backend = buildMemoryShare([
+        const WebFileEntry.directory('/d'),
+        _file('/d/keep.txt', 'keep'),
+      ]);
+      mergeEntries(backend, [const WebFileEntry.directory('/d')]);
+      expect(backend.stat('/d/keep.txt'), isNotNull);
+    });
+  });
+
   group('WriteBackNinePBackend', () {
     late MemoryNinePBackend mem;
     late _RecordingSink sink;

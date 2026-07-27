@@ -27,6 +27,7 @@ class _AppState extends State<App> {
   MachineConfig? _config;
   late Xlen? _demoXlen = widget.bootXlen;
   List<NinePShare> _demoShares = const [];
+  Future<void> Function()? _reloadShare;
 
   @override
   Widget build(BuildContext context) {
@@ -43,6 +44,7 @@ class _AppState extends State<App> {
       _config = null;
       _demoXlen = null;
       _demoShares = const [];
+      _reloadShare = null;
     });
   }
 
@@ -59,6 +61,7 @@ class _AppState extends State<App> {
         config: MachineConfig(xlen: _demoXlen!),
         useBundledDemoAssets: true,
         sharedFolders: _demoShares,
+        onReloadShare: _reloadShare,
         initialCrtEffect: widget.initialCrtEffect,
         onStopped: _reset,
       );
@@ -66,9 +69,10 @@ class _AppState extends State<App> {
     return ConfigPickerScreen(
       onConfigLoaded: (config) => setState(() => _config = config),
       onDemoSelected: (xlen) => setState(() => _demoXlen = xlen),
-      onDemoWithShare: (xlen, share) => setState(() {
+      onDemoWithShare: (xlen, share, refresh) => setState(() {
         _demoXlen = xlen;
         _demoShares = [share];
+        _reloadShare = refresh;
       }),
     );
   }

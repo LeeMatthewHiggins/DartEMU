@@ -47,6 +47,7 @@ class TerminalScreen extends StatefulWidget {
     required this.config,
     this.useBundledDemoAssets = false,
     this.sharedFolders = const [],
+    this.onReloadShare,
     this.initialCrtEffect,
     this.onStopped,
     super.key,
@@ -63,6 +64,10 @@ class TerminalScreen extends StatefulWidget {
   /// Only used together with [useBundledDemoAssets]; each is mounted at
   /// `/mnt/<tag>` when the first shell prompt appears.
   final List<NinePShare> sharedFolders;
+
+  /// Re-reads the mounted share to pull in host-side changes, or `null`
+  /// when no refreshable share is mounted. Surfaces a "Reload" control.
+  final Future<void> Function()? onReloadShare;
 
   /// If set, start with this CRT effect mode instead of off.
   final CrtEffect? initialCrtEffect;
@@ -93,7 +98,36 @@ class _TerminalScreenState extends State<TerminalScreen>
     super.initState();
     _launchEmulator();
     _loadShader();
+    _startAutoRefresh();
   }
+
+  /// Periodically re-syncs the mounted share so host-side changes reach the
+  /// guest without a manual reload. The sync is mtime-diffed, so an
+  /// unchanged folder costs only a directory walk.
+  void _startAutoRefresh() {
+    if (widget.onReloadShare == null) return;
+    _reloadTimer = Timer.periodic(_autoRefreshInterval, (_) {
+      unawaited(_refreshShare());
+    });
+  }
+
+  Timer? _reloadTimer;
+  var _refreshInFlight = false;
+
+  Future<void> _refreshShare() async {
+    final reload = widget.onReloadShare;
+    if (reload == null || _refreshInFlight) return;
+    _refreshInFlight = true;
+    try {
+      await reload();
+    } on Object catch (e) {
+      debugPrint('Share refresh failed: $e');
+    } finally {
+      _refreshInFlight = false;
+    }
+  }
+
+  static const _autoRefreshInterval = Duration(seconds: 3);
 
   Future<void> _loadShader() async {
     try {
@@ -198,6 +232,7 @@ class _TerminalScreenState extends State<TerminalScreen>
 
   @override
   void dispose() {
+    _reloadTimer?.cancel();
     _outputSub?.cancel();
     _statusSub?.cancel();
     _controller?.dispose();
@@ -245,12 +280,70 @@ class _TerminalScreenState extends State<TerminalScreen>
                   ),
                 ),
                 if (_crtShader != null) _buildCrtToggle(),
+                if (widget.onReloadShare != null) _buildReloadButton(),
               ],
             ),
           };
         },
       ),
     );
+  }
+
+  Widget _buildReloadButton() {
+    return Positioned(
+      left: _CrtToggleLayout.right,
+      top: _CrtToggleLayout.top,
+      child: GestureDetector(
+        onTap: _reloading ? null : _reloadShare,
+        child: Container(
+          padding: const EdgeInsets.symmetric(
+            horizontal: _CrtToggleLayout.horizontalPadding,
+            vertical: _CrtToggleLayout.verticalPadding,
+          ),
+          decoration: BoxDecoration(
+            color: Colors.black.withValues(
+              alpha: _CrtToggleLayout.backgroundOpacity,
+            ),
+            borderRadius: BorderRadius.circular(_CrtToggleLayout.borderRadius),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                _reloading ? Icons.hourglass_top : Icons.sync,
+                color: Colors.white70,
+                size: _CrtToggleLayout.iconSize,
+              ),
+              const SizedBox(width: 4),
+              const Text(
+                'Reload folder',
+                style: TextStyle(
+                  color: Colors.white70,
+                  fontSize: _CrtToggleLayout.fontSize,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  var _reloading = false;
+
+  /// Forces a re-sync now, then re-lists the share in the guest so the
+  /// refreshed contents are visible (v9fs runs uncached, so the next read
+  /// reflects the updated backend). Auto-refresh already keeps the backend
+  /// current; this is the "show me now" action.
+  Future<void> _reloadShare() async {
+    if (widget.onReloadShare == null || _reloading) return;
+    setState(() => _reloading = true);
+    await _refreshShare();
+    if (mounted) setState(() => _reloading = false);
+    if (widget.sharedFolders.isNotEmpty) {
+      final tag = widget.sharedFolders.first.tag;
+      _controller?.sendInput('ls -la /mnt/$tag\n');
+    }
   }
 
   Widget _buildCrtToggle() {
