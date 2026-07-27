@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 
 import 'package:dart_emu/src/cpu/cpu_executor.dart';
+import 'package:dart_emu/src/cpu/cpu_state.dart';
 import 'package:dart_emu/src/device/memory_block_device.dart';
 import 'package:dart_emu/src/device/virtio/virtio_9p.dart';
 import 'package:dart_emu/src/device/virtio/virtio_block.dart';
@@ -16,6 +17,7 @@ import 'package:dart_emu/src/machine/memory_map_layout.dart';
 import 'package:dart_emu/src/machine/phys_memory_map.dart';
 import 'package:dart_emu/src/machine/phys_memory_range.dart';
 import 'package:dart_emu/src/machine/plic.dart';
+import 'package:dart_emu/src/machine/sbi.dart';
 
 /// A RISC-V virtual machine supporting both RV64 and RV32.
 ///
@@ -104,6 +106,12 @@ class RiscVMachine {
   final CpuExecutor cpu;
   final Plic plic;
   final Clint clint;
+
+  /// Present when the emulator supplies SBI instead of M-mode firmware.
+  Sbi? _sbi;
+
+  /// The built-in SBI implementation, or null when firmware is loaded.
+  Sbi? get sbi => _sbi;
   final Htif htif;
   final List<VirtioDevice> virtioDevices = [];
   VirtioConsoleDevice? _console;
@@ -371,13 +379,70 @@ class RiscVMachine {
     virtioDevices.add(device);
   }
 
+  /// Boots a kernel image directly, with the emulator acting as M-mode
+  /// firmware.
+  ///
+  /// The kernel is placed at the offset its Image header asks for, the device
+  /// tree is handed over in `a1` per the RISC-V boot protocol, and the hart
+  /// enters supervisor mode. All traps are delegated to supervisor mode
+  /// because there is no machine-mode software to receive them.
+  void _bootKernelDirectly(Uint8List kernelData) {
+    const loadAddr = MemoryMapLayout.ramBaseAddr + _linuxTextOffset;
+    final ramPtr = memMap.getRamPointer(loadAddr);
+    if (ramPtr == null) {
+      throw StateError('RAM not found for direct kernel load');
+    }
+    ramPtr.setAll(0, kernelData);
+
+    final fdt = FdtBuilder().build(
+      ramSize: config.memorySizeBytes,
+      misa: cpu.state.misa,
+      xlen: config.xlen,
+      cmdLine: config.cmdLine,
+      virtioCount: virtioDevices.length,
+    );
+    _placeFdt(fdt);
+
+    clint.supervisorTimer = true;
+    final sbi = Sbi(
+      console: config.console,
+      setTimer: clint.programTimer,
+      shutdown: () => cpu.state.shutDown = true,
+      setSupervisorTimerPending: ({required pending}) => pending
+          ? cpu.setMip(_supervisorTimerBit)
+          : cpu.resetMip(_supervisorTimerBit),
+    );
+    _sbi = sbi;
+    cpu.state.onSupervisorEcall = sbi.handleEcall;
+
+    cpu.state
+      // Every trap must reach supervisor mode; nothing runs in machine mode.
+      ..medeleg = _delegateAll
+      ..mideleg = _delegateAll
+      // Firmware normally grants supervisor mode access to the cycle, time
+      // and instret counters. Without this the kernel takes an illegal
+      // instruction the first time it reads `time`.
+      ..mcounteren = _allCountersEnabled
+      ..privilege = PrivilegeLevel.supervisor
+      ..regs[_BootReg.a0] = cpu.state.mhartid
+      ..regs[_BootReg.a1] = _BootAddr.fdtBase
+      ..pc = loadAddr;
+  }
+
   void _loadAndBoot() {
+    final kernelData = _resolveImageData(config.kernelData);
+    if (config.useBuiltinSbi) {
+      if (kernelData == null) {
+        throw StateError('useBuiltinSbi requires a kernel image');
+      }
+      _bootKernelDirectly(kernelData);
+      return;
+    }
+
     final biosData = _resolveImageData(config.biosData);
     if (biosData == null) return;
 
     loadBios(biosData);
-
-    final kernelData = _resolveImageData(config.kernelData);
 
     final kernelOffset =
         (biosData.length + _kernelAlignment - 1) & ~(_kernelAlignment - 1);
@@ -436,6 +501,23 @@ class RiscVMachine {
 
   static const int _kernelAlign2Mb = 2 * 1024 * 1024;
   static const int _kernelAlign4Mb = 4 * 1024 * 1024;
+}
+
+/// Offset the Linux RISC-V Image header asks to be loaded at.
+const int _linuxTextOffset = 0x200000;
+
+/// Delegate every exception and interrupt to supervisor mode.
+const _delegateAll = 0xFFFF;
+
+/// mip/mie bit for the supervisor timer interrupt.
+const int _supervisorTimerBit = 1 << 5;
+
+/// Grants supervisor mode access to every hardware counter.
+const _allCountersEnabled = 0xFFFFFFFF;
+
+class _BootReg {
+  static const a0 = 10;
+  static const a1 = 11;
 }
 
 class _BootAddr {
