@@ -5,7 +5,6 @@ import 'dart:typed_data';
 
 import 'package:dart_emu/src/cpu/cpu_state.dart';
 import 'package:dart_emu/src/device/character_device.dart';
-import 'package:dart_emu/src/machine/machine_config.dart';
 import 'package:dart_emu/src/machine/phys_memory_map.dart';
 import 'package:dart_emu/src/machine/sbi.dart';
 import 'package:test/test.dart';
