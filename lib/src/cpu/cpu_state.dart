@@ -111,6 +111,15 @@ abstract class RiscVCpuState {
   int Function() rtcTimeRead = () => 0;
   void Function()? onTlbFlush;
 
+  /// Services an environment call taken from supervisor mode, returning
+  /// `true` when it was handled.
+  ///
+  /// Set when the machine provides the Supervisor Binary Interface itself
+  /// instead of running separate M-mode firmware. Left null when firmware
+  /// such as BBL is loaded, so its own SBI implementation handles the call
+  /// through the normal trap path.
+  bool Function(RiscVCpuState state)? onSupervisorEcall;
+
   final List<TlbEntry> tlbRead = List.generate(
     TlbConstants.size,
     (_) => TlbEntry(),

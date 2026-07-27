@@ -63,10 +63,28 @@ class Clint {
     }
   }
 
+  /// Raises a supervisor rather than machine timer interrupt when the timer
+  /// expires.
+  ///
+  /// M-mode firmware normally takes the machine timer interrupt and reflects
+  /// it down to the kernel as a supervisor one. With the emulator providing
+  /// SBI directly there is no firmware to do that, so the CLINT delivers the
+  /// interrupt at the level the kernel is waiting on.
+  bool supervisorTimer = false;
+
+  int get _pendingTimerBit => supervisorTimer ? _MipBits.stip : _MipBits.mtip;
+
+  /// Programs the compare value directly, as the SBI timer call does.
+  void programTimer(int ticks) {
+    _timecmpLow = ticks & _mask32;
+    _timecmpHigh = (ticks >> _wordBits) & _mask32;
+    resetMip(_pendingTimerBit);
+  }
+
   void checkTimer() {
     final time = rtcTime;
     if (time >= (_timecmpLow | (_timecmpHigh << _wordBits))) {
-      setMip(_MipBits.mtip);
+      setMip(_pendingTimerBit);
     }
   }
 
@@ -88,5 +106,6 @@ class _Offsets {
 }
 
 class _MipBits {
+  static const int stip = 1 << 5;
   static const int mtip = 1 << 7;
 }

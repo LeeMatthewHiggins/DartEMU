@@ -107,8 +107,15 @@ class CsrHandler {
       case _Addr.sip:
         state.mip = (state.mip & ~state.mideleg) | (value & state.mideleg);
       case _Addr.satp:
-        state.satp = value;
-        state.flushTlb();
+        // satp.MODE is WARL: a write selecting a translation scheme the
+        // implementation does not support must leave the register unchanged.
+        // Modern kernels rely on exactly this — they try SV57, then SV48,
+        // then SV39, reading satp back each time to see which one stuck.
+        // Accepting a mode we cannot walk would strand the kernel.
+        if (_isSupportedSatpMode(value)) {
+          state.satp = value;
+          state.flushTlb();
+        }
       case _Addr.mstatus:
         _setMstatus(value);
       case _Addr.misa:
@@ -134,6 +141,17 @@ class CsrHandler {
       case _Addr.mip:
         state.mip = value;
     }
+  }
+
+  /// Whether the translation mode encoded in a prospective `satp` value is
+  /// one this implementation can actually walk.
+  ///
+  /// RV32 offers only bare and SV32, both supported. RV64 supports bare and
+  /// SV39; SV48 and SV57 are rejected so the guest falls back.
+  bool _isSupportedSatpMode(int value) {
+    if (state.isRv32) return true;
+    final mode = (value >> _satpModeShift) & _satpModeMask;
+    return mode == _satpModeBare || mode == _satpModeSv39;
   }
 
   int _getMstatus(int mask) {
@@ -302,6 +320,11 @@ extension _PmpAccess on CsrHandler {
     return false;
   }
 }
+
+const _satpModeShift = 60;
+const _satpModeMask = 0xF;
+const _satpModeBare = 0;
+const _satpModeSv39 = 8;
 
 class _Addr {
   static const fflags = 0x001;
