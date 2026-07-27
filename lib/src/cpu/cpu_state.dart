@@ -80,6 +80,32 @@ abstract class RiscVCpuState {
   int satp = 0;
   int scounteren = 0;
 
+  /// Machine environment configuration (priv 1.12), and its RV32 high half.
+  int menvcfg = 0;
+  int menvcfgh = 0;
+
+  /// Per-counter inhibit bits.
+  int mcountinhibit = 0;
+
+  /// Physical memory protection configuration and address registers.
+  ///
+  /// Stored so that M-mode firmware such as OpenSBI can program them and read
+  /// back what it wrote. **The emulator does not enforce PMP**: the guest is
+  /// already contained by the emulator boundary, and the registers exist so
+  /// that standard firmware boots rather than to provide in-guest isolation.
+  final List<int> pmpCfg = List.filled(pmpCfgCount, 0);
+  final List<int> pmpAddr = List.filled(pmpEntryCount, 0);
+
+  /// Debug trigger module select register. No triggers are implemented, so
+  /// `tdata*` read as zero; the register exists because firmware probes it.
+  int tselect = 0;
+
+  /// Number of PMP address registers exposed.
+  static const pmpEntryCount = 16;
+
+  /// Number of PMP configuration registers exposed (packed, 8 entries each).
+  static const pmpCfgCount = 4;
+
   int loadReservation = -1;
 
   int Function() rtcTimeRead = () => 0;
