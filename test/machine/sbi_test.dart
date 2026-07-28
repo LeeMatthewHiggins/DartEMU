@@ -12,10 +12,18 @@ import 'package:test/test.dart';
 
 class _Console implements CharacterDevice {
   final out = <int>[];
+  final input = <int>[];
+
   @override
   void writeData(Uint8List data) => out.addAll(data);
+
   @override
-  Uint8List readData(int maxLength) => Uint8List(0);
+  Uint8List readData(int maxLength) {
+    final take = maxLength < input.length ? maxLength : input.length;
+    final chunk = Uint8List.fromList(input.take(take).toList());
+    input.removeRange(0, take);
+    return chunk;
+  }
 }
 
 class _Reg {
@@ -139,7 +147,42 @@ void main() {
       expect(h.state.regs[_Reg.a0], -1);
     });
 
-    test('legacy getchar returns queued input', () {
+    test('legacy getchar reads what was typed at the console device', () {
+      // Nothing pushes to the SBI directly during a real boot; input arrives
+      // on the console device, so a guest whose only console is the SBI can
+      // only be typed at if the read calls reach through to it.
+      final h = _Harness();
+      h.console.input.addAll('hi'.codeUnits);
+      h.state.regs[_Reg.a7] = _Eid.legacyGetchar;
+      h.sbi.handleEcall(h.state);
+      expect(h.state.regs[_Reg.a0], 0x68);
+      h.sbi.handleEcall(h.state);
+      expect(h.state.regs[_Reg.a0], 0x69);
+    });
+
+    test('debug console read fills the guest buffer from the console', () {
+      final h = _Harness();
+      const addr = 0x80000200;
+      h.state.memMap.registerRam(addr: 0x80000000, size: 0x1000);
+      h.console.input.addAll('abc'.codeUnits);
+
+      final r = h.call(_Eid.dbcn, 1, [8, addr]);
+      expect(r.error, 0);
+      expect(r.value, 3, reason: 'bytes read');
+      expect(
+        [for (var i = 0; i < 3; i++) h.state.memMap.physReadU8(addr + i)],
+        'abc'.codeUnits,
+      );
+    });
+
+    test('debug console read reports zero when nothing was typed', () {
+      final h = _Harness();
+      const addr = 0x80000200;
+      h.state.memMap.registerRam(addr: 0x80000000, size: 0x1000);
+      expect(h.call(_Eid.dbcn, 1, [8, addr]).value, 0);
+    });
+
+    test('queued input is consumed before the console device', () {
       final h = _Harness();
       h.sbi.receiveChar(0x41);
       h.state.regs[_Reg.a7] = _Eid.legacyGetchar;

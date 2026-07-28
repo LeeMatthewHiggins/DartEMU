@@ -387,10 +387,11 @@ Three constraints come with this path:
 
 - A modern kernel has no HTIF console driver, so `earlycon=sbi` is what
   carries output before VirtIO probes. Without it an early failure is silent.
-- The interactive console must be VirtIO, not SBI. The emulator routes guest
-  keystrokes to the VirtIO console device, so a kernel built with
-  `CONFIG_HVC_RISCV_SBI` lets the SBI driver claim `hvc0` first and leaves
-  you with a shell that prints but never reads.
+- Prefer VirtIO for the interactive console. A kernel built with
+  `CONFIG_HVC_RISCV_SBI` and no VirtIO console does reach a usable shell,
+  but its driver polls a byte per environment call: writing 128KB into the
+  guest took 31s that way against 1.5s over VirtIO. Enabling both is worse
+  still, since the SBI driver claims `hvc0` first.
 - `use_builtin_sbi` must stay off whenever a `bios:` is present. BBL and
   OpenSBI serve SBI calls from the trap path, so installing the emulator's
   would shadow the firmware.

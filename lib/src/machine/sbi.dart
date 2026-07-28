@@ -38,8 +38,23 @@ class Sbi {
 
   final List<int> _pendingInput = [];
 
-  /// Queues a byte for the legacy `console_getchar` call.
+  /// Queues a byte for the console read calls.
+  ///
+  /// Embedders that drive input themselves can push here; otherwise input is
+  /// taken from [console], the same device the write calls go to.
   void receiveChar(int ch) => _pendingInput.add(ch);
+
+  /// Takes the next input byte, or -1 when none is waiting.
+  ///
+  /// Reads through to [console] so a guest whose only console is this
+  /// interface can still be typed at. A guest that drives VirtIO console
+  /// instead will simply never make these calls.
+  int _takeChar() {
+    if (_pendingInput.isNotEmpty) return _pendingInput.removeAt(0);
+    final data = console?.readData(1);
+    if (data == null || data.isEmpty) return _noInput;
+    return data[0];
+  }
 
   /// Handles an environment call taken from supervisor mode.
   ///
@@ -147,7 +162,16 @@ class Sbi {
         }
         return _reply(state, _Error.success, written);
       case _DbcnFid.read:
-        return _reply(state, _Error.success, 0);
+        final len = state.regs[_Reg.a0];
+        final addr = state.regs[_Reg.a1];
+        var read = 0;
+        while (read < len) {
+          final ch = _takeChar();
+          if (ch == _noInput) break;
+          state.memMap.physWriteU8(addr + read, ch);
+          read++;
+        }
+        return _reply(state, _Error.success, read);
       case _DbcnFid.writeByte:
         _putChar(state.regs[_Reg.a0] & 0xFF);
         return _reply(state, _Error.success, 0);
@@ -168,9 +192,7 @@ class Sbi {
         _putChar(state.regs[_Reg.a0] & 0xFF);
         state.regs[_Reg.a0] = 0;
       case _Legacy.consoleGetchar:
-        state.regs[_Reg.a0] = _pendingInput.isEmpty
-            ? -1
-            : _pendingInput.removeAt(0);
+        state.regs[_Reg.a0] = _takeChar();
       case _Legacy.shutdown:
         shutdown();
         state.regs[_Reg.a0] = 0;
@@ -202,6 +224,9 @@ class Sbi {
   static const _implId = 9;
   static const _implVersion = 1;
   static const _hartStarted = 0;
+
+  /// What the legacy console read returns when nothing is waiting.
+  static const _noInput = -1;
   static const _rfenceMaxFid = 6;
   static const _word32Mask = 0xFFFFFFFF;
   static const int _word32Scale = 0x100000000;

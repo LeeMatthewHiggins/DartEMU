@@ -125,6 +125,17 @@ class AgentSandbox {
     // pure command output: no tty echo of the fed command, no prompt,
     // no line-continuation prompt.
     await exec("stty -echo 2>/dev/null; PS1=''; PS2=''");
+    if (!_booted) {
+      // The prompt appeared but the shell never answered. A guest whose
+      // console is write-only reaches exactly this state, and returning
+      // normally would report the failure as a success and defer the error
+      // to whichever exec ran next.
+      throw SandboxTimeoutException(
+        'boot reached a prompt but the guest shell did not respond; '
+        'check that the guest console accepts input',
+        _console.tail(),
+      );
+    }
     if (config.sharedFolder != null && config.autoMountShared) {
       await mountSharedFolder();
     }
