@@ -1,4 +1,5 @@
 @TestOn('vm')
+@Tags(['machine'])
 library;
 
 import 'dart:typed_data';
