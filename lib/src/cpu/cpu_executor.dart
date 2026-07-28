@@ -1252,6 +1252,15 @@ class CpuExecutor {
           _raiseIllegalInsn(insn);
           return false;
         }
+        // When the machine supplies SBI itself there is no M-mode firmware to
+        // trap into, so service the call in place and step over the ecall.
+        final sbi = state.onSupervisorEcall;
+        if (sbi != null &&
+            state.privilege == PrivilegeLevel.supervisor &&
+            sbi(state)) {
+          state.pc += instrSize;
+          return true;
+        }
         state.pendingException = _Exception.userEcall + state.privilege.value;
         return false;
 

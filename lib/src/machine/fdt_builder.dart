@@ -48,9 +48,13 @@ class _DeviceTree {
   static const clockFrequency = 2000000000;
   static const plicMaxDevices = 31;
   static const isaPrefixRv32 = 'rv32';
+
+  /// Canonical single-letter extension order from the ISA manual. The base
+  /// integer set `i` leads; `s` and `u` trail as the privileged levels.
+  static const isaCanonicalOrder = 'imafdqlcbjtpvnhsu';
+
   static const isaPrefixRv64 = 'rv64';
   static const isaLetterBase = 0x61;
-  static const isaLetterCount = 26;
 }
 
 class _InterruptIds {
@@ -385,15 +389,23 @@ class FdtBuilder {
     endNode();
   }
 
+  /// Builds the `riscv,isa` string from the [misa] extension bits.
+  ///
+  /// Single-letter extensions must appear in the canonical order the ISA
+  /// manual defines, not alphabetically. Older kernels tolerated any order,
+  /// but current Linux parses the string strictly and rejects the hart
+  /// outright — "does not support rv64ima" — if the letters are out of
+  /// sequence.
   String _buildIsaString(int misa, Xlen xlen) {
     final isaPrefix = switch (xlen) {
       Xlen.rv32 => _DeviceTree.isaPrefixRv32,
       Xlen.rv64 => _DeviceTree.isaPrefixRv64,
     };
     final buffer = StringBuffer(isaPrefix);
-    for (var i = 0; i < _DeviceTree.isaLetterCount; i++) {
-      if ((misa & (1 << i)) != 0) {
-        buffer.writeCharCode(_DeviceTree.isaLetterBase + i);
+    for (final letter in _DeviceTree.isaCanonicalOrder.split('')) {
+      final bit = letter.codeUnitAt(0) - _DeviceTree.isaLetterBase;
+      if ((misa & (1 << bit)) != 0) {
+        buffer.write(letter);
       }
     }
     return buffer.toString();

@@ -38,6 +38,7 @@ class MachineConfig {
     this.biosData,
     this.kernelData,
     this.initrdData,
+    this.useBuiltinSbi = false,
     this.rtcLocalTime = false,
     this.accel,
   });
@@ -69,6 +70,13 @@ class MachineConfig {
   final Uint8List? biosData;
   final Uint8List? kernelData;
   final Uint8List? initrdData;
+
+  /// Boots [kernelData] directly with the emulator providing the Supervisor
+  /// Binary Interface, instead of loading M-mode firmware such as BBL.
+  ///
+  /// Required by modern kernels, which expect SBI v0.2 or later.
+  final bool useBuiltinSbi;
+
   final bool rtcLocalTime;
   final String? accel;
 
@@ -91,6 +99,7 @@ class MachineConfig {
     Uint8List? biosData,
     Uint8List? kernelData,
     Uint8List? initrdData,
+    bool? useBuiltinSbi,
     bool? rtcLocalTime,
     String? accel,
   }) {
@@ -111,6 +120,7 @@ class MachineConfig {
       biosData: biosData ?? this.biosData,
       kernelData: kernelData ?? this.kernelData,
       initrdData: initrdData ?? this.initrdData,
+      useBuiltinSbi: useBuiltinSbi ?? this.useBuiltinSbi,
       rtcLocalTime: rtcLocalTime ?? this.rtcLocalTime,
       accel: accel ?? this.accel,
     );
