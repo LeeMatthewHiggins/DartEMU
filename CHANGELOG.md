@@ -1,7 +1,55 @@
 # Changelog
 
-## Unreleased
+## 0.6.0
 
+- Boot a modern Linux kernel with no firmware blob. The emulator now
+  implements the Supervisor Binary Interface itself (`lib/src/machine/sbi.dart`,
+  SBI v2.0 Base/TIME/IPI/RFENCE/HSM/SRST/DBCN plus the v0.1 legacy console
+  calls), so a current kernel can be booted directly instead of through BBL
+  or OpenSBI. Enable it with `MachineConfig(useBuiltinSbi: true)` or
+  `use_builtin_sbi: true` in a YAML config; a kernel built this way reaches a
+  shell in about three seconds. The scope is a single hart, so remote fences
+  and inter-processor interrupts reduce to local operations
+- A kernel builder: `tool/image_builder/build_kernel.sh [riscv64|riscv32]`
+  cross-compiles Linux 6.12 with the devices the emulator presents built in
+  rather than modular, and refuses to finish if any of them ended up as a
+  module — nothing can be loaded from a root filesystem that is not mounted
+  yet. Source and objects are cached per architecture, so changing the
+  config fragment costs an incremental rebuild
+- CSR and device-tree groundwork for machine-mode firmware: PMP windows,
+  `mvendorid`/`marchid`/`mimpid`/`mconfigptr`, `menvcfg`, `mcountinhibit`,
+  `mstatush`, `mseccfg` and the trigger registers are implemented rather
+  than trapping; `satp.MODE` is now WARL, so selecting an unsupported
+  translation scheme leaves the register unchanged instead of throwing; the
+  device tree emits a canonical ISA string and gives the HTIF node a `reg`
+  range that firmware can find without kernel symbols
+- Kernel images are loaded at the offset their Image header declares. The
+  load address was previously fixed at 2MB, which is the RV64 default; RV32
+  kernels are linked for 4MB and one loaded at 2MB never reached its first
+  instruction and produced no output at all
+- The counter-enable chain is enforced correctly. A user-mode read of
+  `cycle`, `time` or `instret` now requires the bit in both `mcounteren` and
+  `scounteren`, on the high halves as well as the low, since supervisor mode
+  cannot pass on access that machine mode withheld. Direct boot also grants
+  `scounteren`, which Linux never sets itself and firmware is expected to
+  provide — without it the vDSO's `rdtime` is an illegal instruction and the
+  first process to ask the time is killed
+- The SBI console can be read from, not just written to. The legacy
+  `console_getchar` and debug-console read calls now take input from the same
+  character device the write calls use, so a guest whose only console is this
+  interface can be typed at. VirtIO remains the better choice for an
+  interactive console: the SBI driver polls a byte per environment call,
+  which measured 31s against 1.5s over VirtIO for 128KB written into a guest
+- `AgentSandbox.boot()` now fails when the guest reaches a prompt but its
+  shell never responds, instead of returning normally and surfacing the
+  problem as an unrelated error from the next `exec`
+- `SandboxConfig.biosData` is optional, paired with a new `useBuiltinSbi`
+  flag and an assertion that exactly one Supervisor Binary Interface is
+  configured — firmware serves SBI calls from the trap path, so installing
+  both would leave the emulator shadowing the firmware
+- A TCC `tests2` conformance suite runs the upstream C test cases inside the
+  guest as an emulator correctness check
+- The web demo no longer registers a service worker
 - VirtIO-9P shared filesystem: a new `Virtio9pDevice` speaks 9P2000.u to
   the guest's `v9fs` client, exposing a host folder (or an in-memory tree)
   as a mountable share. Add shares via `MachineConfig.sharedFolders`
