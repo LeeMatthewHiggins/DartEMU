@@ -79,6 +79,8 @@
     "SRST",
     "syscall",
     "timeh",
+    "upstreamed",
+    "userspace",
     "vDSO",
     "Virt",
     "Virtio",

@@ -345,6 +345,7 @@ with no firmware blob to build, ship or debug:
 
 ```sh
 tool/image_builder/build_kernel.sh            # Linux 6.12 for riscv64
+tool/image_builder/build_kernel.sh riscv32    # ... and for riscv32
 ```
 
 This cross-compiles a kernel with everything the emulator presents built in
@@ -353,13 +354,16 @@ ext2 root images — because nothing can be loaded as a module before the root
 filesystem is mounted. The build refuses to finish if any of those ended up
 modular. Override the version with `KERNEL_VERSION=6.12.41`.
 
-The result is about 15MB and reaches a shell in roughly three seconds. That
-is larger than the 3.8MB BBL-era kernel because it starts from the stock
-`riscv` defconfig; the fragment trims the subsystems the emulator has no
-hardware for, but going substantially smaller would mean building a minimal
-config from scratch. Source and object files are cached in
-`tool/image_builder/.kernel-cache`, so changing the fragment costs an
-incremental rebuild rather than another download.
+The result is around 7MB and reaches a shell in roughly three seconds. Each
+architecture keeps its own tree under `tool/image_builder/.kernel-cache`, so
+changing the config fragment costs an incremental rebuild rather than another
+download and full compile.
+
+Note that RV32 needs a userspace to match. The `root-riscv32.bin` demo asset
+predates upstream RISC-V support and is built against a 2017 glibc; RV32 was
+upstreamed with a 64-bit-`time_t`-only syscall ABI, so that userspace cannot
+run on any current RV32 kernel regardless of configuration. Build a modern
+one with `tool/image_builder/build_buildroot.sh`.
 
 Boot it by setting `use_builtin_sbi`, and note there is no `bios:` line:
 
