@@ -16,6 +16,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 COPY build_kernel_image.sh /build_kernel_image.sh
 COPY dartemu.config /dartemu.config
+COPY dartemu-rv32.config /dartemu-rv32.config
 RUN chmod +x /build_kernel_image.sh
 
 ENTRYPOINT ["/build_kernel_image.sh"]

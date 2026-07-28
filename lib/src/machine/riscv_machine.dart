@@ -417,7 +417,8 @@ class RiscVMachine {
   /// enters supervisor mode. All traps are delegated to supervisor mode
   /// because there is no machine-mode software to receive them.
   void _bootKernelDirectly(Uint8List kernelData) {
-    const loadAddr = MemoryMapLayout.ramBaseAddr + _linuxTextOffset;
+    final loadAddr =
+        MemoryMapLayout.ramBaseAddr + _linuxTextOffset(kernelData, config.xlen);
     final ramPtr = memMap.getRamPointer(loadAddr);
     if (ramPtr == null) {
       throw StateError('RAM not found for direct kernel load');
@@ -526,8 +527,41 @@ class RiscVMachine {
   static const int _kernelAlign4Mb = 4 * 1024 * 1024;
 }
 
-/// Offset the Linux RISC-V Image header asks to be loaded at.
-const int _linuxTextOffset = 0x200000;
+/// Offset from the start of RAM that a Linux Image asks to be loaded at.
+///
+/// A RISC-V `Image` opens with a header declaring the offset it was linked
+/// for, so read it rather than assume: the defaults differ by architecture —
+/// 2MB on RV64 and 4MB on RV32 — and loading at the wrong one produces a
+/// kernel that never reaches its first instruction and prints nothing at all.
+int _linuxTextOffset(Uint8List image, Xlen xlen) {
+  final fallback = xlen == Xlen.rv32
+      ? _LinuxImage.textOffsetRv32
+      : _LinuxImage.textOffsetRv64;
+  if (image.length < _LinuxImage.headerSize) return fallback;
+
+  final view = ByteData.sublistView(image);
+  if (view.getUint32(_LinuxImage.magic2Offset, Endian.little) !=
+      _LinuxImage.magic2) {
+    return fallback;
+  }
+
+  final declared = view.getUint64(_LinuxImage.textOffsetOffset, Endian.little);
+  // M-mode images declare an offset of zero, which the emulator cannot honour
+  // because the device tree and boot stub occupy the base of RAM.
+  return declared == 0 ? fallback : declared;
+}
+
+/// Field offsets in `struct riscv_image_header`.
+class _LinuxImage {
+  static const headerSize = 64;
+  static const textOffsetOffset = 8;
+  static const magic2Offset = 56;
+
+  /// `RSC\x05`, little endian.
+  static const magic2 = 0x05435352;
+  static const textOffsetRv64 = 0x200000;
+  static const textOffsetRv32 = 0x400000;
+}
 
 /// Delegate every exception and interrupt to supervisor mode.
 const _delegateAll = 0xFFFF;

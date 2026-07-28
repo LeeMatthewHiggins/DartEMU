@@ -11,17 +11,23 @@ IMAGE_NAME="dartemu-kernel-builder"
 KERNEL_SERIES="${KERNEL_SERIES:-6.12}"
 KERNEL_VERSION="${KERNEL_VERSION:-6.12.41}"
 
-case "${1:-}" in
-  -h|--help)
-    echo "Usage: $0"
+TARGET_ARCH="${1:-riscv64}"
+
+case "${TARGET_ARCH}" in
+  riscv64|riscv32) ;;
+  -h|--help|*)
+    echo "Usage: $0 [riscv64|riscv32]"
     echo
-    echo "Cross-compiles a modern Linux kernel for riscv64 with the devices"
-    echo "the emulator presents built in. The result boots directly, with no"
-    echo "BBL or OpenSBI: set useBuiltinSbi on the machine config instead."
+    echo "Cross-compiles a modern Linux kernel with the devices the emulator"
+    echo "presents built in. The result boots directly, with no BBL or"
+    echo "OpenSBI: set useBuiltinSbi on the machine config instead."
     echo
     echo "Override the version with:"
     echo "  KERNEL_VERSION=6.12.41 KERNEL_SERIES=6.12 $0"
-    exit 0
+    case "${TARGET_ARCH}" in
+      -h|--help) exit 0 ;;
+      *) exit 1 ;;
+    esac
     ;;
 esac
 
@@ -30,15 +36,16 @@ docker build -t "${IMAGE_NAME}" "${SCRIPT_DIR}/kernel"
 
 mkdir -p "${KERNEL_DIR}" "${CACHE_DIR}"
 
-echo "Cross-compiling Linux ${KERNEL_VERSION} (several minutes)..."
+echo "Cross-compiling Linux ${KERNEL_VERSION} for ${TARGET_ARCH} (several minutes)..."
 docker run --rm \
   -v "${KERNEL_DIR}:/output" \
   -v "${CACHE_DIR}:/cache" \
   -e "KERNEL_SERIES=${KERNEL_SERIES}" \
   -e "KERNEL_VERSION=${KERNEL_VERSION}" \
+  -e "TARGET_ARCH=${TARGET_ARCH}" \
   "${IMAGE_NAME}"
 
-KERNEL_FILE="${KERNEL_DIR}/kernel-riscv64-${KERNEL_SERIES}.bin"
+KERNEL_FILE="${KERNEL_DIR}/kernel-${TARGET_ARCH}-${KERNEL_SERIES}.bin"
 
 if [ -f "${KERNEL_FILE}" ]; then
   echo
