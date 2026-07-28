@@ -3,6 +3,7 @@ library;
 
 import 'package:dart_emu/src/cpu/cpu_state.dart';
 import 'package:dart_emu/src/cpu/csr.dart';
+import 'package:dart_emu/src/machine/machine_config.dart';
 import 'package:dart_emu/src/machine/phys_memory_map.dart';
 import 'package:test/test.dart';
 
@@ -14,6 +15,11 @@ class _Csr {
   static const time = 0xC01;
   static const cycle = 0xC00;
   static const instret = 0xC02;
+
+  /// RV32 splits each counter across a low and a high CSR.
+  static const cycleh = 0xC80;
+  static const timeh = 0xC81;
+  static const instreth = 0xC82;
 }
 
 class _Bit {
@@ -27,8 +33,9 @@ class _Bit {
   required PrivilegeLevel privilege,
   int mcounteren = 0,
   int scounteren = 0,
+  Xlen xlen = Xlen.rv64,
 }) {
-  final state = RiscVCpuState(memMap: PhysMemoryMap())
+  final state = RiscVCpuState(memMap: PhysMemoryMap(), xlen: xlen)
     ..privilege = privilege
     ..mcounteren = mcounteren
     ..scounteren = scounteren;
@@ -36,6 +43,83 @@ class _Bit {
 }
 
 void main() {
+  group('RV32 counter high halves', () {
+    ({CsrHandler csr, RiscVCpuState state}) rv32({
+      required PrivilegeLevel privilege,
+      int mcounteren = 0,
+      int scounteren = 0,
+    }) => _harness(
+      privilege: privilege,
+      mcounteren: mcounteren,
+      scounteren: scounteren,
+      xlen: Xlen.rv32,
+    );
+
+    test('user mode needs both registers, as the low halves do', () {
+      // A high half is the same counter. Checking only scounteren here would
+      // leave a bypass: the value machine mode withheld is still readable,
+      // just 32 bits at a time.
+      final h = rv32(privilege: PrivilegeLevel.user, scounteren: _Bit.all);
+      expect(() => h.csr.read(_Csr.cycleh), throwsA(isA<CsrAccessException>()));
+      expect(
+        () => h.csr.read(_Csr.instreth),
+        throwsA(isA<CsrAccessException>()),
+      );
+      expect(() => h.csr.read(_Csr.timeh), throwsA(isA<CsrAccessException>()));
+    });
+
+    test('user mode is refused when supervisor mode withholds them', () {
+      final h = rv32(privilege: PrivilegeLevel.user, mcounteren: _Bit.all);
+      expect(() => h.csr.read(_Csr.cycleh), throwsA(isA<CsrAccessException>()));
+      expect(
+        () => h.csr.read(_Csr.instreth),
+        throwsA(isA<CsrAccessException>()),
+      );
+    });
+
+    test('user mode reads them when both registers grant it', () {
+      final h = rv32(
+        privilege: PrivilegeLevel.user,
+        mcounteren: _Bit.all,
+        scounteren: _Bit.all,
+      );
+      expect(() => h.csr.read(_Csr.cycleh), returnsNormally);
+      expect(() => h.csr.read(_Csr.instreth), returnsNormally);
+      expect(() => h.csr.read(_Csr.timeh), returnsNormally);
+    });
+
+    test('supervisor mode needs only mcounteren', () {
+      final h = rv32(
+        privilege: PrivilegeLevel.supervisor,
+        mcounteren: _Bit.all,
+      );
+      expect(() => h.csr.read(_Csr.cycleh), returnsNormally);
+      expect(() => h.csr.read(_Csr.instreth), returnsNormally);
+    });
+
+    test('a high half is gated by its own counter bit, not another', () {
+      final h = rv32(
+        privilege: PrivilegeLevel.user,
+        mcounteren: _Bit.cycle,
+        scounteren: _Bit.cycle,
+      );
+      expect(() => h.csr.read(_Csr.cycleh), returnsNormally);
+      expect(
+        () => h.csr.read(_Csr.instreth),
+        throwsA(isA<CsrAccessException>()),
+      );
+    });
+
+    test('RV64 has no high halves to read', () {
+      final h = _harness(
+        privilege: PrivilegeLevel.machine,
+        mcounteren: _Bit.all,
+        scounteren: _Bit.all,
+      );
+      expect(() => h.csr.read(_Csr.cycleh), throwsA(isA<CsrAccessException>()));
+    });
+  });
+
   group('machine mode', () {
     test('reads counters regardless of the enable registers', () {
       final h = _harness(privilege: PrivilegeLevel.machine);

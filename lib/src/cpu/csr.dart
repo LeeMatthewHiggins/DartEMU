@@ -230,16 +230,9 @@ class CsrHandler {
     if (!state.isRv32) {
       throw CsrAccessException(csrAddr, state.privilege);
     }
-    final lowAddr = csrAddr - _counterHighOffset;
-    final counterBit = 1 << (lowAddr & _counterBitMask);
-    if (state.privilege.value < PrivilegeLevel.machine.value) {
-      final counteren = state.privilege.value < PrivilegeLevel.supervisor.value
-          ? state.scounteren
-          : state.mcounteren;
-      if ((counteren & counterBit) == 0) {
-        throw CsrAccessException(csrAddr, state.privilege);
-      }
-    }
+    // A high half is the same counter, so it is gated by the same bit as the
+    // low half rather than by one of its own.
+    _checkCounterAccess(csrAddr - _counterHighOffset);
     return (state.instructionCounter >> _counterHighShift) & _counterHighMask;
   }
 
