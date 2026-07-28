@@ -86,6 +86,7 @@ class AgentSandbox {
     memorySizeMb: config.memorySizeMb,
     biosData: config.biosData,
     kernelData: config.kernelData,
+    useBuiltinSbi: config.useBuiltinSbi,
     cmdLine: config.cmdLine,
     console: _console,
     blockDevices: [MemoryBlockDevice.fromData(config.rootfsData)],

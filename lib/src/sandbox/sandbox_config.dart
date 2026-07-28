@@ -10,9 +10,10 @@ import 'package:dart_emu/src/machine/machine_config.dart';
 /// backing images are never mutated.
 class SandboxConfig {
   SandboxConfig({
-    required this.biosData,
     required this.kernelData,
     required this.rootfsData,
+    this.biosData,
+    this.useBuiltinSbi = false,
     this.xlen = Xlen.rv64,
     this.memorySizeMb = 128,
     this.cmdLine = 'console=hvc0 root=/dev/vda rw',
@@ -24,10 +25,26 @@ class SandboxConfig {
     this.bootTimeout = const Duration(seconds: 30),
     this.defaultTimeout = const Duration(seconds: 30),
     this.defaultMaxInstructions,
-  });
+  }) : assert(
+         (biosData != null) != useBuiltinSbi,
+         'Provide exactly one Supervisor Binary Interface: firmware through '
+         'biosData, or the emulator itself through useBuiltinSbi. Firmware '
+         'services SBI calls from the trap path, so installing both would '
+         'leave the emulator shadowing the firmware.',
+       );
 
   /// Bootloader (BBL/OpenSBI) image.
-  final Uint8List biosData;
+  ///
+  /// Null when [useBuiltinSbi] is set and the emulator supplies the
+  /// Supervisor Binary Interface itself, which is how a modern kernel boots.
+  final Uint8List? biosData;
+
+  /// Whether the emulator acts as machine-mode firmware.
+  ///
+  /// Set this instead of [biosData] to boot a kernel with no firmware blob.
+  /// Such a kernel needs `earlycon=sbi` on the command line: it has no HTIF
+  /// console driver, so without it an early failure produces no output.
+  final bool useBuiltinSbi;
 
   /// Linux kernel image.
   final Uint8List kernelData;

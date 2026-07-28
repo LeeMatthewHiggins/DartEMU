@@ -335,6 +335,48 @@ available for RV64 — upstream TCC has no riscv32 backend.
 Images are packaged as ZIP bundles in `data/` that the Flutter app can load
 via drag-and-drop or file picker.
 
+## Building a Modern Kernel
+
+The images above pair an older kernel with BBL, which supplies the
+Supervisor Binary Interface (SBI) that Linux calls for timers, console
+output and shutdown. The emulator can instead act as machine-mode firmware
+itself and provide that interface directly, which lets a current kernel boot
+with no firmware blob to build, ship or debug:
+
+```sh
+tool/image_builder/build_kernel.sh            # Linux 6.12 for riscv64
+```
+
+This cross-compiles a kernel with everything the emulator presents built in
+rather than modular — VirtIO MMIO, block, console and 9P, plus ext4 for the
+ext2 root images — because nothing can be loaded as a module before the root
+filesystem is mounted. Override the version with `KERNEL_VERSION=6.12.41`.
+
+Boot it by setting `use_builtin_sbi`, and note there is no `bios:` line:
+
+```yaml
+version: 1
+machine: riscv64
+memory_size: 256
+kernel: kernel/kernel-riscv64-6.12.bin
+use_builtin_sbi: true
+cmdline: "console=hvc0 earlycon=sbi root=/dev/vda rw init=/init loglevel=7"
+drive0:
+  file: rootfs/alpine-riscv64-rootfs.bin
+```
+
+Two constraints come with this path. A modern kernel has no HTIF console
+driver, so `earlycon=sbi` is what carries output before VirtIO probes —
+without it, an early failure is silent. And `use_builtin_sbi` must stay off
+whenever a `bios:` is present: BBL and OpenSBI provide their own SBI through
+the trap path, and installing the emulator's would shadow it.
+
+The equivalent in library code is `MachineConfig(useBuiltinSbi: true)`. The
+interface itself lives in [`lib/src/machine/sbi.dart`](lib/src/machine/sbi.dart)
+and covers SBI v2.0 Base, TIME, IPI, RFENCE, HSM, SRST and DBCN, plus the
+v0.1 legacy console calls. It assumes a single hart, so remote fences and
+inter-processor interrupts reduce to local operations.
+
 ## Configuration
 
 Machine configuration uses YAML files:
