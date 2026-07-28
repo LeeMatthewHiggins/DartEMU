@@ -350,7 +350,16 @@ tool/image_builder/build_kernel.sh            # Linux 6.12 for riscv64
 This cross-compiles a kernel with everything the emulator presents built in
 rather than modular — VirtIO MMIO, block, console and 9P, plus ext4 for the
 ext2 root images — because nothing can be loaded as a module before the root
-filesystem is mounted. Override the version with `KERNEL_VERSION=6.12.41`.
+filesystem is mounted. The build refuses to finish if any of those ended up
+modular. Override the version with `KERNEL_VERSION=6.12.41`.
+
+The result is about 15MB and reaches a shell in roughly three seconds. That
+is larger than the 3.8MB BBL-era kernel because it starts from the stock
+`riscv` defconfig; the fragment trims the subsystems the emulator has no
+hardware for, but going substantially smaller would mean building a minimal
+config from scratch. Source and object files are cached in
+`tool/image_builder/.kernel-cache`, so changing the fragment costs an
+incremental rebuild rather than another download.
 
 Boot it by setting `use_builtin_sbi`, and note there is no `bios:` line:
 
@@ -365,11 +374,17 @@ drive0:
   file: rootfs/alpine-riscv64-rootfs.bin
 ```
 
-Two constraints come with this path. A modern kernel has no HTIF console
-driver, so `earlycon=sbi` is what carries output before VirtIO probes —
-without it, an early failure is silent. And `use_builtin_sbi` must stay off
-whenever a `bios:` is present: BBL and OpenSBI provide their own SBI through
-the trap path, and installing the emulator's would shadow it.
+Three constraints come with this path:
+
+- A modern kernel has no HTIF console driver, so `earlycon=sbi` is what
+  carries output before VirtIO probes. Without it an early failure is silent.
+- The interactive console must be VirtIO, not SBI. The emulator routes guest
+  keystrokes to the VirtIO console device, so a kernel built with
+  `CONFIG_HVC_RISCV_SBI` lets the SBI driver claim `hvc0` first and leaves
+  you with a shell that prints but never reads.
+- `use_builtin_sbi` must stay off whenever a `bios:` is present. BBL and
+  OpenSBI serve SBI calls from the trap path, so installing the emulator's
+  would shadow the firmware.
 
 The equivalent in library code is `MachineConfig(useBuiltinSbi: true)`. The
 interface itself lives in [`lib/src/machine/sbi.dart`](lib/src/machine/sbi.dart)

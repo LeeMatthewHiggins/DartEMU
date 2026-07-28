@@ -441,6 +441,11 @@ class RiscVMachine {
       // and instret counters. Without this the kernel takes an illegal
       // instruction the first time it reads `time`.
       ..mcounteren = _allCountersEnabled
+      // The same grant has to be extended from supervisor mode to user mode.
+      // Linux never writes scounteren itself — OpenSBI and BBL set it before
+      // handing over — so leaving it clear makes the vDSO's `rdtime` an
+      // illegal instruction and kills the first process that asks the time.
+      ..scounteren = _allCountersEnabled
       ..privilege = PrivilegeLevel.supervisor
       ..regs[_BootReg.a0] = cpu.state.mhartid
       ..regs[_BootReg.a1] = _BootAddr.fdtBase

@@ -24,7 +24,7 @@ void main() {
     memorySizeMb: 256,
     // earlycon=sbi is what carries output before VirtIO probes; a modern
     // kernel has no HTIF console driver to fall back on.
-    cmdLine: 'console=hvc0 earlycon=sbi root=/dev/vda rw init=/init',
+    cmdLine: 'console=hvc0 earlycon=sbi root=/dev/vda rw',
     bootTimeout: const Duration(seconds: 180),
     defaultTimeout: const Duration(seconds: 60),
   );
@@ -52,9 +52,15 @@ void main() {
         expect(release.stdout, startsWith('6.'));
       });
 
-      test('mounted the VirtIO block device as root', () async {
+      test('bound the VirtIO block device and mounted it as root', () async {
+        // The kernel reports the root mount as /dev/root rather than by its
+        // device name, so prove the driver bound by looking for the disk
+        // itself and check the mount separately.
+        final partitions = await sandbox.exec('cat /proc/partitions');
+        expect(partitions.stdout, contains('vda'));
+
         final mounts = await sandbox.exec('cat /proc/mounts');
-        expect(mounts.stdout, contains('/dev/vda'));
+        expect(mounts.stdout, contains(' / ext2 rw'));
       });
 
       test('took timer interrupts, so the SBI TIME extension works', () async {

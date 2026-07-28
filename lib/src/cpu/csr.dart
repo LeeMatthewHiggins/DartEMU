@@ -189,15 +189,21 @@ class CsrHandler {
     state.mstatus = (state.mstatus & ~mask) | (val & mask);
   }
 
+  /// Enforces the counter-enable chain for `cycle`, `time` and `instret`.
+  ///
+  /// Each privilege level grants the one below it. Supervisor mode needs the
+  /// bit set in `mcounteren`; user mode needs it in `scounteren` as well,
+  /// because a supervisor cannot hand on access it was never given.
   void _checkCounterAccess(int csrAddr) {
+    if (state.privilege.value >= PrivilegeLevel.machine.value) return;
+
     final counterBit = 1 << (csrAddr & _counterBitMask);
-    if (state.privilege.value < PrivilegeLevel.machine.value) {
-      final counteren = state.privilege.value < PrivilegeLevel.supervisor.value
-          ? state.scounteren
-          : state.mcounteren;
-      if ((counteren & counterBit) == 0) {
-        throw CsrAccessException(csrAddr, state.privilege);
-      }
+    var granted = (state.mcounteren & counterBit) != 0;
+    if (state.privilege.value < PrivilegeLevel.supervisor.value) {
+      granted = granted && (state.scounteren & counterBit) != 0;
+    }
+    if (!granted) {
+      throw CsrAccessException(csrAddr, state.privilege);
     }
   }
 
