@@ -362,8 +362,13 @@ download and full compile.
 Note that RV32 needs a userspace to match. The `root-riscv32.bin` demo asset
 predates upstream RISC-V support and is built against a 2017 glibc; RV32 was
 upstreamed with a 64-bit-`time_t`-only syscall ABI, so that userspace cannot
-run on any current RV32 kernel regardless of configuration. Build a modern
-one with `tool/image_builder/build_buildroot.sh`.
+run on any current RV32 kernel regardless of configuration. Pair the RV32
+kernel with a Buildroot image instead:
+
+```sh
+tool/image_builder/build_kernel.sh riscv32
+tool/image_builder/build_buildroot.sh
+```
 
 Boot it by setting `use_builtin_sbi`, and note there is no `bios:` line:
 
