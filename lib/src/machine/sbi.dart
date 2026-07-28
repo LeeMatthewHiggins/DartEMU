@@ -93,8 +93,22 @@ class Sbi {
 
   bool _handleTime(RiscVCpuState state, int fid) {
     if (fid != 0) return _reply(state, _Error.notSupported, 0);
-    _programTimer(state.regs[_Reg.a0]);
+    _programTimer(_readTimeArg(state));
     return _reply(state, _Error.success, 0);
+  }
+
+  /// Reads the 64-bit `stime_value` argument of a set-timer call.
+  ///
+  /// SBI passes values wider than a register as two XLEN-sized words, low
+  /// half first. On RV64 the whole value fits in `a0`; on RV32 it spans
+  /// `a0` and `a1`, and taking only `a0` would wrap the compare value every
+  /// 2^32 ticks — about seven minutes at the 10 MHz RTC — after which every
+  /// timer is programmed in the past and fires continuously.
+  int _readTimeArg(RiscVCpuState state) {
+    final low = state.regs[_Reg.a0];
+    if (!state.isRv32) return low;
+    final high = state.regs[_Reg.a1];
+    return (low & _word32Mask) + (high & _word32Mask) * _word32Scale;
   }
 
   /// Remote fences target other harts; with a single hart the memory model is
@@ -147,7 +161,8 @@ class Sbi {
   bool _handleLegacy(RiscVCpuState state, int eid) {
     switch (eid) {
       case _Legacy.setTimer:
-        _programTimer(state.regs[_Reg.a0]);
+        // The legacy call takes the same 64-bit value, split the same way.
+        _programTimer(_readTimeArg(state));
         state.regs[_Reg.a0] = 0;
       case _Legacy.consolePutchar:
         _putChar(state.regs[_Reg.a0] & 0xFF);
@@ -188,6 +203,8 @@ class Sbi {
   static const _implVersion = 1;
   static const _hartStarted = 0;
   static const _rfenceMaxFid = 6;
+  static const _word32Mask = 0xFFFFFFFF;
+  static const int _word32Scale = 0x100000000;
 }
 
 class _Reg {

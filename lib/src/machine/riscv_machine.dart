@@ -92,13 +92,15 @@ class RiscVMachine {
       );
 
     return RiscVMachine._(
-      config: config,
-      memMap: memMap,
-      cpu: cpu,
-      plic: plic,
-      clint: clint,
-      htif: htif,
-    ).._registerVirtioDevices();
+        config: config,
+        memMap: memMap,
+        cpu: cpu,
+        plic: plic,
+        clint: clint,
+        htif: htif,
+      )
+      .._registerVirtioDevices()
+      .._installBuiltinSbiIfConfigured();
   }
 
   final MachineConfig config;
@@ -379,6 +381,34 @@ class RiscVMachine {
     virtioDevices.add(device);
   }
 
+  /// Installs the emulator's own Supervisor Binary Interface.
+  ///
+  /// This is runtime wiring rather than boot state, so it belongs to any
+  /// machine built from a `useBuiltinSbi` config — including one produced by
+  /// [RiscVMachine.restore], which never runs the boot path. Installing it
+  /// only during boot would leave a restored machine with no SBI handler:
+  /// the next environment call would take the ordinary trap path into
+  /// machine mode that nothing occupies, and the timer would revert to
+  /// raising machine rather than supervisor interrupts.
+  void _installBuiltinSbiIfConfigured() {
+    if (!config.useBuiltinSbi) return;
+    _installBuiltinSbi();
+  }
+
+  void _installBuiltinSbi() {
+    clint.supervisorTimer = true;
+    final sbi = Sbi(
+      console: config.console,
+      setTimer: clint.programTimer,
+      shutdown: () => cpu.state.shutDown = true,
+      setSupervisorTimerPending: ({required pending}) => pending
+          ? cpu.setMip(_supervisorTimerBit)
+          : cpu.resetMip(_supervisorTimerBit),
+    );
+    _sbi = sbi;
+    cpu.state.onSupervisorEcall = sbi.handleEcall;
+  }
+
   /// Boots a kernel image directly, with the emulator acting as M-mode
   /// firmware.
   ///
@@ -402,18 +432,6 @@ class RiscVMachine {
       virtioCount: virtioDevices.length,
     );
     _placeFdt(fdt);
-
-    clint.supervisorTimer = true;
-    final sbi = Sbi(
-      console: config.console,
-      setTimer: clint.programTimer,
-      shutdown: () => cpu.state.shutDown = true,
-      setSupervisorTimerPending: ({required pending}) => pending
-          ? cpu.setMip(_supervisorTimerBit)
-          : cpu.resetMip(_supervisorTimerBit),
-    );
-    _sbi = sbi;
-    cpu.state.onSupervisorEcall = sbi.handleEcall;
 
     cpu.state
       // Every trap must reach supervisor mode; nothing runs in machine mode.

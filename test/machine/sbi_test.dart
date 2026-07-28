@@ -5,6 +5,7 @@ import 'dart:typed_data';
 
 import 'package:dart_emu/src/cpu/cpu_state.dart';
 import 'package:dart_emu/src/device/character_device.dart';
+import 'package:dart_emu/src/machine/machine_config.dart';
 import 'package:dart_emu/src/machine/phys_memory_map.dart';
 import 'package:dart_emu/src/machine/sbi.dart';
 import 'package:test/test.dart';
@@ -31,13 +32,14 @@ class _Eid {
   static const srst = 0x53525354;
   static const dbcn = 0x4442434E;
   static const unknown = 0x999999;
+  static const legacySetTimer = 0x00;
   static const legacyPutchar = 0x01;
   static const legacyGetchar = 0x02;
 }
 
 /// Drives [Sbi] the way a supervisor-mode `ecall` would.
 class _Harness {
-  _Harness() {
+  _Harness({this.xlen = Xlen.rv64}) {
     sbi = Sbi(
       console: console,
       setTimer: (ticks) => timerTicks = ticks,
@@ -46,7 +48,8 @@ class _Harness {
     );
   }
 
-  final state = RiscVCpuState(memMap: PhysMemoryMap());
+  final Xlen xlen;
+  late final state = RiscVCpuState(memMap: PhysMemoryMap(), xlen: xlen);
   final console = _Console();
   late final Sbi sbi;
   int? timerTicks;
@@ -99,6 +102,24 @@ void main() {
         isFalse,
         reason: 'a newly programmed timer must not read as already expired',
       );
+    });
+
+    test('RV32 combines the 64-bit value split across a0 and a1', () {
+      // SBI passes wide values low word first. Reading only a0 would wrap
+      // the compare every 2^32 ticks and fire the timer continuously.
+      final h = _Harness(xlen: Xlen.rv32)..call(_Eid.time, 0, [0x89ABCDEF, 5]);
+      expect(h.timerTicks, 0x5_89ABCDEF);
+    });
+
+    test('RV32 legacy set_timer also combines both halves', () {
+      final h = _Harness(xlen: Xlen.rv32)
+        ..call(_Eid.legacySetTimer, 0, [0x10, 2]);
+      expect(h.timerTicks, 0x2_00000010);
+    });
+
+    test('RV64 takes the whole value from a0 and ignores a1', () {
+      final h = _Harness()..call(_Eid.time, 0, [0x1_0000_0000, 0xDEAD]);
+      expect(h.timerTicks, 0x1_0000_0000);
     });
   });
 
