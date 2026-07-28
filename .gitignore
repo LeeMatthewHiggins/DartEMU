@@ -17,6 +17,10 @@ coverage/
 # Generated rootfs disk images (built via tool/image_builder)
 data/rootfs/
 
+# Cross-compiled kernels and their build cache (built via build_kernel.sh)
+data/kernel/
+tool/image_builder/.kernel-cache/
+
 # Zip bundles (too large for git — rebuild with tool/build_zip.sh)
 data/*.zip
 original/

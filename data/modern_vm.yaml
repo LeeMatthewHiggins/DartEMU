@@ -1,0 +1,10 @@
+version: 1
+machine: riscv64
+memory_size: 256
+kernel: kernel/kernel-riscv64-6.12.bin
+use_builtin_sbi: true
+cmdline: "console=hvc0 earlycon=sbi root=/dev/vda rw init=/init loglevel=7"
+drive0:
+  file: rootfs/alpine-riscv64-rootfs.bin
+eth0:
+  driver: user

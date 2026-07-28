@@ -49,6 +49,7 @@ class ConfigLoader {
       filesystemConfigs: _parseFilesystems(doc),
       ethernetConfigs: _parseEthernets(doc),
       rtcLocalTime: _getBool(doc, _Keys.rtcLocalTime) ?? false,
+      useBuiltinSbi: _getBool(doc, _Keys.useBuiltinSbi) ?? false,
       accel: _getString(doc, _Keys.accel),
     );
   }
@@ -172,6 +173,7 @@ class _Keys {
   static const driver = 'driver';
   static const ifname = 'ifname';
   static const rtcLocalTime = 'rtc_local_time';
+  static const useBuiltinSbi = 'use_builtin_sbi';
   static const accel = 'accel';
 }
 
