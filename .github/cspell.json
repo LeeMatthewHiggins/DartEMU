@@ -33,6 +33,7 @@
     "buildroot",
     "clunk",
     "cmdline",
+    "coreutils",
     "DBCN",
     "defconfig",
     "dotu",
