@@ -225,7 +225,8 @@ class HttpProxy {
       headers[entry.key] = entry.value;
     }
     for (final entry in upstream.injectHeaders.entries) {
-      headers[entry.key.toLowerCase()] = _substitute(entry.value);
+      final name = entry.key.toLowerCase();
+      headers[name] = _checkSendable(name, _substitute(entry.value));
     }
 
     return ProxyRequest(
@@ -252,6 +253,33 @@ class HttpProxy {
       path: '$base$tail',
       query: query < 0 ? null : path.substring(query + 1),
     );
+  }
+
+  /// Rejects a header value a browser cannot send, while it is still clear
+  /// whose value it is.
+  ///
+  /// An HTTP header carries bytes, so anything above U+00FF has no
+  /// representation in one. A key pasted from a rendered page can pick up a
+  /// non-breaking space or a zero-width character without looking any
+  /// different, and `fetch` then refuses the whole request with a TypeError
+  /// naming nothing — which sends the reader looking at the transport
+  /// instead of at the value they pasted.
+  static String _checkSendable(String name, String value) {
+    for (var i = 0; i < value.length; i++) {
+      final code = value.codeUnitAt(i);
+      if (code > 0xFF || code < 0x20 || code == 0x7F) {
+        throw ProxyRefusal(
+          _Http.credentialMissing,
+          'The value configured for the "$name" header contains a character '
+          'that cannot be sent in an HTTP header (code point U+'
+          '${code.toRadixString(16).toUpperCase().padLeft(4, '0')} at '
+          'position $i). A credential copied from a web page can pick up a '
+          'non-breaking space or a hidden character; retyping it usually '
+          'fixes this.',
+        );
+      }
+    }
+    return value;
   }
 
   /// Replaces `${NAME}` with the credential of that name.

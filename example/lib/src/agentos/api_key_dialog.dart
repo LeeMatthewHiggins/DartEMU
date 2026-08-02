@@ -53,6 +53,7 @@ class _ApiKeyDialogState extends State<ApiKeyDialog> {
   final _controller = TextEditingController();
   bool _obscured = true;
   String _model = AgentOsDemo.defaultModel;
+  String? _keyProblem;
 
   @override
   void dispose() {
@@ -60,8 +61,35 @@ class _ApiKeyDialogState extends State<ApiKeyDialog> {
     super.dispose();
   }
 
+  /// The position of the first character that cannot go in an HTTP header,
+  /// or -1 when the key is fine.
+  ///
+  /// Copying a key out of a rendered page can pick up a non-breaking space or
+  /// a zero-width character that looks like nothing at all. Caught here it
+  /// costs a retype; caught later it costs a boot, a question, and a browser
+  /// error that names neither the header nor the value.
+  static int _unsendableAt(String key) {
+    for (var i = 0; i < key.length; i++) {
+      final code = key.codeUnitAt(i);
+      if (code > 0xFF || code < 0x20 || code == 0x7F) {
+        return i;
+      }
+    }
+    return -1;
+  }
+
   void _boot() {
     final key = _controller.text.trim();
+    final bad = _unsendableAt(key);
+    if (bad >= 0) {
+      setState(
+        () => _keyProblem =
+            'There is a character at position ${bad + 1} that cannot be sent '
+            'in an HTTP header — copying a key out of a web page can pick up '
+            'a hidden one. Try retyping it.',
+      );
+      return;
+    }
     Navigator.of(context).pop(
       key.isEmpty
           ? ApiKeyChoice.keyless(_model)
@@ -103,6 +131,7 @@ class _ApiKeyDialogState extends State<ApiKeyDialog> {
                 decoration: InputDecoration(
                   labelText: 'OpenRouter key (optional)',
                   hintText: 'sk-or-...',
+                  errorText: _keyProblem,
                   border: const OutlineInputBorder(),
                   suffixIcon: IconButton(
                     icon: Icon(
@@ -112,6 +141,11 @@ class _ApiKeyDialogState extends State<ApiKeyDialog> {
                     onPressed: () => setState(() => _obscured = !_obscured),
                   ),
                 ),
+                onChanged: (_) {
+                  if (_keyProblem != null) {
+                    setState(() => _keyProblem = null);
+                  }
+                },
                 onSubmitted: (_) => _boot(),
               ),
               const SizedBox(height: _DialogLayout.spacing),
