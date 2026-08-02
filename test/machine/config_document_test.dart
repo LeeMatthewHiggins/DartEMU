@@ -1,7 +1,12 @@
-import 'package:dart_emu/dart_emu.dart';
+import 'package:dart_emu/src/machine/config_document.dart';
+import 'package:dart_emu/src/machine/machine_config.dart';
 import 'package:test/test.dart';
 
 /// The one reader of a machine's YAML.
+///
+/// Imported by path rather than through the package's umbrella library on
+/// purpose: coverage here is collected from what the tests import, and the
+/// umbrella reaches the whole machine, which would swamp the report.
 ///
 /// It exists as its own thing because there are two ways to fetch what a
 /// config names — files on a host, entries in a `.zip` in a browser — and
