@@ -2,16 +2,21 @@
 
 An agent that runs *inside* the emulated machine, as its only console.
 
-The [harness](../harness) drives a guest from outside: it opens a shell over
-the serial console, ships commands in as newline-delimited JSON, and reads
-results back out. That machinery exists because the agent and the machine are
-separated by a console. AgentOS removes the separation — the agent is a
-program in the guest, so running a command is `fork` and `exec`, and most of
-the transport disappears.
+Driving a guest from outside means opening a shell over the serial console
+and shipping commands in as newline-delimited JSON — machinery that exists
+only because the agent and the machine are separated by a console. AgentOS
+removes the separation: the agent is a program in the guest, so running a
+command is `fork` and `exec`, and the transport disappears with it.
 
-What is left is small: a shell tool, a plain-HTTP client, a chat-completions
-client, and a loop. It shares the harness's JSON reader rather than carrying
-a second copy.
+What is left is small — a shell tool, a plain-HTTP client, a
+chat-completions client and a loop — and it is the whole program.
+
+The outside arrangement is still available in Dart, through
+[`AgentSandbox`](../lib/src/sandbox/agent_sandbox.dart), which boots a guest
+and runs commands against it under wall-clock and instruction budgets. Reach
+for that when the image cannot be modified or the budgets must sit somewhere
+the guest cannot reach; reach for this when the machine should simply *be*
+an agent.
 
 ## The credential it does not have
 
