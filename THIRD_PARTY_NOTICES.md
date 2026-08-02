@@ -89,6 +89,18 @@ BusyBox (GPL-2.0-only) and musl libc (MIT).
 
 ---
 
+## `example/assets/fonts/JetBrainsMonoNL-*.ttf` — JetBrains Mono
+
+- **Licence:** SIL Open Font License 1.1 (full text in
+  `example/assets/fonts/LICENSE.txt`)
+- **Upstream:** <https://github.com/JetBrains/JetBrainsMono>, release
+  v2.304
+- **Copyright:** 2020 The JetBrains Mono Project Authors
+- The `NL` cut is the build without ligatures, which is what a
+  cell-based terminal wants.
+
+---
+
 ## Emulator lineage
 
 The emulator itself is an original Dart implementation, but it was
