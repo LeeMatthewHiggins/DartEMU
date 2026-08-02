@@ -30,6 +30,20 @@ The app supports three ways to boot:
 Pre-built ZIP bundles are available in the `data/` directory of the main
 package.
 
+## URL Parameters
+
+On web, the demo reads query parameters:
+
+| Parameter | Effect |
+| --- | --- |
+| `?boot=32` / `?boot=64` | Skip the picker and boot the bundled demo |
+| `?bundle=<url>` | Download a `.zip` VM bundle and preload it — the picker opens with the config parsed and only Boot left to press |
+| `?crt=full\|flat\|glass\|off` | Set the CRT effect |
+
+Relative bundle URLs resolve against the page's own address, so a bundle
+deployed next to the app (`?bundle=vms/alpine.zip`) always works. A
+cross-origin URL needs CORS headers from its host.
+
 ## Terminal Shortcuts
 
 `Ctrl+A` and `Ctrl+V` go to the guest shell (start-of-line and
