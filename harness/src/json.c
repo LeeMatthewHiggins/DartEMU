@@ -47,6 +47,10 @@ static bool buffer_reserve(Buffer *buffer, size_t extra) {
     }
     buffer->data = grown;
     buffer->cap = cap;
+    /* Keep the buffer a valid C string at all times. Without this an empty
+     * buffer hands back whatever realloc happened to return, which reads as
+     * zeroed memory on some allocators and as garbage on others. */
+    buffer->data[buffer->len] = '\0';
     return true;
 }
 
