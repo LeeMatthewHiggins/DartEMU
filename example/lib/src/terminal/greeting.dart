@@ -9,10 +9,12 @@ import 'package:dart_emu/dart_emu.dart';
 /// kept narrow so it does not wrap on a phone. Rows are padded to a
 /// fixed inner width and colour is applied to whole lines, so escape
 /// codes never affect alignment.
-String dartEmuGreeting(Xlen xlen) {
+/// [userland] describes what the guest runs, for images whose contents are
+/// not implied by the architecture.
+String dartEmuGreeting(Xlen xlen, {String? userland}) {
   final is64 = xlen == Xlen.rv64;
   final arch = is64 ? 'rv64' : 'rv32';
-  final toolchain = is64 ? 'cc (TCC) ready' : 'busybox userland';
+  final toolchain = userland ?? (is64 ? 'cc (TCC) ready' : 'busybox userland');
 
   final lines = <String>[
     '',

@@ -48,6 +48,7 @@ class TerminalScreen extends StatefulWidget {
   const TerminalScreen({
     required this.config,
     this.useBundledDemoAssets = false,
+    this.guestUserland,
     this.sharedFolders = const [],
     this.onReloadShare,
     this.initialCrtEffect,
@@ -60,6 +61,10 @@ class TerminalScreen extends StatefulWidget {
 
   /// If true, boot built-in bundled demo assets for this config's architecture.
   final bool useBundledDemoAssets;
+
+  /// What the guest runs, shown in the banner. Defaults to a description
+  /// inferred from the architecture.
+  final String? guestUserland;
 
   /// VirtIO-9P shares to expose and auto-mount once the shell is ready.
   ///
@@ -166,7 +171,9 @@ class _TerminalScreenState extends State<TerminalScreen>
   Future<void> _startEmulator() async {
     // Branded banner first, so the terminal is never blank while the
     // guest boots (and the demo is identifiable when embedded).
-    _terminal.write(dartEmuGreeting(widget.config.xlen));
+    _terminal.write(
+      dartEmuGreeting(widget.config.xlen, userland: widget.guestUserland),
+    );
 
     _statusSub = _controller!.status.listen((status) {
       if (!mounted) return;

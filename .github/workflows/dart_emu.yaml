@@ -61,6 +61,25 @@ jobs:
       - name: 🖥️ Machine tests
         run: dart test --run-skipped -t machine
 
+  # The `fetch` shim is the guest's only route out of a browser, and it is
+  # the one part of the proxy a VM test cannot execute at all.
+  browser-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 📚 Git Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: 🎯 Setup Dart
+        uses: dart-lang/setup-dart@65eb853c7ba17dde3be364c3d2858773e7144260 # v1.7.2
+        with:
+          sdk: "stable"
+
+      - name: 📦 Install Dependencies
+        run: dart pub get --no-example
+
+      - name: 🌐 Browser tests
+        run: dart test -p chrome test/net
+
   example-tests:
     runs-on: ubuntu-latest
     steps:
@@ -130,6 +149,31 @@ jobs:
       - name: 🧪 Harness unit tests
         working-directory: harness
         run: make test
+
+  agentos-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 📚 Git Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: 🔨 Build the in-guest agent
+        working-directory: agentos
+        run: make
+
+      - name: 🧪 AgentOS unit tests
+        working-directory: agentos
+        run: make test
+
+      # The binary that ships in the image is cross-compiled and static, so
+      # a change that only breaks that build would otherwise pass unnoticed.
+      - name: 📦 Install the riscv64 cross toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-riscv64-linux-gnu libc6-dev-riscv64-cross
+
+      - name: 🔨 Cross-compile for the guest
+        working-directory: agentos
+        run: make guest
 
   verify-version:
     runs-on: ubuntu-latest
