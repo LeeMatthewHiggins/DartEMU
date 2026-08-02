@@ -1,5 +1,6 @@
 import 'package:dart_emu/dart_emu.dart';
 import 'package:dart_emu_example/src/config/config_picker_screen.dart';
+import 'package:dart_emu_example/src/config/rv64_support.dart';
 import 'package:dart_emu_example/src/crt/crt_effect.dart';
 import 'package:dart_emu_example/src/terminal/terminal_screen.dart';
 import 'package:flutter/material.dart';
@@ -60,6 +61,11 @@ class _AppState extends State<App> {
         initialCrtEffect: widget.initialCrtEffect,
         onStopped: _reset,
       );
+    }
+    if (_demoXlen == Xlen.rv64 && !isRv64Supported) {
+      // A ?boot=64 link opened in a browser without WasmGC would crash on
+      // the 64-bit register file; landing on the picker is the kind option.
+      _demoXlen = null;
     }
     if (_demoXlen != null) {
       return TerminalScreen(

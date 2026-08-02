@@ -8,6 +8,7 @@ import 'package:dart_emu_example/src/config/config_summary_card.dart';
 import 'package:dart_emu_example/src/config/drop_target_area.dart';
 import 'package:dart_emu_example/src/config/folder_share_adapter.dart'
     as folder_share;
+import 'package:dart_emu_example/src/config/rv64_support.dart';
 import 'package:dart_emu_example/src/config/zip_config_loader.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
@@ -41,6 +42,7 @@ class ConfigPickerScreen extends StatefulWidget {
     required this.onDemoWithShare,
     this.prefillBundleUrl,
     this.bundleFetcher = fetchBundleBytes,
+    this.rv64Supported = isRv64Supported,
     super.key,
   });
 
@@ -53,6 +55,12 @@ class ConfigPickerScreen extends StatefulWidget {
 
   /// Downloads the prefill bundle; replaceable in tests.
   final BundleFetcher bundleFetcher;
+
+  /// Whether this build can run RV64 guests; replaceable in tests.
+  ///
+  /// False on the JavaScript web build, where the 64-bit register file
+  /// cannot be allocated and booting an RV64 config would crash.
+  final bool rv64Supported;
 
   /// Called with a resolved [MachineConfig] when a config is loaded.
   final ValueChanged<MachineConfig> onConfigLoaded;
@@ -138,7 +146,8 @@ class _ConfigPickerScreenState extends State<ConfigPickerScreen> {
                 _buildDemoDivider(),
                 const SizedBox(height: _PickerLayout.spacing),
                 _buildDemoSection(),
-                if (folder_share.isFolderPickerSupported) ...[
+                if (folder_share.isFolderPickerSupported &&
+                    widget.rv64Supported) ...[
                   const SizedBox(height: _PickerLayout.spacing),
                   _buildMountFolderButton(),
                 ],
@@ -387,6 +396,10 @@ class _ConfigPickerScreenState extends State<ConfigPickerScreen> {
   void _finishZipLoad(Uint8List bytes) {
     final config = ZipConfigLoader.load(bytes);
     if (!mounted) return;
+    if (config.xlen == Xlen.rv64 && !widget.rv64Supported) {
+      _setError(rv64UnsupportedMessage);
+      return;
+    }
     setState(() {
       _parsedConfig = config;
       _loading = false;
