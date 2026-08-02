@@ -251,13 +251,29 @@ bool llm_parse_reply(const char *body, size_t len, const AgentConfig *config,
     }
 
     /* A refusal from the host's proxy arrives in exactly this shape, so the
-     * agent can read why it was stopped instead of seeing a dead socket. */
+     * agent can read why it was stopped instead of seeing a dead socket.
+     *
+     * Which side refused matters more than it looks. "no credential" from the
+     * host and "no credential" from a provider read the same to whoever is
+     * watching, and send them looking in the wrong place — so the proxy
+     * marks its own, and anything unmarked is named as coming from beyond
+     * it. */
     const JsonValue *api_error = json_object_get(root, "error");
     if (api_error != NULL && api_error->type == JSON_OBJECT) {
+        const char *from = json_string_or(api_error, "type", "");
+        bool from_host = strcmp(from, "dartemu_proxy") == 0;
         const char *message =
             json_string_or(api_error, "message", "the API reported an error");
         if (error != NULL) {
-            *error = strdup(message);
+            Buffer explained;
+            buffer_init(&explained);
+            buffer_append_str(&explained, from_host
+                                              ? "this machine's host refused "
+                                                "the request: "
+                                              : "the model API refused the "
+                                                "request: ");
+            buffer_append_str(&explained, message);
+            *error = explained.data != NULL ? explained.data : strdup(message);
         }
         json_free(root);
         return false;
@@ -364,11 +380,20 @@ bool llm_complete(const AgentConfig *config, const Conversation *conversation,
 
     if (!ok) {
         if (error != NULL) {
-            *error = parse_error != NULL ? parse_error
-                                         : strdup("could not read the reply");
-        } else {
-            free(parse_error);
+            /* The status says which layer answered even when the message
+             * does not, and every layer here can produce a 401. */
+            Buffer explained;
+            buffer_init(&explained);
+            if (status != HTTP_OK) {
+                buffer_printf(&explained, "HTTP %d: ", status);
+            }
+            buffer_append_str(&explained,
+                              parse_error != NULL
+                                  ? parse_error
+                                  : "could not read the reply");
+            *error = explained.data;
         }
+        free(parse_error);
         return false;
     }
     if (status != HTTP_OK) {
