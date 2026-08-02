@@ -30,6 +30,7 @@ typedef struct {
     char *bios_path;
     char *kernel_path;
     char *cmdline;
+    char *share_spec; /* tag=path[,ro] */
     long memory_mb;
 
     char *transcript_path;

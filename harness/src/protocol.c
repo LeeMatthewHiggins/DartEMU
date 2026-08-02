@@ -58,6 +58,16 @@ bool protocol_encode_request(Buffer *out, const ExecRequest *request) {
         if (!buffer_append_str(out, ",\"timeout_ms\":")) return false;
         if (!json_write_number(out, (double)request->timeout_ms)) return false;
     }
+    /* The guest truncates to this before encoding. Capping only on the host
+     * is far too late: the bytes have already crossed a serial console one
+     * at a time, which is what turns a careless `du -ah /` into a dead
+     * session rather than a large answer. */
+    if (request->max_output_bytes > 0) {
+        if (!buffer_append_str(out, ",\"max_output\":")) return false;
+        if (!json_write_number(out, (double)request->max_output_bytes)) {
+            return false;
+        }
+    }
     return buffer_append_str(out, "}\n");
 }
 
@@ -222,16 +232,31 @@ bool protocol_decode_response(const char *line, size_t len,
     }
     result->exit_code = (int)exit_code->number;
     result->timed_out = json_bool_or(root, "timed_out", false);
+    /* The guest reports what it cut, so the model is told even though the
+     * host never saw the discarded bytes. */
+    result->stdout_truncated = json_bool_or(root, "stdout_truncated", false);
+    result->stderr_truncated = json_bool_or(root, "stderr_truncated", false);
 
     const char *error = NULL;
+    bool host_cut_stdout = false;
+    bool host_cut_stderr = false;
     if (!read_stream(root, "stdout", "stdout_b64", max_output_bytes,
-                     &result->stdout_text, &result->stdout_truncated, &error) ||
+                     &result->stdout_text, &host_cut_stdout, &error) ||
         !read_stream(root, "stderr", "stderr_b64", max_output_bytes,
-                     &result->stderr_text, &result->stderr_truncated, &error)) {
+                     &result->stderr_text, &host_cut_stderr, &error)) {
         json_free(root);
         exec_result_fail(result, error != NULL ? error
                                                : "guest response was unusable");
         return false;
+    }
+
+    result->stdout_truncated = result->stdout_truncated || host_cut_stdout;
+    result->stderr_truncated = result->stderr_truncated || host_cut_stderr;
+    if (result->stdout_truncated && !host_cut_stdout) {
+        protocol_append_truncation_note(&result->stdout_text, max_output_bytes);
+    }
+    if (result->stderr_truncated && !host_cut_stderr) {
+        protocol_append_truncation_note(&result->stderr_text, max_output_bytes);
     }
 
     json_free(root);
@@ -257,7 +282,8 @@ static const char *const GUEST_DAEMON =
     "b64field() { printf '%s' \"$1\" | sed -n \"s/.*\\\"$2\\\"[ ]*:[ ]*\\\"\\\\([A-Za-z0-9+/=]*\\\\)\\\".*/\\\\1/p\"; }\n"
     "num() { printf '%s' \"$1\" | sed -n \"s/.*\\\"$2\\\"[ ]*:[ ]*\\\\([0-9-]*\\\\).*/\\\\1/p\"; }\n"
     "dec() { printf '%s' \"$1\" | base64 -d 2>/dev/null; }\n"
-    "enc() { base64 2>/dev/null | tr -d '\\n'; }\n"
+    "enc() { head -c \"$maxb\" | base64 2>/dev/null | tr -d '\\n'; }\n"
+    "big() { [ \"$(wc -c <\"$1\")\" -gt \"$maxb\" ] && echo true || echo false; }\n"
     "cd /workspace 2>/dev/null || cd /\n"
     "printf 'HARNESS_READY\\n'\n"
     "while IFS= read -r line; do\n"
@@ -268,8 +294,14 @@ static const char *const GUEST_DAEMON =
     "  dec \"$(b64field \"$line\" command_b64)\" > \"$cmdfile\"\n"
     "  dir=$(dec \"$(b64field \"$line\" cwd_b64)\")\n"
     "  tmo=$(num \"$line\" timeout_ms)\n"
+    "  maxb=$(num \"$line\" max_output); [ -z \"$maxb\" ] && maxb=32768\n"
     "  out=/tmp/.h_out.$id; err=/tmp/.h_err.$id\n"
-    "  ( [ -n \"$dir\" ] && cd \"$dir\" 2>/dev/null; sh \"$cmdfile\" ) >\"$out\" 2>\"$err\" &\n"
+    "  blk=$(( (maxb / 512) + 1 ))\n"
+    "  # ulimit bounds the capture as it is written. Truncating at encode\n"
+    "  # time is far too late: /tmp lives on a small root filesystem, and a\n"
+    "  # command like `du -ah` on a large share fills it long before the\n"
+    "  # output would ever be read.\n"
+    "  ( ulimit -f \"$blk\" 2>/dev/null; [ -n \"$dir\" ] && cd \"$dir\" 2>/dev/null; sh \"$cmdfile\" ) >\"$out\" 2>\"$err\" &\n"
     "  pid=$!\n"
     "  timedout=false\n"
     "  if [ -n \"$tmo\" ] && [ \"$tmo\" -gt 0 ] 2>/dev/null; then\n"
@@ -284,11 +316,51 @@ static const char *const GUEST_DAEMON =
     "  else\n"
     "    wait \"$pid\"; rc=$?\n"
     "  fi\n"
-    "  printf '{\"id\":%s,\"exit_code\":%s,\"timed_out\":%s,\"stdout_b64\":\"%s\",\"stderr_b64\":\"%s\"}\\n' \\\n"
-    "    \"$id\" \"$rc\" \"$timedout\" \"$(enc <\"$out\")\" \"$(enc <\"$err\")\"\n"
+    "  printf '{\"id\":%s,\"exit_code\":%s,\"timed_out\":%s,\"stdout_truncated\":%s,\"stderr_truncated\":%s,\"stdout_b64\":\"%s\",\"stderr_b64\":\"%s\"}\\n' \\\n"
+    "    \"$id\" \"$rc\" \"$timedout\" \"$(big \"$out\")\" \"$(big \"$err\")\" \\\n"
+    "    \"$(enc <\"$out\")\" \"$(enc <\"$err\")\"\n"
     "  rm -f \"$out\" \"$err\" \"$cmdfile\"\n"
     "done\n"
     "HARNESS_EOF\n"
     "sh /tmp/.harnessd\n";
 
 const char *protocol_guest_daemon_script(void) { return GUEST_DAEMON; }
+
+static const char *const GUEST_WIKI =
+    "mkdir -p /etc/agentemu\n"
+    "cat > /llms.txt <<'WIKI_EOF'\n"
+    "# AgentEMU guest\n"
+    "\n"
+    "A disposable emulated RISC-V Linux machine. You are root. Nothing here\n"
+    "reaches the host, and the machine is destroyed when the session ends.\n"
+    "\n"
+    "## Docs\n"
+    "\n"
+    "- [Environment](/etc/agentemu/environment.md): what is installed\n"
+    "- [Costs](/etc/agentemu/costs.md): what is slow, and output limits\n"
+    "- [Shares](/etc/agentemu/shares.md): host folders, and what is writable\n"
+    "WIKI_EOF\n"
+    "cat > /etc/agentemu/environment.md <<'WIKI_EOF'\n"
+    "# Environment\n"
+    "\n"
+    "- BusyBox userland: sh, sed, awk, grep, find, tar, base64, wc, head\n"
+    "- C compiler: `cc` (TCC) with musl headers. `cc a.c -o a && ./a` works.\n"
+    "- No make, no git, no curl, no package manager, no Python.\n"
+    "- No network. Anything needing the internet will fail; do not retry it.\n"
+    "- Your working directory is /workspace.\n"
+    "WIKI_EOF\n"
+    "cat > /etc/agentemu/costs.md <<'WIKI_EOF'\n"
+    "# Costs\n"
+    "\n"
+    "This is an emulated CPU, roughly a hundred times slower than the host,\n"
+    "and every byte of output crosses a serial console.\n"
+    "\n"
+    "- Command output is truncated by the guest at the configured cap.\n"
+    "  Truncation is reported, but the discarded bytes are gone.\n"
+    "- Prefer `find ... | head`, `du -sh <dir>`, `wc -l` over commands that\n"
+    "  print whole trees. `du -ah /` on a large share can produce millions\n"
+    "  of lines and will simply time out.\n"
+    "- Narrow first, then look: count, then sample, then read.\n"
+    "WIKI_EOF\n";
+
+const char *protocol_guest_wiki_script(void) { return GUEST_WIKI; }

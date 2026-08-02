@@ -126,8 +126,8 @@ static void test_the_system_prompt_is_seeded_once(void) {
 
     AgentSession session;
     agent_session_init(&session);
-    CHECK_LONG_EQ(session.conversation.count, 1,
-                  "a new session starts with only the system prompt");
+    CHECK_LONG_EQ(session.conversation.count, 0,
+                  "a new session is empty until it knows its configuration");
 
     AgentOutcome first = agent_session_ask(&session, &config, &g_guest,
                                            &transcript, &hooks, NULL, "one");
@@ -144,8 +144,66 @@ static void test_the_system_prompt_is_seeded_once(void) {
         }
     }
     CHECK_LONG_EQ(system_messages, 1,
-                  "the system prompt is not repeated per question");
+                  "the system prompt is seeded once, not per question");
 
+    agent_session_free(&session);
+    transcript_close(&transcript);
+    config_free(&config);
+}
+
+static void test_the_prompt_describes_the_actual_machine(void) {
+    /* The model is told the limits it really has, so it can plan around them
+     * rather than discovering them by losing an answer to a timeout. */
+    const char *script[] = {ANSWER_ONE};
+    reset(script, 1);
+
+    Config config = make_config(20);
+    config.max_command_output_bytes = 4096;
+    config.default_command_timeout_ms = 30000;
+    free(config.share_spec);
+    config.share_spec = strdup("home=/tmp,ro");
+
+    Transcript transcript;
+    transcript_open(&transcript, NULL);
+    AgentHooks hooks = {.complete = fake_complete, .exec = fake_exec};
+
+    AgentSession session;
+    agent_session_init(&session);
+    AgentOutcome outcome = agent_session_ask(&session, &config, &g_guest,
+                                             &transcript, &hooks, NULL, "hi");
+    agent_outcome_free(&outcome);
+
+    const char *prompt = session.conversation.messages[0];
+    CHECK(strstr(prompt, "4096") != NULL,
+          "the configured output cap is stated");
+    CHECK(strstr(prompt, "30 seconds") != NULL,
+          "the configured command timeout is stated");
+    CHECK(strstr(prompt, "llms.txt") != NULL,
+          "the model is pointed at the guest's own documentation");
+    CHECK(strstr(prompt, "shared into this machine") != NULL,
+          "a configured share is mentioned");
+
+    agent_session_free(&session);
+    transcript_close(&transcript);
+    config_free(&config);
+}
+
+static void test_no_share_is_not_described(void) {
+    const char *script[] = {ANSWER_ONE};
+    reset(script, 1);
+    Config config = make_config(20);
+    Transcript transcript;
+    transcript_open(&transcript, NULL);
+    AgentHooks hooks = {.complete = fake_complete, .exec = fake_exec};
+
+    AgentSession session;
+    agent_session_init(&session);
+    AgentOutcome outcome = agent_session_ask(&session, &config, &g_guest,
+                                             &transcript, &hooks, NULL, "hi");
+    agent_outcome_free(&outcome);
+    CHECK(strstr(session.conversation.messages[0], "shared into this machine") ==
+              NULL,
+          "no share means no share is promised");
     agent_session_free(&session);
     transcript_close(&transcript);
     config_free(&config);
@@ -196,6 +254,8 @@ static void test_an_api_key_already_present_is_not_asked_for(void) {
 int main(void) {
     test_conversation_survives_between_questions();
     test_the_system_prompt_is_seeded_once();
+    test_the_prompt_describes_the_actual_machine();
+    test_no_share_is_not_described();
     test_the_budget_spans_the_whole_session();
     test_an_api_key_already_present_is_not_asked_for();
     TEST_REPORT();

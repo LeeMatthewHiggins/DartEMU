@@ -19,6 +19,9 @@ enum {
     BOOT_TIMEOUT_MS = 300000,
     DAEMON_READY_TIMEOUT_MS = 120000,
     SHUTDOWN_GRACE_MS = 2000,
+    MOUNT_TIMEOUT_MS = 30000,
+    RECOVER_DRAIN_MS = 3000,
+    RECOVER_PING_MS = 15000,
     /* Headroom over the command's own timeout before the transport is
      * declared lost, so a guest-side kill still reports as a timeout. */
     TRANSPORT_GRACE_MS = 15000
@@ -122,6 +125,111 @@ static bool make_task_disk(Guest *guest) {
 
 /* ---------------------------------------------------------------- process */
 
+/* Splits "tag=path[,ro]". Returns false when the spec is unusable. */
+static bool parse_share(const char *spec, char *tag, size_t tag_len,
+                        char *path, size_t path_len, bool *read_only) {
+    const char *equals = strchr(spec, '=');
+    if (equals == NULL || equals == spec) {
+        return false;
+    }
+    size_t name_len = (size_t)(equals - spec);
+    if (name_len >= tag_len) {
+        return false;
+    }
+    memcpy(tag, spec, name_len);
+    tag[name_len] = '\0';
+
+    const char *rest = equals + 1;
+    *read_only = false;
+    size_t rest_len = strlen(rest);
+    if (rest_len > 3 && strcmp(rest + rest_len - 3, ",ro") == 0) {
+        *read_only = true;
+        rest_len -= 3;
+    }
+    if (rest_len == 0 || rest_len >= path_len) {
+        return false;
+    }
+    memcpy(path, rest, rest_len);
+    path[rest_len] = '\0';
+    return true;
+}
+
+/* Writes an absolute form of path into out.
+ *
+ * A generated config lives in the temporary directory, and the loader
+ * resolves relative paths against the config file's own directory, so a
+ * relative path written here would be looked for beside the config. */
+static bool absolute_path(const char *path, char *out, size_t out_len) {
+    if (path == NULL) {
+        return false;
+    }
+    if (path[0] == '/') {
+        return snprintf(out, out_len, "%s", path) < (int)out_len;
+    }
+    char cwd[1024];
+    if (getcwd(cwd, sizeof(cwd)) == NULL) {
+        return false;
+    }
+    return snprintf(out, out_len, "%s/%s", cwd, path) < (int)out_len;
+}
+
+/* The emulator CLI takes either a config file or individual flags, never
+ * both, and only a config file can declare a 9P share. */
+static bool write_share_config(Guest *guest, char **config_path) {
+    const Config *config = guest->config;
+    char tag[128];
+    char path[1024];
+    bool read_only = false;
+    if (!parse_share(config->share_spec, tag, sizeof(tag), path, sizeof(path),
+                     &read_only)) {
+        set_error(guest, "--share must look like tag=/path or tag=/path,ro");
+        return false;
+    }
+
+    char generated[512];
+    snprintf(generated, sizeof(generated), "%s/harness-vm-%d.yaml",
+             getenv("TMPDIR") != NULL ? getenv("TMPDIR") : "/tmp",
+             (int)getpid());
+
+    FILE *out = fopen(generated, "w");
+    if (out == NULL) {
+        set_error(guest, "cannot write the emulator configuration");
+        return false;
+    }
+    char absolute[1024];
+    fprintf(out, "version: 1\nmemory_size: %ld\n", config->memory_mb);
+    if (config->bios_path != NULL &&
+        absolute_path(config->bios_path, absolute, sizeof(absolute))) {
+        fprintf(out, "bios: %s\n", absolute);
+    }
+    if (config->kernel_path != NULL &&
+        absolute_path(config->kernel_path, absolute, sizeof(absolute))) {
+        fprintf(out, "kernel: %s\n", absolute);
+    }
+    if (config->cmdline != NULL) {
+        fprintf(out, "cmdline: \"%s\"\n", config->cmdline);
+    }
+    if (guest->task_disk != NULL &&
+        absolute_path(guest->task_disk, absolute, sizeof(absolute))) {
+        fprintf(out, "drive0:\n  file: %s\n", absolute);
+    }
+    if (!absolute_path(path, absolute, sizeof(absolute))) {
+        fclose(out);
+        set_error(guest, "the shared folder path could not be resolved");
+        return false;
+    }
+    fprintf(out, "fs0:\n  file: %s\n  tag: %s\n", absolute, tag);
+    if (read_only) {
+        fprintf(out, "  readonly: true\n");
+    }
+    if (fclose(out) != 0) {
+        set_error(guest, "cannot write the emulator configuration");
+        return false;
+    }
+    *config_path = strdup(generated);
+    return *config_path != NULL;
+}
+
 static bool spawn_emulator(Guest *guest) {
     const Config *config = guest->config;
     int to_child[2];
@@ -134,18 +242,26 @@ static bool spawn_emulator(Guest *guest) {
     Buffer command;
     buffer_init(&command);
     buffer_append_str(&command, config->emulator_command);
-    buffer_printf(&command, " --memory %ld", config->memory_mb);
-    if (config->cmdline != NULL) {
-        buffer_printf(&command, " --cmdline '%s'", config->cmdline);
-    }
-    if (config->bios_path != NULL) {
-        buffer_printf(&command, " --bios '%s'", config->bios_path);
-    }
-    if (config->kernel_path != NULL) {
-        buffer_printf(&command, " --kernel '%s'", config->kernel_path);
-    }
-    if (guest->task_disk != NULL) {
-        buffer_printf(&command, " --drive '%s'", guest->task_disk);
+    if (config->share_spec != NULL) {
+        if (!write_share_config(guest, &guest->vm_config_path)) {
+            buffer_free(&command);
+            return false;
+        }
+        buffer_printf(&command, " --config '%s'", guest->vm_config_path);
+    } else {
+        buffer_printf(&command, " --memory %ld", config->memory_mb);
+        if (config->cmdline != NULL) {
+            buffer_printf(&command, " --cmdline '%s'", config->cmdline);
+        }
+        if (config->bios_path != NULL) {
+            buffer_printf(&command, " --bios '%s'", config->bios_path);
+        }
+        if (config->kernel_path != NULL) {
+            buffer_printf(&command, " --kernel '%s'", config->kernel_path);
+        }
+        if (guest->task_disk != NULL) {
+            buffer_printf(&command, " --drive '%s'", guest->task_disk);
+        }
     }
 
     pid_t pid = fork();
@@ -357,6 +473,13 @@ bool guest_start(Guest *guest) {
     if (!wait_for_shell(guest, BOOT_TIMEOUT_MS)) {
         return false;
     }
+    /* The machine documents itself before the daemon takes the console, so
+     * the agent can read about the environment instead of discovering its
+     * limits by hitting them. */
+    if (!write_all(guest, protocol_guest_wiki_script(),
+                   strlen(protocol_guest_wiki_script()))) {
+        return false;
+    }
     if (!write_all(guest, protocol_guest_daemon_script(),
                    strlen(protocol_guest_daemon_script()))) {
         return false;
@@ -365,10 +488,119 @@ bool guest_start(Guest *guest) {
         return false;
     }
     guest->ready = true;
+
+    if (guest->config->share_spec != NULL) {
+        char tag[128];
+        char path[1024];
+        bool read_only = false;
+        if (parse_share(guest->config->share_spec, tag, sizeof(tag), path,
+                        sizeof(path), &read_only)) {
+            char mount[1024];
+            snprintf(mount, sizeof(mount),
+                     "mkdir -p /mnt/%s && mount -t 9p -o "
+                     "trans=virtio,version=9p2000.u,msize=65536%s %s /mnt/%s",
+                     tag, read_only ? ",ro" : "", tag, tag);
+            ExecResult result;
+            guest_exec(guest, mount, NULL, MOUNT_TIMEOUT_MS, &result);
+            if (result.transport_error || result.exit_code != 0) {
+                set_error(guest, "the share could not be mounted in the guest");
+                exec_result_free(&result);
+                return false;
+            }
+            exec_result_free(&result);
+
+            char doc[1400];
+            snprintf(doc, sizeof(doc),
+                     "cat > /etc/agentemu/shares.md <<'WIKI_EOF'\n"
+                     "# Shares\n\n"
+                     "A host folder is mounted at /mnt/%s.\n"
+                     "It is %s.\n\n"
+                     "%s"
+                     "It may be very large. Measure before you list: "
+                     "`du -sh /mnt/%s`, `find /mnt/%s -maxdepth 1`.\n"
+                     "WIKI_EOF",
+                     tag,
+                     read_only ? "read-only, enforced by the host"
+                               : "writable, and the files are real",
+                     read_only
+                         ? "Writes fail with EACCES. That is the policy "
+                           "working, not a fault to work around.\n\n"
+                         : "Anything you change is changed on the host.\n\n",
+                     tag, tag);
+            ExecResult doc_result;
+            guest_exec(guest, doc, NULL, MOUNT_TIMEOUT_MS, &doc_result);
+            exec_result_free(&doc_result);
+        }
+    }
     return true;
 }
 
 /* ------------------------------------------------------------------- exec */
+
+/* Interrupts whatever the guest is doing and confirms the daemon still
+ * responds. Returns false only when it genuinely cannot be reached. */
+static bool recover(Guest *guest) {
+    if (guest->from_guest < 0) {
+        return false;
+    }
+    /* Ctrl-C the running command, then drain whatever is still in flight. */
+    if (!write_all(guest, "\003", 1)) {
+        return false;
+    }
+    long drain_until = now_ms() + RECOVER_DRAIN_MS;
+    while (now_ms() < drain_until) {
+        bool had_data;
+        if (!pump(guest, BOOT_POLL_MS, &had_data)) {
+            return false;
+        }
+        if (!had_data) {
+            break;
+        }
+        buffer_reset(&guest->pending);
+    }
+    buffer_reset(&guest->pending);
+
+    /* A cheap round trip proves the daemon is still reading requests. */
+    long id = guest->next_id++;
+    ExecRequest ping = {.id = id,
+                        .command = "printf ok",
+                        .timeout_ms = RECOVER_PING_MS,
+                        .max_output_bytes = 64};
+    Buffer line;
+    buffer_init(&line);
+    bool sent = protocol_encode_request(&line, &ping) &&
+                write_all(guest, line.data, line.len);
+    buffer_free(&line);
+    if (!sent) {
+        return false;
+    }
+
+    long deadline = now_ms() + RECOVER_PING_MS + RECOVER_DRAIN_MS;
+    while (now_ms() < deadline) {
+        size_t len;
+        char *reply;
+        while ((reply = take_line(guest, &len)) != NULL) {
+            if (len > 0 && reply[0] == '{') {
+                ExecResult probe;
+                exec_result_init(&probe);
+                bool ok = protocol_decode_response(reply, len, 64, &probe);
+                long got = probe.id;
+                exec_result_free(&probe);
+                free(reply);
+                if (ok && got == id) {
+                    return true;
+                }
+                continue;
+            }
+            free(reply);
+        }
+        bool had_data;
+        if (!pump(guest, BOOT_POLL_MS, &had_data)) {
+            return false;
+        }
+    }
+    return false;
+}
 
 void guest_exec(Guest *guest, const char *command, const char *cwd,
                 long timeout_ms, ExecResult *result) {
@@ -386,7 +618,9 @@ void guest_exec(Guest *guest, const char *command, const char *cwd,
     ExecRequest request = {.id = id,
                            .command = command,
                            .cwd = cwd,
-                           .timeout_ms = effective_timeout};
+                           .timeout_ms = effective_timeout,
+                           .max_output_bytes =
+                               guest->config->max_command_output_bytes};
     Buffer line;
     buffer_init(&line);
     if (!protocol_encode_request(&line, &request)) {
@@ -434,11 +668,17 @@ void guest_exec(Guest *guest, const char *command, const char *cwd,
 
         long remaining = deadline - now_ms();
         if (remaining <= 0) {
+            /* A command that overran is not a dead machine. Interrupt it and
+             * check the daemon still answers before writing the guest off:
+             * treating slow as dead ended whole sessions over one careless
+             * command. */
             exec_result_fail(result,
-                             "the guest did not answer before the transport "
-                             "deadline");
+                             "the command overran its deadline and was "
+                             "interrupted");
             result->timed_out = true;
-            guest->ready = false;
+            if (!recover(guest)) {
+                guest->ready = false;
+            }
             return;
         }
         bool had_data;
@@ -528,11 +768,15 @@ void guest_shutdown(Guest *guest) {
         guest->config->task_disk_path == NULL) {
         unlink(guest->task_disk);
     }
+    if (guest->vm_config_path != NULL) {
+        unlink(guest->vm_config_path);
+    }
 }
 
 void guest_free(Guest *guest) {
     buffer_free(&guest->pending);
     free(guest->task_disk);
+    free(guest->vm_config_path);
     free(guest->last_error);
     memset(guest, 0, sizeof(*guest));
 }

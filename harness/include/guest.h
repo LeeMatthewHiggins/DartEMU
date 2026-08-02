@@ -22,7 +22,8 @@ typedef struct {
     Buffer pending; /* bytes read but not yet split into lines */
     long next_id;
     bool ready;
-    char *task_disk; /* the writable copy actually in use */
+    char *task_disk;      /* the writable copy actually in use */
+    char *vm_config_path; /* generated when a share is configured */
     char *last_error;
 } Guest;
 
