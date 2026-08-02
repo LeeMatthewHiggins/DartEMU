@@ -149,6 +149,27 @@ static void test_a_proxy_refusal_is_surfaced(void) {
     agent_config_free(&config);
 }
 
+/* OpenRouter pads a reply with blank lines before the JSON, to hold the
+ * connection open while a slow model thinks. The padding arrives as part of
+ * the body, so the parser has to step over it. */
+static void test_padding_before_the_json_is_ignored(void) {
+    AgentConfig config;
+    agent_config_init(&config);
+    const char *body =
+        "\n         \n\n         \n\n         \n"
+        "{\"choices\":[{\"message\":{\"role\":\"assistant\","
+        "\"content\":\"padded but fine\"}}]}";
+
+    LlmReply reply;
+    char *error = NULL;
+    CHECK(llm_parse_reply(body, strlen(body), &config, &reply, &error),
+          "a padded reply still parses");
+    CHECK_STR_EQ(reply.content, "padded but fine", "the answer survives");
+    llm_reply_free(&reply);
+    free(error);
+    agent_config_free(&config);
+}
+
 static void test_a_torn_reply_fails_cleanly(void) {
     AgentConfig config;
     agent_config_init(&config);
@@ -210,6 +231,7 @@ int main(void) {
     test_reply_with_a_final_answer();
     test_an_unknown_tool_is_reported_not_fatal();
     test_a_proxy_refusal_is_surfaced();
+    test_padding_before_the_json_is_ignored();
     test_a_torn_reply_fails_cleanly();
     test_the_system_prompt_states_the_real_limits();
     test_a_result_reads_as_the_model_expects();
