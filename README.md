@@ -359,6 +359,11 @@ architecture keeps its own tree under `tool/image_builder/.kernel-cache`, so
 changing the config fragment costs an incremental rebuild rather than another
 download and full compile.
 
+Pre-built copies of these kernels (and the RV32 userspace below) are
+attached to each [GitHub release](https://github.com/LeeMatthewHiggins/DartEMU/releases)
+as gzipped assets with checksums, which is also where the `guest-e2e` CI
+job fetches them from. Building locally is only needed to change them.
+
 Note that RV32 needs a userspace to match. The `root-riscv32.bin` demo asset
 predates upstream RISC-V support and is built against a 2017 glibc; RV32 was
 upstreamed with a 64-bit-`time_t`-only syscall ABI, so that userspace cannot

@@ -79,6 +79,40 @@ jobs:
         working-directory: example
         run: flutter test
 
+  guest-e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 📚 Git Checkout
+        uses: actions/checkout@v7
+
+      - name: 🎯 Setup Dart
+        uses: dart-lang/setup-dart@v1
+        with:
+          sdk: "stable"
+
+      - name: 📦 Install Dependencies
+        run: dart pub get --no-example
+
+      - name: ⬇️ Fetch guest images from the release
+        env:
+          BASE: https://github.com/LeeMatthewHiggins/DartEMU/releases/download/v0.6.0
+        run: |
+          mkdir -p data/kernel data/rootfs
+          curl -fsSL "$BASE/kernel-riscv64-6.12.bin.gz" | gunzip > data/kernel/kernel-riscv64-6.12.bin
+          curl -fsSL "$BASE/kernel-riscv32-6.12.bin.gz" | gunzip > data/kernel/kernel-riscv32-6.12.bin
+          curl -fsSL "$BASE/alpine-riscv32-rootfs.bin.gz" | gunzip > data/rootfs/alpine-riscv32-rootfs.bin
+
+      - name: 🔏 Verify checksums
+        run: |
+          sha256sum -c <<'SUMS'
+          f6bd6408824b0799b47a18c97d9a05f64085702ad3f40279673f5db0640415bf  data/kernel/kernel-riscv64-6.12.bin
+          114f46b9c7e185d9f20db0312657956fb81fe58be3571311fecf382355ac351b  data/kernel/kernel-riscv32-6.12.bin
+          03dab97e19ec4bf78d8e52e954cf35e21a6e5e5fefcaf0c71815dad70d2a6d24  data/rootfs/alpine-riscv32-rootfs.bin
+          SUMS
+
+      - name: 🐧 Guest end-to-end tests
+        run: dart test --run-skipped -t sandbox
+
   verify-version:
     runs-on: ubuntu-latest
     steps:
