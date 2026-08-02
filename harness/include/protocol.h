@@ -21,7 +21,8 @@ typedef struct {
     long id;
     const char *command; /* passed through verbatim, never inspected */
     const char *cwd;     /* NULL to leave the daemon's working directory */
-    long timeout_ms;     /* <= 0 to let the daemon apply its default */
+    long timeout_ms;          /* <= 0 to let the daemon apply its default */
+    size_t max_output_bytes;  /* the guest truncates to this before sending */
 } ExecRequest;
 
 typedef struct {
@@ -66,5 +67,13 @@ bool protocol_base64_encode(const char *bytes, size_t len, Buffer *out);
 /* The guest-side daemon, a POSIX shell script. Installed over the console at
  * session start so the shipped guest images need no rebuild. */
 const char *protocol_guest_daemon_script(void);
+
+/* Commands that write the machine's own documentation into the guest.
+ *
+ * Follows the llms.txt convention: /llms.txt is a short index the agent can
+ * read, pointing at longer notes under /etc/agentemu. Keeping the detail in
+ * the guest rather than the system prompt costs nothing until the agent
+ * actually wants it. */
+const char *protocol_guest_wiki_script(void);
 
 #endif /* HARNESS_PROTOCOL_H */

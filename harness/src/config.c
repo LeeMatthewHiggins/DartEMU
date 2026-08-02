@@ -68,6 +68,7 @@ void config_free(Config *config) {
     free(config->bios_path);
     free(config->kernel_path);
     free(config->cmdline);
+    free(config->share_spec);
     free(config->transcript_path);
     free(config->artifact_output_path);
     free(config->task);
@@ -98,6 +99,9 @@ void config_print_usage(const char *program) {
             "  --task-file <path>       Read the task from a file\n"
             "  --bios <path>            Guest bootloader (BBL)\n"
             "  --cmdline <text>         Kernel command line\n"
+            "  --share <tag>=<path>[,ro]  Share a host folder over 9P.\n"
+            "                           ,ro is enforced by the 9P server, so\n"
+            "                           the guest cannot remount past it.\n"
             "  --memory <mb>            Guest RAM (default %ld)\n"
             "  --task-disk <path>       Where to put the writable copy\n"
             "  --keep-task-disk         Do not delete the task disk at exit\n"
@@ -228,6 +232,8 @@ bool config_load(Config *config, int argc, char **argv) {
             TAKE(bios_path);
         } else if (strcmp(arg, "--cmdline") == 0) {
             TAKE(cmdline);
+        } else if (strcmp(arg, "--share") == 0) {
+            TAKE(share_spec);
         } else if (strcmp(arg, "--serial") == 0) {
             TAKE(guest_serial_device);
         } else if (strcmp(arg, "--emulator") == 0) {

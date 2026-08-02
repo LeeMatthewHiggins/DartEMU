@@ -6,24 +6,57 @@
 #include <string.h>
 #include <time.h>
 
-/* Tells the model what kind of place it is working in. It deliberately does
- * not tell it what it may not do: the guest is disposable and the emulator is
- * the boundary, so restraint here would only cost capability. */
-static const char *const SYSTEM_PROMPT =
-    "You are working inside a disposable emulated Linux machine. You have "
-    "root and complete freedom: install, modify, delete or reconfigure "
-    "anything. The machine is destroyed when the session ends and nothing "
-    "you do can affect the host.\n"
-    "\n"
-    "Use the 'shell' tool to run commands. Work in /workspace unless asked "
-    "otherwise. Command output is capped, so prefer targeted commands over "
-    "dumping large files.\n"
-    "\n"
-    "The machine keeps its state between questions, so anything you create "
-    "or install stays until the session ends.\n"
-    "\n"
-    "When you have finished, reply with a plain message and no tool call, "
-    "saying what you did and what you found.";
+/* Built from the configuration rather than hard-coded, so what the model is
+ * told matches the machine it actually has. The detail lives in the guest at
+ * /llms.txt; this stays short and points there. */
+static char *build_system_prompt(const Config *config) {
+    Buffer prompt;
+    buffer_init(&prompt);
+    buffer_append_str(
+        &prompt,
+        "You are AgentEMU, working inside a disposable emulated RISC-V Linux "
+        "machine. You are root and completely free: install, modify, delete "
+        "or reconfigure anything. The machine is destroyed when the session "
+        "ends and nothing you do can reach the host.\n\n"
+        "You have exactly one tool: 'shell', which runs a command in that "
+        "machine. There is no file-editing tool and no browser — use the "
+        "shell for everything.\n\n"
+        "Read /llms.txt first. It indexes short notes on the environment, "
+        "the shares, and what is expensive here.\n\n");
+
+    buffer_append_str(
+        &prompt,
+        "This is an emulated CPU and every byte of output crosses a serial "
+        "console, so output is not free:\n");
+    buffer_printf(&prompt,
+                  "- Output is truncated in the guest at %zu bytes per "
+                  "stream. Truncation is reported; the lost bytes are gone.\n",
+                  config->max_command_output_bytes);
+    buffer_printf(&prompt,
+                  "- A command is killed after %ld seconds.\n",
+                  config->default_command_timeout_ms / 1000);
+    buffer_append_str(
+        &prompt,
+        "- Measure before you list. `du -sh dir`, `find dir -maxdepth 1`, "
+        "`wc -l` and `| head` are cheap; printing a whole tree is not. "
+        "Walking a large directory can exceed the limit and lose the answer "
+        "entirely.\n\n");
+
+    if (config->share_spec != NULL) {
+        buffer_append_str(&prompt,
+                          "A host folder is shared into this machine. "
+                          "/etc/agentemu/shares.md says where it is and "
+                          "whether it is writable. Treat it as someone's "
+                          "real data.\n\n");
+    }
+    buffer_append_str(
+        &prompt,
+        "Work in /workspace unless told otherwise. When you are done, reply "
+        "with a plain message and no tool call, saying what you did and what "
+        "you found.");
+
+    return prompt.data;
+}
 
 static long now_seconds(void) {
     struct timespec ts;
@@ -57,7 +90,7 @@ void agent_outcome_free(AgentOutcome *outcome) {
 void agent_session_init(AgentSession *session) {
     memset(session, 0, sizeof(*session));
     conversation_init(&session->conversation);
-    conversation_add_text(&session->conversation, "system", SYSTEM_PROMPT);
+    /* The prompt needs the configuration, so it is seeded on first ask. */
     session->started_seconds = now_seconds();
 }
 
@@ -120,6 +153,13 @@ AgentOutcome agent_session_ask(AgentSession *session, const Config *config,
     GuestExecFn exec =
         hooks != NULL && hooks->exec != NULL ? hooks->exec : guest_exec;
 
+    if (session->conversation.count == 0) {
+        char *prompt = build_system_prompt(config);
+        if (prompt != NULL) {
+            conversation_add_text(&session->conversation, "system", prompt);
+            free(prompt);
+        }
+    }
     conversation_add_text(&session->conversation, "user", question);
 
     for (;;) {
