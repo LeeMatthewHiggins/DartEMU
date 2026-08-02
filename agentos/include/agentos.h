@@ -15,6 +15,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 
+#include "chat.h"
 #include "json.h"
 
 /* ------------------------------------------------------------------ shell */
@@ -51,15 +52,6 @@ typedef struct {
 void agent_config_init(AgentConfig *config);
 void agent_config_free(AgentConfig *config);
 
-/* A single tool call the model asked for. */
-typedef struct {
-    char *id;
-    char *command;
-    char *cwd;
-    long timeout_ms;
-    char *decode_error;
-} ToolCall;
-
 typedef struct {
     char *content;
     char *raw_message;
@@ -70,21 +62,6 @@ typedef struct {
 
 void llm_reply_init(LlmReply *reply);
 void llm_reply_free(LlmReply *reply);
-
-/* Conversation, as complete JSON message objects. */
-typedef struct {
-    char **messages;
-    size_t count;
-    size_t capacity;
-} Conversation;
-
-void conversation_init(Conversation *conversation);
-void conversation_free(Conversation *conversation);
-bool conversation_add_raw(Conversation *conversation, const char *json);
-bool conversation_add_text(Conversation *conversation, const char *role,
-                           const char *text);
-bool conversation_add_tool_result(Conversation *conversation, const char *id,
-                                  const char *text, size_t len);
 
 /* Builds the chat completions request body. Exposed for tests. */
 bool llm_build_request(const AgentConfig *config,

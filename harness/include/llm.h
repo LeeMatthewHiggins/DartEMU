@@ -5,18 +5,9 @@
 #include <stdbool.h>
 #include <stddef.h>
 
+#include "chat.h"
 #include "config.h"
 #include "json.h"
-
-typedef struct {
-    char *id;      /* tool_call id the result must be addressed to */
-    char *command; /* passed to the guest verbatim */
-    char *cwd;     /* NULL when the model did not ask for one */
-    long timeout_ms;
-    /* Set when the arguments could not be understood; the loop reports this
-     * back to the model as a tool result rather than aborting. */
-    char *decode_error;
-} ToolCall;
 
 typedef struct {
     char *content; /* assistant text, may be NULL */
@@ -27,22 +18,6 @@ typedef struct {
      * sees exactly what it produced. */
     char *raw_message;
 } LlmResponse;
-
-/* Conversation state. Messages are stored as complete JSON objects. */
-typedef struct {
-    char **messages;
-    size_t count;
-    size_t capacity;
-} Conversation;
-
-void conversation_init(Conversation *conversation);
-void conversation_free(Conversation *conversation);
-bool conversation_add_raw(Conversation *conversation, const char *json_object);
-bool conversation_add_text(Conversation *conversation, const char *role,
-                           const char *text);
-bool conversation_add_tool_result(Conversation *conversation,
-                                  const char *tool_call_id, const char *text,
-                                  size_t text_len);
 
 void llm_response_init(LlmResponse *response);
 void llm_response_free(LlmResponse *response);

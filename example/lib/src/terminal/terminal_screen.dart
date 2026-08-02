@@ -18,6 +18,7 @@ class _TerminalLayout {
   static const referenceFontSize = 16.0;
   static const minFontSize = 8.0;
   static const maxFontSize = 24.0;
+
   /// Bundled with the app rather than asked of the system.
   ///
   /// The web build resolves only the fonts declared in pubspec.yaml, so a

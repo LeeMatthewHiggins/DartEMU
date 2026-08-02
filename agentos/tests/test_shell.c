@@ -4,7 +4,7 @@
 #include <string.h>
 
 #include "agentos.h"
-#include "harness_test.h"
+#include "test_assert.h"
 
 enum { GENEROUS = 1 << 20, SMALL = 256, ONE_SECOND = 1000 };
 

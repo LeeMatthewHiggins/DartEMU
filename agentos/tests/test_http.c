@@ -2,7 +2,7 @@
 #include <string.h>
 
 #include "agentos.h"
-#include "harness_test.h"
+#include "test_assert.h"
 
 static void test_splits_status_from_body(void) {
     const char *raw =

@@ -1,7 +1,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "harness_test.h"
+#include "test_assert.h"
 #include "protocol.h"
 
 /* Builds {"id":1,...,"stdout":"<n bytes of 'x'>"} */

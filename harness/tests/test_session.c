@@ -5,7 +5,7 @@
 #include <string.h>
 
 #include "agent.h"
-#include "harness_test.h"
+#include "test_assert.h"
 #include "interactive.h"
 
 static const char **g_script;

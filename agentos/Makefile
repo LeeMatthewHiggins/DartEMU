@@ -8,15 +8,16 @@ CC ?= cc
 CROSS_CC ?= riscv64-linux-gnu-gcc
 
 CFLAGS ?= -std=c11 -O2 -Wall -Wextra -Wpedantic -Wshadow
-CFLAGS += -Iinclude -I../harness/include -I../harness/tests \
-          -D_POSIX_C_SOURCE=200809L -D_DEFAULT_SOURCE -D_DARWIN_C_SOURCE
+CFLAGS += -Iinclude -I../common -D_POSIX_C_SOURCE=200809L -D_DEFAULT_SOURCE \
+          -D_DARWIN_C_SOURCE
 
 BUILD := build
 SRC := src
 TESTS := tests
-JSON := ../harness/src/json.c
+COMMON := ../common
 
-CORE_SRC := $(JSON) $(SRC)/shell.c $(SRC)/http.c $(SRC)/llm.c $(SRC)/agent.c
+CORE_SRC := $(COMMON)/json.c $(COMMON)/chat.c $(SRC)/shell.c $(SRC)/http.c \
+            $(SRC)/llm.c $(SRC)/agent.c
 AGENTOS_SRC := $(CORE_SRC) $(SRC)/main.c
 
 TEST_BINS := $(BUILD)/test_shell $(BUILD)/test_llm $(BUILD)/test_http

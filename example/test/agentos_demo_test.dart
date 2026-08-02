@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:dart_emu/dart_emu.dart';
 import 'package:dart_emu_example/src/agentos/agentos_demo.dart';
 import 'package:dart_emu_example/src/agentos/api_key_dialog.dart';
@@ -26,6 +28,43 @@ void main() {
       // make, so the target is expected to carry the prefix itself.
       expect(AgentOsDemo.upstreamTarget.path, isNotEmpty);
       expect(AgentOsDemo.upstreamTarget.scheme, 'https');
+    });
+  });
+
+  // The guest is C compiled into an image and the proxy is Dart on a page,
+  // so nothing in either toolchain can check that they agree on what to call
+  // the upstream or the credential. They are in one tree, though, so a test
+  // can read the other side and say so.
+  group('the guest and the host agree', () {
+    final guestSource = File('../agentos/src/llm.c');
+
+    String constantIn(String source, String name) {
+      final match = RegExp(
+        'DEFAULT_$name\\s*=\\s*"([^"]*)"',
+      ).firstMatch(source);
+      expect(match, isNotNull, reason: 'DEFAULT_$name should be in llm.c');
+      return match!.group(1)!;
+    }
+
+    test('on the name the guest addresses', () {
+      final source = guestSource.readAsStringSync();
+      expect(constantIn(source, 'HOST'), AgentOsDemo.upstreamHost);
+    });
+
+    test('on the credential the host substitutes', () {
+      final source = guestSource.readAsStringSync();
+      expect(
+        constantIn(source, 'KEY_PLACEHOLDER'),
+        '\${${AgentOsDemo.credentialName}}',
+      );
+    });
+
+    test('on a model the page actually offers', () {
+      final source = guestSource.readAsStringSync();
+      // The guest's built-in default only applies when no command line sets
+      // one, but a default that no longer exists upstream is a trap for
+      // anyone booting the image by hand.
+      expect(AgentOsDemo.models, contains(constantIn(source, 'MODEL')));
     });
   });
 
