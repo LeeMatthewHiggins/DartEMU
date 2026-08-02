@@ -81,6 +81,8 @@ const char *config_network_mode_name(NetworkMode mode) {
 void config_print_usage(const char *program) {
     fprintf(stderr,
             "Usage: %s --task <text> [options]\n"
+            "       %s --interactive [options]      (AgentEMU: an AI "
+            "terminal)\n"
             "\n"
             "Runs an LLM agent with one tool — a shell inside a disposable\n"
             "emulated guest. The emulator is the security boundary; this\n"
@@ -112,6 +114,8 @@ void config_print_usage(const char *program) {
             "  --network <none|full>    Guest network mode (default none)\n"
             "  --transcript <path>      JSONL transcript (default %s)\n"
             "  --artifacts <path>       Where to export the result\n"
+            "  --interactive            AgentEMU: talk to the agent instead\n"
+            "                           of running one task and exiting\n"
             "  --verbose                Log progress to stderr\n"
             "  --help                   Show this message\n"
             "\n"
@@ -120,7 +124,7 @@ void config_print_usage(const char *program) {
             "  MAX_COMMAND_OUTPUT_BYTES, GUEST_SERIAL_DEVICE, BASE_DISK_IMAGE,\n"
             "  TASK_DISK_PATH, TRANSCRIPT_PATH, ARTIFACT_OUTPUT_PATH,\n"
             "  NETWORK_MODE\n",
-            program, DEFAULT_MEMORY_MB, DEFAULT_MAX_STEPS,
+            program, program, DEFAULT_MEMORY_MB, DEFAULT_MAX_STEPS,
             DEFAULT_MAX_TASK_SECONDS, DEFAULT_COMMAND_TIMEOUT_MS,
             DEFAULT_MAX_OUTPUT_BYTES, DEFAULT_TRANSCRIPT);
 }
@@ -263,6 +267,9 @@ bool config_load(Config *config, int argc, char **argv) {
             }
         } else if (strcmp(arg, "--keep-task-disk") == 0) {
             config->keep_task_disk = true;
+        } else if (strcmp(arg, "--interactive") == 0 ||
+                   strcmp(arg, "-i") == 0) {
+            config->interactive = true;
         } else if (strcmp(arg, "--verbose") == 0) {
             config->verbose = true;
         } else if (strcmp(arg, "--help") == 0 || strcmp(arg, "-h") == 0) {
@@ -277,11 +284,17 @@ bool config_load(Config *config, int argc, char **argv) {
 #undef TAKE_LONG
     }
 
-    if (config->task == NULL || config->task[0] == '\0') {
-        fprintf(stderr, "harness: --task or --task-file is required\n");
+    if (!config->interactive &&
+        (config->task == NULL || config->task[0] == '\0')) {
+        fprintf(stderr,
+                "harness: --task or --task-file is required "
+                "(or use --interactive)\n");
         return false;
     }
-    if (config->api_key == NULL || config->api_key[0] == '\0') {
+    /* Interactive sessions ask for the key rather than refusing to start:
+     * being asked to log in is the first thing a machine should do. */
+    if (!config->interactive &&
+        (config->api_key == NULL || config->api_key[0] == '\0')) {
         fprintf(stderr, "harness: LLM_API_KEY is not set\n");
         return false;
     }

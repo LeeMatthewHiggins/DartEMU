@@ -36,7 +36,8 @@ typedef struct {
     char *artifact_output_path;
     NetworkMode network_mode;
 
-    char *task; /* the prompt given to the model */
+    char *task; /* the prompt given to the model; unused when interactive */
+    bool interactive;
     bool keep_task_disk;
     bool verbose;
 } Config;

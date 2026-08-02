@@ -8,11 +8,12 @@ SRC := src
 TESTS := tests
 
 CORE_SRC := $(SRC)/json.c $(SRC)/protocol.c $(SRC)/config.c \
-            $(SRC)/transcript.c $(SRC)/guest.c $(SRC)/agent.c
+            $(SRC)/transcript.c $(SRC)/guest.c $(SRC)/agent.c \
+            $(SRC)/interactive.c
 HARNESS_SRC := $(CORE_SRC) $(SRC)/llm.c $(SRC)/main.c
 
 TEST_BINS := $(BUILD)/test_protocol $(BUILD)/test_agent_loop \
-             $(BUILD)/test_output_limits
+             $(BUILD)/test_output_limits $(BUILD)/test_session
 
 .PHONY: all test clean
 

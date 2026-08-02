@@ -12,15 +12,18 @@
 static const char *const SYSTEM_PROMPT =
     "You are working inside a disposable emulated Linux machine. You have "
     "root and complete freedom: install, modify, delete or reconfigure "
-    "anything. The machine is destroyed when the task ends and nothing you "
-    "do can affect the host.\n"
+    "anything. The machine is destroyed when the session ends and nothing "
+    "you do can affect the host.\n"
     "\n"
-    "Use the 'shell' tool to run commands. Work in /workspace unless the "
-    "task says otherwise. Command output is capped, so prefer targeted "
-    "commands over dumping large files.\n"
+    "Use the 'shell' tool to run commands. Work in /workspace unless asked "
+    "otherwise. Command output is capped, so prefer targeted commands over "
+    "dumping large files.\n"
     "\n"
-    "When the task is done, reply with a plain message and no tool call, "
-    "explaining what you did and what you found.";
+    "The machine keeps its state between questions, so anything you create "
+    "or install stays until the session ends.\n"
+    "\n"
+    "When you have finished, reply with a plain message and no tool call, "
+    "saying what you did and what you found.";
 
 static long now_seconds(void) {
     struct timespec ts;
@@ -49,6 +52,18 @@ const char *agent_stop_reason_name(AgentStopReason reason) {
 void agent_outcome_free(AgentOutcome *outcome) {
     free(outcome->final_answer);
     outcome->final_answer = NULL;
+}
+
+void agent_session_init(AgentSession *session) {
+    memset(session, 0, sizeof(*session));
+    conversation_init(&session->conversation);
+    conversation_add_text(&session->conversation, "system", SYSTEM_PROMPT);
+    session->started_seconds = now_seconds();
+}
+
+void agent_session_free(AgentSession *session) {
+    conversation_free(&session->conversation);
+    memset(session, 0, sizeof(*session));
 }
 
 /* Renders a result the way the model sees it: exit status first, then each
@@ -84,64 +99,60 @@ static bool format_tool_result(const ExecResult *result, Buffer *out) {
     return true;
 }
 
-static AgentOutcome finish(AgentStopReason reason, long steps, long started,
+static AgentOutcome finish(AgentSession *session, AgentStopReason reason,
                            char *answer) {
-    AgentOutcome outcome = {.reason = reason,
-                            .steps_used = steps,
-                            .elapsed_seconds = now_seconds() - started,
-                            .final_answer = answer};
+    AgentOutcome outcome = {
+        .reason = reason,
+        .steps_used = session->steps_used,
+        .elapsed_seconds = now_seconds() - session->started_seconds,
+        .final_answer = answer};
     return outcome;
 }
 
-AgentOutcome agent_run(const Config *config, Guest *guest,
-                       Transcript *transcript, const AgentHooks *hooks,
-                       const volatile sig_atomic_t *interrupted) {
+AgentOutcome agent_session_ask(AgentSession *session, const Config *config,
+                               Guest *guest, Transcript *transcript,
+                               const AgentHooks *hooks,
+                               const volatile sig_atomic_t *interrupted,
+                               const char *question) {
     LlmCompleteFn complete =
         hooks != NULL && hooks->complete != NULL ? hooks->complete
                                                  : llm_complete;
     GuestExecFn exec =
         hooks != NULL && hooks->exec != NULL ? hooks->exec : guest_exec;
 
-    Conversation conversation;
-    conversation_init(&conversation);
-    conversation_add_text(&conversation, "system", SYSTEM_PROMPT);
-    conversation_add_text(&conversation, "user", config->task);
-
-    const long started = now_seconds();
-    long step = 0;
+    conversation_add_text(&session->conversation, "user", question);
 
     for (;;) {
         if (interrupted != NULL && *interrupted != 0) {
-            conversation_free(&conversation);
-            return finish(AGENT_INTERRUPTED, step, started, NULL);
+            return finish(session, AGENT_INTERRUPTED, NULL);
         }
-        if (step >= config->max_agent_steps) {
-            conversation_free(&conversation);
-            return finish(AGENT_STEP_LIMIT, step, started, NULL);
+        if (session->steps_used >= config->max_agent_steps) {
+            return finish(session, AGENT_STEP_LIMIT, NULL);
         }
-        if (now_seconds() - started >= config->max_task_seconds) {
-            conversation_free(&conversation);
-            return finish(AGENT_TIME_LIMIT, step, started, NULL);
+        if (now_seconds() - session->started_seconds >=
+            config->max_task_seconds) {
+            return finish(session, AGENT_TIME_LIMIT, NULL);
         }
 
-        step++;
+        session->steps_used++;
+        long step = session->steps_used;
 
         LlmResponse response;
         char *error = NULL;
-        if (!complete(config, &conversation, &response, &error)) {
+        if (!complete(config, &session->conversation, &response, &error)) {
             transcript_write_error(transcript, step,
-                                   error != NULL ? error : "the API call failed");
+                                   error != NULL ? error
+                                                 : "the API call failed");
             if (config->verbose) {
                 fprintf(stderr, "[agent] %s\n",
                         error != NULL ? error : "the API call failed");
             }
             free(error);
-            conversation_free(&conversation);
-            return finish(AGENT_LLM_FAILED, step, started, NULL);
+            return finish(session, AGENT_LLM_FAILED, NULL);
         }
 
         if (response.raw_message != NULL) {
-            conversation_add_raw(&conversation, response.raw_message);
+            conversation_add_raw(&session->conversation, response.raw_message);
         }
         if (response.content != NULL && response.content[0] != '\0') {
             transcript_write_assistant(transcript, step, response.content);
@@ -151,8 +162,7 @@ AgentOutcome agent_run(const Config *config, Guest *guest,
             char *answer = response.content != NULL ? strdup(response.content)
                                                     : strdup("");
             llm_response_free(&response);
-            conversation_free(&conversation);
-            return finish(AGENT_FINAL_ANSWER, step, started, answer);
+            return finish(session, AGENT_FINAL_ANSWER, answer);
         }
 
         bool guest_lost = false;
@@ -161,9 +171,9 @@ AgentOutcome agent_run(const Config *config, Guest *guest,
 
             if (call->decode_error != NULL) {
                 /* A malformed tool call is the model's mistake to correct,
-                 * not a reason to end the task. */
+                 * not a reason to end the session. */
                 transcript_write_error(transcript, step, call->decode_error);
-                conversation_add_tool_result(&conversation, call->id,
+                conversation_add_tool_result(&session->conversation, call->id,
                                              call->decode_error,
                                              strlen(call->decode_error));
                 continue;
@@ -171,6 +181,9 @@ AgentOutcome agent_run(const Config *config, Guest *guest,
 
             transcript_write_tool_call(transcript, step, call->command,
                                        call->cwd, call->timeout_ms);
+            if (hooks != NULL && hooks->on_tool_call != NULL) {
+                hooks->on_tool_call(hooks->user, call->command, call->cwd);
+            }
             if (config->verbose) {
                 fprintf(stderr, "[agent] step %ld: %s\n", step, call->command);
             }
@@ -181,17 +194,20 @@ AgentOutcome agent_run(const Config *config, Guest *guest,
             long duration = now_ms() - start_ms;
 
             transcript_write_tool_result(transcript, step, &result, duration);
+            if (hooks != NULL && hooks->on_tool_result != NULL) {
+                hooks->on_tool_result(hooks->user, &result, duration);
+            }
 
             Buffer rendered;
             buffer_init(&rendered);
             if (format_tool_result(&result, &rendered)) {
-                conversation_add_tool_result(&conversation, call->id,
+                conversation_add_tool_result(&session->conversation, call->id,
                                              rendered.data, rendered.len);
             }
             buffer_free(&rendered);
 
             /* A command that fails or times out is normal. A guest that can
-             * no longer be reached ends the task. */
+             * no longer be reached ends the session. */
             if (result.transport_error && !guest_is_alive(guest)) {
                 guest_lost = true;
             }
@@ -207,8 +223,18 @@ AgentOutcome agent_run(const Config *config, Guest *guest,
         if (guest_lost) {
             transcript_write_error(transcript, step,
                                    "the guest became unavailable");
-            conversation_free(&conversation);
-            return finish(AGENT_GUEST_LOST, step, started, NULL);
+            return finish(session, AGENT_GUEST_LOST, NULL);
         }
     }
+}
+
+AgentOutcome agent_run(const Config *config, Guest *guest,
+                       Transcript *transcript, const AgentHooks *hooks,
+                       const volatile sig_atomic_t *interrupted) {
+    AgentSession session;
+    agent_session_init(&session);
+    AgentOutcome outcome = agent_session_ask(
+        &session, config, guest, transcript, hooks, interrupted, config->task);
+    agent_session_free(&session);
+    return outcome;
 }
