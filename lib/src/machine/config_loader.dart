@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import 'package:dart_emu/src/device/ethernet_device.dart';
 import 'package:dart_emu/src/device/file_block_device.dart';
+import 'package:dart_emu/src/device/virtio/ninep/ninep_directory_backend.dart';
 import 'package:dart_emu/src/machine/machine_config.dart';
 import 'package:dart_emu/src/net/user_net_device.dart';
 import 'package:yaml/yaml.dart';
@@ -119,7 +120,11 @@ class ConfigLoader {
         final file = fsMap[_Keys.file] as String?;
         if (file != null) {
           filesystems.add(
-            FilesystemConfig(file: file, tag: fsMap[_Keys.tag] as String?),
+            FilesystemConfig(
+              file: file,
+              tag: fsMap[_Keys.tag] as String?,
+              readOnly: fsMap[_Keys.readOnly] as bool? ?? false,
+            ),
           );
         }
       }
@@ -169,6 +174,7 @@ class _Keys {
   static const file = 'file';
   static const device = 'device';
   static const tag = 'tag';
+  static const readOnly = 'readonly';
   static const ethPrefix = 'eth';
   static const driver = 'driver';
   static const ifname = 'ifname';
@@ -198,7 +204,25 @@ class ConfigResolver {
         ...config.ethDevices,
         ...config.ethernetConfigs.map(_resolveEthernet),
       ],
+      // Without this a configured `fs0:` was parsed and then dropped, so a
+      // share declared in YAML never reached the guest.
+      sharedFolders: [
+        ...config.sharedFolders,
+        ..._resolveFilesystems(config.filesystemConfigs),
+      ],
     );
+  }
+
+  static Iterable<NinePShare> _resolveFilesystems(
+    List<FilesystemConfig> filesystems,
+  ) sync* {
+    for (var i = 0; i < filesystems.length; i++) {
+      final fs = filesystems[i];
+      yield NinePShare(
+        tag: fs.tag ?? 'fs$i',
+        backend: createDirectoryNinePBackend(fs.file, readOnly: fs.readOnly),
+      );
+    }
   }
 
   static EthernetDevice _resolveEthernet(EthernetConfig eth) {

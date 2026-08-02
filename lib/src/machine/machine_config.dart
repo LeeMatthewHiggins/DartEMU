@@ -153,10 +153,22 @@ class NinePShare {
 
 /// Configuration for a VirtIO 9P shared filesystem.
 class FilesystemConfig {
-  const FilesystemConfig({required this.file, this.tag});
+  const FilesystemConfig({
+    required this.file,
+    this.tag,
+    this.readOnly = false,
+  });
 
+  /// Host directory served over the share.
   final String file;
+
+  /// Mount tag the guest selects, defaulting to the share index.
   final String? tag;
+
+  /// Whether the 9P server refuses writes.
+  ///
+  /// Enforced host-side, so a guest cannot remount its way around it.
+  final bool readOnly;
 }
 
 /// Configuration for a VirtIO block device backed by a file.
