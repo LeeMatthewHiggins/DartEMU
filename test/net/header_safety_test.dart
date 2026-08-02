@@ -75,7 +75,9 @@ void main() {
       'control character': 'sk-or-v1\u{0001}abc',
     };
 
-    tainted.forEach((description, key) {
+    for (final entry in tainted.entries) {
+      final description = entry.key;
+      final key = entry.value;
       expect(
         () => proxyWith(key).resolve(guestRequest()),
         throwsA(
@@ -87,7 +89,7 @@ void main() {
         ),
         reason: 'should refuse a key carrying a $description',
       );
-    });
+    }
   });
 
   test('an ordinary key is sent unchanged', () {
