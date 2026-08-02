@@ -145,6 +145,32 @@ static void test_a_proxy_refusal_is_surfaced(void) {
           "a refusal is not a reply");
     CHECK(error != NULL && strstr(error, "OPENROUTER_KEY") != NULL,
           "the reason names the credential the host needs");
+    CHECK(error != NULL && strstr(error, "host refused") != NULL,
+          "the host is named as the side that refused");
+    free(error);
+    agent_config_free(&config);
+}
+
+/* The same shape arrives from beyond the proxy, and reads identically unless
+ * the two are told apart. Sending someone to look at the wrong layer is the
+ * expensive part of a failure like this. */
+static void test_an_upstream_refusal_is_not_blamed_on_the_host(void) {
+    AgentConfig config;
+    agent_config_init(&config);
+    const char *body =
+        "{\"error\":{\"message\":\"Missing Authentication header\","
+        "\"code\":401}}";
+
+    LlmReply reply;
+    char *error = NULL;
+    CHECK(!llm_parse_reply(body, strlen(body), &config, &reply, &error),
+          "a refusal is not a reply");
+    CHECK(error != NULL && strstr(error, "model API refused") != NULL,
+          "an unmarked refusal is attributed beyond the proxy");
+    CHECK(error != NULL && strstr(error, "host refused") == NULL,
+          "the host is not blamed for it");
+    CHECK(error != NULL && strstr(error, "Missing Authentication") != NULL,
+          "the upstream's own words survive");
     free(error);
     agent_config_free(&config);
 }
@@ -231,6 +257,7 @@ int main(void) {
     test_reply_with_a_final_answer();
     test_an_unknown_tool_is_reported_not_fatal();
     test_a_proxy_refusal_is_surfaced();
+    test_an_upstream_refusal_is_not_blamed_on_the_host();
     test_padding_before_the_json_is_ignored();
     test_a_torn_reply_fails_cleanly();
     test_the_system_prompt_states_the_real_limits();
