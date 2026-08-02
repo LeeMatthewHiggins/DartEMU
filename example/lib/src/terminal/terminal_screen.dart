@@ -6,9 +6,11 @@ import 'package:dart_emu/dart_emu.dart';
 import 'package:dart_emu_example/src/crt/crt_effect.dart';
 import 'package:dart_emu_example/src/crt/crt_effect_widget.dart';
 import 'package:dart_emu_example/src/emulator/emulator_controller.dart';
+import 'package:dart_emu_example/src/terminal/demo_terminal_view.dart';
 import 'package:dart_emu_example/src/terminal/greeting.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:xterm/xterm.dart';
 
 class _TerminalLayout {
@@ -82,6 +84,11 @@ class TerminalScreen extends StatefulWidget {
 class _TerminalScreenState extends State<TerminalScreen>
     with TickerProviderStateMixin {
   final _terminal = Terminal(maxLines: 10000);
+  final _terminalController = TerminalController();
+
+  /// Owned here so a tap can restore focus even when it lands on an
+  /// existing selection, which xterm clears without refocusing.
+  final _terminalFocusNode = FocusNode();
 
   EmulatorController? _controller;
   StreamSubscription<List<int>>? _outputSub;
@@ -96,6 +103,11 @@ class _TerminalScreenState extends State<TerminalScreen>
   @override
   void initState() {
     super.initState();
+    // The terminal has its own right-click menu; without this the browser
+    // draws its own on top of it.
+    if (kIsWeb) {
+      unawaited(BrowserContextMenu.disableContextMenu());
+    }
     _launchEmulator();
     _loadShader();
     _startAutoRefresh();
@@ -232,10 +244,15 @@ class _TerminalScreenState extends State<TerminalScreen>
 
   @override
   void dispose() {
+    if (kIsWeb) {
+      unawaited(BrowserContextMenu.enableContextMenu());
+    }
     _reloadTimer?.cancel();
     _outputSub?.cancel();
     _statusSub?.cancel();
     _controller?.dispose();
+    _terminalController.dispose();
+    _terminalFocusNode.dispose();
     super.dispose();
   }
 
@@ -268,9 +285,10 @@ class _TerminalScreenState extends State<TerminalScreen>
                 CrtEffectWidget(
                   shader: _crtShader,
                   effect: _crtEffect,
-                  child: TerminalView(
-                    _terminal,
-                    autofocus: true,
+                  child: DemoTerminalView(
+                    terminal: _terminal,
+                    controller: _terminalController,
+                    focusNode: _terminalFocusNode,
                     hardwareKeyboardOnly: _isDesktopPlatform,
                     textStyle: TerminalStyle(
                       fontSize: fontSize,

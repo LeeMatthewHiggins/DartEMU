@@ -10,6 +10,8 @@ on:
       - ".github/workflows/dart_emu.yaml"
       - "lib/**"
       - "test/**"
+      - "example/lib/**"
+      - "example/test/**"
       - "pubspec.yaml"
   push:
     branches:
@@ -57,6 +59,25 @@ jobs:
 
       - name: 🖥️ Machine tests
         run: dart test --run-skipped -t machine
+
+  example-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 📚 Git Checkout
+        uses: actions/checkout@v7
+
+      - name: 🐦 Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      - name: 📦 Install Dependencies
+        working-directory: example
+        run: flutter pub get
+
+      - name: 🖱️ Example widget tests
+        working-directory: example
+        run: flutter test
 
   verify-version:
     runs-on: ubuntu-latest
