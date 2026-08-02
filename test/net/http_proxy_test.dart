@@ -108,6 +108,43 @@ void main() {
       },
     );
 
+    test('the upstream path prefix is kept, not replaced', () async {
+      // Uri.resolve treats an absolute path as a replacement, which sent
+      // /v1/chat/completions to the site root and returned its 404 page.
+      ProxyRequest? sent;
+      final proxy = proxyWith(
+        transport: (request) async {
+          sent = request;
+          return ProxyResponse(
+            statusCode: 200,
+            headers: const {},
+            body: bytes('{}'),
+          );
+        },
+      );
+      await proxy.handle(parse(rawRequest()));
+      expect(
+        sent!.url.toString(),
+        'https://openrouter.ai/api/v1/chat/completions',
+      );
+    });
+
+    test('a query string survives the join', () async {
+      ProxyRequest? sent;
+      final proxy = proxyWith(
+        transport: (request) async {
+          sent = request;
+          return ProxyResponse(
+            statusCode: 200,
+            headers: const {},
+            body: bytes('{}'),
+          );
+        },
+      );
+      await proxy.handle(parse(rawRequest(path: '/v1/models?limit=2')));
+      expect(sent!.url.toString(), endsWith('/api/v1/models?limit=2'));
+    });
+
     test('the guest only ever writes a placeholder', () {
       // The name is what the guest carries. A fully compromised guest
       // yields this string and nothing else.

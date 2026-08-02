@@ -230,9 +230,27 @@ class HttpProxy {
 
     return ProxyRequest(
       method: request.method,
-      url: upstream.target.resolve(request.path),
+      url: _join(upstream.target, request.path),
       headers: headers,
       body: request.body,
+    );
+  }
+
+  /// Appends the guest's path to the upstream's own.
+  ///
+  /// Uri.resolve would treat an absolute path as a replacement and discard
+  /// any prefix the upstream carries, sending /v1/… to the site root rather
+  /// than to its API.
+  static Uri _join(Uri target, String path) {
+    final query = path.indexOf('?');
+    final justPath = query < 0 ? path : path.substring(0, query);
+    final base = target.path.endsWith('/')
+        ? target.path.substring(0, target.path.length - 1)
+        : target.path;
+    final tail = justPath.startsWith('/') ? justPath : '/$justPath';
+    return target.replace(
+      path: '$base$tail',
+      query: query < 0 ? null : path.substring(query + 1),
     );
   }
 
