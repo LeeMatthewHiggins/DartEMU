@@ -1,6 +1,6 @@
-/* Assertions for the harness tests: no framework, just a failure counter. */
-#ifndef HARNESS_TEST_H
-#define HARNESS_TEST_H
+/* Assertions for the agent's tests: no framework, just a failure counter. */
+#ifndef AGENTOS_TEST_ASSERT_H
+#define AGENTOS_TEST_ASSERT_H
 
 #include <stdio.h>
 #include <string.h>
@@ -55,4 +55,4 @@ static int g_checks = 0;
         return 1;                                                        \
     } while (0)
 
-#endif /* HARNESS_TEST_H */
+#endif /* AGENTOS_TEST_ASSERT_H */

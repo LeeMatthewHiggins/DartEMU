@@ -1,11 +1,13 @@
 /* Minimal JSON reader and writer.
  *
- * Hand-written rather than vendored: the harness needs only object, array,
+ * Hand-written rather than vendored: the agent needs only object, array,
  * string, number, bool and null, and a self-contained implementation keeps
- * the tree free of third-party source and its licence bookkeeping.
+ * the tree free of third-party source and its licence bookkeeping. It also
+ * has to cross-compile to a static riscv64 binary, which rules out most of
+ * what it might otherwise have depended on.
  */
-#ifndef HARNESS_JSON_H
-#define HARNESS_JSON_H
+#ifndef AGENTOS_JSON_H
+#define AGENTOS_JSON_H
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -82,4 +84,4 @@ bool json_write_string(Buffer *out, const char *text, size_t len);
  * decimal point so exit codes and step counts read naturally. */
 bool json_write_number(Buffer *out, double number);
 
-#endif /* HARNESS_JSON_H */
+#endif /* AGENTOS_JSON_H */

@@ -1,17 +1,13 @@
-/* The chat-completions wire format, shared by both agents.
+/* The chat-completions wire format: the message list, the assistant replay
+ * and the single shell tool.
  *
- * The harness drives a guest from outside and the in-guest agent runs within
- * one, but the conversation they hold is the same conversation: the same
- * message objects, the same assistant replay, the same single shell tool.
- * Only the transport and the prompt differ, so only those live apart.
- *
- * Reply parsing deliberately stays with each agent. They have drifted for a
- * reason — the in-guest one has a proxy in front of it and must say which
- * side refused a request — and forcing one shape on both would cost more
- * than the repetition saves.
+ * Kept apart from llm.c because it is the protocol rather than the client —
+ * what a request looks like, not how it is sent. Reply parsing lives with
+ * the client, since it has to say which side refused a request and that is
+ * a fact about the transport.
  */
-#ifndef COMMON_CHAT_H
-#define COMMON_CHAT_H
+#ifndef AGENTOS_CHAT_H
+#define AGENTOS_CHAT_H
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -70,4 +66,4 @@ bool chat_serialise_assistant(const JsonValue *message, Buffer *out);
 bool chat_build_request(const char *model, const char *tool_json,
                         const Conversation *conversation, Buffer *out);
 
-#endif /* COMMON_CHAT_H */
+#endif /* AGENTOS_CHAT_H */

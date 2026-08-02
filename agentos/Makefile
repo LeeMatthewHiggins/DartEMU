@@ -8,15 +8,14 @@ CC ?= cc
 CROSS_CC ?= riscv64-linux-gnu-gcc
 
 CFLAGS ?= -std=c11 -O2 -Wall -Wextra -Wpedantic -Wshadow
-CFLAGS += -Iinclude -I../common -D_POSIX_C_SOURCE=200809L -D_DEFAULT_SOURCE \
+CFLAGS += -Iinclude -Itests -D_POSIX_C_SOURCE=200809L -D_DEFAULT_SOURCE \
           -D_DARWIN_C_SOURCE
 
 BUILD := build
 SRC := src
 TESTS := tests
-COMMON := ../common
 
-CORE_SRC := $(COMMON)/json.c $(COMMON)/chat.c $(SRC)/shell.c $(SRC)/http.c \
+CORE_SRC := $(SRC)/json.c $(SRC)/chat.c $(SRC)/shell.c $(SRC)/http.c \
             $(SRC)/llm.c $(SRC)/agent.c
 AGENTOS_SRC := $(CORE_SRC) $(SRC)/main.c
 

@@ -1,9 +1,11 @@
 /* AgentOS: the agent that runs inside the machine.
  *
- * The host-side harness needs an elaborate transport — newline-delimited JSON
- * over a console, a shell daemon, base64 in both directions — because the
- * agent sits outside the guest. This one is inside it, so running a command
- * is fork and exec, and most of that machinery does not exist.
+ * Driving a guest from outside needs an elaborate transport — newline
+ * delimited JSON over a console, a shell daemon, base64 in both directions —
+ * because the agent and the machine are separated by a console. This one is
+ * inside, so running a command is fork and exec and none of that exists.
+ * AgentSandbox in the Dart library is the outside arrangement, for images
+ * that cannot be modified.
  *
  * It never holds a credential. Requests carry a placeholder naming the key
  * they need, and the host substitutes the real value on the way out, so a
