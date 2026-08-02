@@ -29,6 +29,47 @@ void main() {
     });
   });
 
+  group('the model on the command line', () {
+    test('the chosen model reaches the guest', () {
+      final cmdline = AgentOsDemo.cmdLineFor('moonshotai/kimi-k3');
+      expect(cmdline, contains('agentos.model=moonshotai/kimi-k3'));
+      expect(cmdline, contains('root=/dev/vda'));
+    });
+
+    // A value with a space in it would stop being one kernel parameter and
+    // start being two, so the next word would arrive as a boot argument.
+    test('a value that would split into two parameters is refused', () {
+      for (final hostile in [
+        'kimi init=/bin/sh',
+        'kimi\troot=/dev/vdb',
+        'kimi\nsingle',
+        '',
+        'a' * 200,
+      ]) {
+        expect(
+          AgentOsDemo.isValidModel(hostile),
+          isFalse,
+          reason: 'should reject "$hostile"',
+        );
+        expect(
+          AgentOsDemo.cmdLineFor(hostile),
+          contains('agentos.model=${AgentOsDemo.defaultModel}'),
+          reason: 'should fall back for "$hostile"',
+        );
+      }
+    });
+
+    test('real model names are accepted', () {
+      for (final model in AgentOsDemo.models) {
+        expect(AgentOsDemo.isValidModel(model), isTrue, reason: model);
+      }
+    });
+
+    test('the default is one of the offered models', () {
+      expect(AgentOsDemo.models, contains(AgentOsDemo.defaultModel));
+    });
+  });
+
   group('ApiKeyDialog', () {
     testWidgets('an empty field boots without a key', (tester) async {
       final choice = await _showAndSubmit(tester, key: '');

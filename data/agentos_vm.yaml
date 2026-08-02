@@ -8,7 +8,7 @@ machine: riscv64
 memory_size: 256
 bios: bbl64.bin
 kernel: kernel-riscv64.bin
-cmdline: "console=hvc0 root=/dev/vda rw init=/init loglevel=3"
+cmdline: "console=hvc0 root=/dev/vda rw init=/init loglevel=3 agentos.model=moonshotai/kimi-k3"
 drive0:
   file: rootfs/alpine-riscv64-agentos-rootfs.bin
 eth0:
