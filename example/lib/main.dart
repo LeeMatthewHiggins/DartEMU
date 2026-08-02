@@ -9,6 +9,7 @@ void main() {
     App(
       bootXlen: _parseBootParam(params),
       initialCrtEffect: _parseCrtParam(params),
+      bundleUrl: params['bundle'],
     ),
   );
 }

@@ -10,14 +10,19 @@ class App extends StatefulWidget {
   ///
   /// When [bootXlen] is provided, the config picker is skipped and the
   /// bundled demo boots immediately. Use `?boot=32` or `?boot=64` in the
-  /// URL on web. Use `?crt=full|flat|glass|off` to set the CRT effect.
-  const App({this.bootXlen, this.initialCrtEffect, super.key});
+  /// URL on web. Use `?crt=full|flat|glass|off` to set the CRT effect,
+  /// and `?bundle=<url>` to preload a `.zip` VM bundle into the picker.
+  const App({this.bootXlen, this.initialCrtEffect, this.bundleUrl, super.key});
 
   /// If set, skip the config picker and boot this architecture directly.
   final Xlen? bootXlen;
 
   /// If set, start the terminal with this CRT effect mode.
   final CrtEffect? initialCrtEffect;
+
+  /// If set, the picker downloads this `.zip` bundle and preloads it,
+  /// leaving only the Boot button to press.
+  final String? bundleUrl;
 
   @override
   State<App> createState() => _AppState();
@@ -67,6 +72,7 @@ class _AppState extends State<App> {
       );
     }
     return ConfigPickerScreen(
+      prefillBundleUrl: widget.bundleUrl,
       onConfigLoaded: (config) => setState(() => _config = config),
       onDemoSelected: (xlen) => setState(() => _demoXlen = xlen),
       onDemoWithShare: (xlen, share, refresh) => setState(() {

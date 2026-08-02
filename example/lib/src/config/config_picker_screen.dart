@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:dart_emu/dart_emu.dart';
+import 'package:dart_emu_example/src/config/bundle_prefill.dart';
 import 'package:dart_emu_example/src/config/config_resolver_adapter.dart'
     as resolver;
 import 'package:dart_emu_example/src/config/config_summary_card.dart';
@@ -38,8 +39,20 @@ class ConfigPickerScreen extends StatefulWidget {
     required this.onConfigLoaded,
     required this.onDemoSelected,
     required this.onDemoWithShare,
+    this.prefillBundleUrl,
+    this.bundleFetcher = fetchBundleBytes,
     super.key,
   });
+
+  /// If set, a `.zip` bundle to download and preload on entry, so the
+  /// screen opens with the config parsed and only Boot left to press.
+  ///
+  /// Relative URLs resolve against the page's own address, which keeps
+  /// same-origin hosting free of cross-origin restrictions.
+  final String? prefillBundleUrl;
+
+  /// Downloads the prefill bundle; replaceable in tests.
+  final BundleFetcher bundleFetcher;
 
   /// Called with a resolved [MachineConfig] when a config is loaded.
   final ValueChanged<MachineConfig> onConfigLoaded;
@@ -66,6 +79,25 @@ class _ConfigPickerScreenState extends State<ConfigPickerScreen> {
   MachineConfig? _parsedConfig;
   String? _errorMessage;
   bool _loading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final url = widget.prefillBundleUrl;
+    if (url != null && url.isNotEmpty) {
+      unawaited(_prefillFromUrl(url));
+    }
+  }
+
+  Future<void> _prefillFromUrl(String url) async {
+    _setLoading();
+    try {
+      final bytes = await widget.bundleFetcher(Uri.base.resolve(url));
+      _finishZipLoad(bytes);
+    } on Object catch (e) {
+      if (mounted) _setError(e.toString());
+    }
+  }
 
   bool get _canUseFilePaths => resolver.isConfigPickerSupported;
 
