@@ -29,7 +29,7 @@ typedef struct {
     char *task_disk_path;
     char *bios_path;
     char *kernel_path;
-    char *machine;
+    char *cmdline;
     long memory_mb;
 
     char *transcript_path;

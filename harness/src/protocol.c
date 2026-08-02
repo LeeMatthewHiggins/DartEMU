@@ -210,7 +210,17 @@ bool protocol_decode_response(const char *line, size_t len,
         return false;
     }
     result->id = (long)id->number;
-    result->exit_code = (int)json_number_or(root, "exit_code", -1);
+
+    /* A response always carries an exit code. Requiring it is what stops the
+     * console echo of our own request — valid JSON, with a matching id and no
+     * exit code — from being mistaken for the guest's answer. */
+    const JsonValue *exit_code = json_object_get(root, "exit_code");
+    if (exit_code == NULL || exit_code->type != JSON_NUMBER) {
+        json_free(root);
+        exec_result_fail(result, "guest response is missing a numeric exit_code");
+        return false;
+    }
+    result->exit_code = (int)exit_code->number;
     result->timed_out = json_bool_or(root, "timed_out", false);
 
     const char *error = NULL;

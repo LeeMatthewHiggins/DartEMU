@@ -16,7 +16,8 @@ enum {
     READ_CHUNK = 4096,
     BOOT_POLL_MS = 200,
     /* Emulated boots are slow; the daemon banner is the real signal. */
-    DAEMON_READY_TIMEOUT_MS = 300000,
+    BOOT_TIMEOUT_MS = 300000,
+    DAEMON_READY_TIMEOUT_MS = 120000,
     SHUTDOWN_GRACE_MS = 2000,
     /* Headroom over the command's own timeout before the transport is
      * declared lost, so a guest-side kill still reports as a timeout. */
@@ -24,6 +25,10 @@ enum {
 };
 
 static const char *const READY_MARKER = "HARNESS_READY";
+
+/* A shell prompt arrives without a trailing newline, so it never completes a
+ * line and cannot be waited for with the line reader. */
+static const char *const SHELL_PROMPT = "# ";
 
 static void set_error(Guest *guest, const char *message) {
     free(guest->last_error);
@@ -129,10 +134,10 @@ static bool spawn_emulator(Guest *guest) {
     Buffer command;
     buffer_init(&command);
     buffer_append_str(&command, config->emulator_command);
-    if (config->machine != NULL) {
-        buffer_printf(&command, " --machine %s", config->machine);
-    }
     buffer_printf(&command, " --memory %ld", config->memory_mb);
+    if (config->cmdline != NULL) {
+        buffer_printf(&command, " --cmdline '%s'", config->cmdline);
+    }
     if (config->bios_path != NULL) {
         buffer_printf(&command, " --bios '%s'", config->bios_path);
     }
@@ -298,6 +303,42 @@ static bool wait_for_ready(Guest *guest, long timeout_ms) {
     }
 }
 
+/* Waits until the guest console shows a shell prompt.
+ *
+ * Writing the daemon into a kernel that is still booting loses it: the bytes
+ * are consumed by whatever owns the console at the time. */
+static bool wait_for_shell(Guest *guest, long timeout_ms) {
+    long deadline = now_ms() + timeout_ms;
+    size_t scanned = 0;
+    for (;;) {
+        if (guest->pending.data != NULL && guest->pending.len > scanned) {
+            /* The prompt has no newline, so scan raw bytes rather than lines,
+             * starting a little before the last scan in case it straddles a
+             * read boundary. */
+            if (strstr(guest->pending.data, SHELL_PROMPT) != NULL) {
+                buffer_reset(&guest->pending);
+                return true;
+            }
+            scanned = guest->pending.len;
+            if (guest->config->verbose && guest->pending.len > 0) {
+                fwrite(guest->pending.data, 1, guest->pending.len, stderr);
+                buffer_reset(&guest->pending);
+                scanned = 0;
+            }
+        }
+        long remaining = deadline - now_ms();
+        if (remaining <= 0) {
+            set_error(guest, "the guest never reached a shell prompt");
+            return false;
+        }
+        bool had_data;
+        int slice = remaining < BOOT_POLL_MS ? (int)remaining : BOOT_POLL_MS;
+        if (!pump(guest, slice, &had_data)) {
+            return false;
+        }
+    }
+}
+
 bool guest_start(Guest *guest) {
     if (!make_task_disk(guest)) {
         return false;
@@ -310,9 +351,10 @@ bool guest_start(Guest *guest) {
         return false;
     }
 
-    /* Interrupt whatever the console is doing, then install the daemon. Its
-     * banner is what tells us the guest is genuinely executing commands. */
-    if (!write_all(guest, "\n", 1)) {
+    /* Let the guest finish booting and reach a shell before writing anything
+     * to it, then install the daemon. Its banner is what tells us the guest
+     * is genuinely executing commands rather than merely booted. */
+    if (!wait_for_shell(guest, BOOT_TIMEOUT_MS)) {
         return false;
     }
     if (!write_all(guest, protocol_guest_daemon_script(),
