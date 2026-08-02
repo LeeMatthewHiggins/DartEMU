@@ -29,3 +29,15 @@ flutter:
     - shaders/crt.frag
   assets:
     - assets/
+  # Bundled rather than named: the web build resolves only the fonts declared
+  # here, so a system font name falls back to proportional Roboto and the
+  # terminal grid spaces every glyph to a cell it does not fill.
+  #
+  # The NL cut is the one without ligatures, which a cell-based terminal has
+  # no way to render and no business joining.
+  fonts:
+    - family: JetBrainsMonoNL
+      fonts:
+        - asset: assets/fonts/JetBrainsMonoNL-Regular.ttf
+        - asset: assets/fonts/JetBrainsMonoNL-Bold.ttf
+          weight: 700

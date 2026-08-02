@@ -18,8 +18,17 @@ class _TerminalLayout {
   static const referenceFontSize = 16.0;
   static const minFontSize = 8.0;
   static const maxFontSize = 24.0;
-  static const fontFamily = 'Menlo';
+  /// Bundled with the app rather than asked of the system.
+  ///
+  /// The web build resolves only the fonts declared in pubspec.yaml, so a
+  /// system name like Menlo silently became proportional Roboto — and a
+  /// terminal lays out fixed cells, so every glyph was padded to a width it
+  /// did not fill.
+  static const fontFamily = 'JetBrainsMonoNL';
+
+  /// Still listed, for a build where the asset somehow does not load.
   static const fontFamilyFallback = [
+    'Menlo',
     'Consolas',
     'DejaVu Sans Mono',
     'Liberation Mono',
