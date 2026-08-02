@@ -183,6 +183,37 @@ coherent clock (timers resume rather than jumping). Measured ~50x
 faster than a cold boot in the integration test
 (`test/sandbox/snapshot_restore_test.dart`).
 
+## AgentOS
+
+`AgentSandbox` puts the agent outside the machine. [AgentOS](agentos) puts it
+inside: a small C program that replaces the guest's console getty, so talking
+to the machine means talking to the agent and there is no shell behind it.
+
+It carries no credential. Its requests leave with a placeholder naming the
+key they need, and the host substitutes the real value on the way out — so a
+guest that has been completely compromised yields a name. On the web that
+host is the page itself, through a `fetch`-backed proxy that also decides
+which destinations exist at all:
+
+```dart
+UserNetDevice(
+  backend: WebNetBackend(
+    upstreams: [
+      Upstream(
+        host: 'llm.local',
+        target: Uri.parse('https://openrouter.ai/api'),
+        injectHeaders: {'authorization': r'Bearer ${OPENROUTER_KEY}'},
+      ),
+    ],
+    credentials: CredentialStore({'OPENROUTER_KEY': key}),
+  ),
+)
+```
+
+A browser has no raw sockets, so this is the guest's only route out, and the
+reachable set is exactly the upstreams listed. See [agentos/](agentos) for
+the agent and [example/](example) for the hosted demo.
+
 ## Flutter / Web Integration
 
 Use `Xlen.rv32` for web targets. RV32 avoids 64-bit integer operations that

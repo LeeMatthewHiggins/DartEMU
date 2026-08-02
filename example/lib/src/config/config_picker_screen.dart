@@ -1,6 +1,8 @@
 import 'dart:async';
 
 import 'package:dart_emu/dart_emu.dart';
+import 'package:dart_emu_example/src/agentos/agentos_demo.dart';
+import 'package:dart_emu_example/src/agentos/api_key_dialog.dart';
 import 'package:dart_emu_example/src/config/bundle_prefill.dart';
 import 'package:dart_emu_example/src/config/config_resolver_adapter.dart'
     as resolver;
@@ -40,9 +42,11 @@ class ConfigPickerScreen extends StatefulWidget {
     required this.onConfigLoaded,
     required this.onDemoSelected,
     required this.onDemoWithShare,
+    required this.onAgentOsSelected,
     this.prefillBundleUrl,
     this.bundleFetcher = fetchBundleBytes,
     this.rv64Supported = isRv64Supported,
+    this.agentOsSupported = AgentOsDemo.isSupported,
     super.key,
   });
 
@@ -78,6 +82,18 @@ class ConfigPickerScreen extends StatefulWidget {
     Future<void> Function()? refresh,
   )
   onDemoWithShare;
+
+  /// Whether the AgentOS demo can run here; replaceable in tests.
+  ///
+  /// It needs a browser, for the proxy that gives the guest its only route
+  /// out, and WasmGC, for an RV64 guest at all.
+  final bool agentOsSupported;
+
+  /// Called with the visitor's key decision once the AgentOS demo is chosen.
+  ///
+  /// The dialog is raised here rather than by the caller because asking needs
+  /// a context below the app's Navigator, which the caller does not have.
+  final ValueChanged<ApiKeyChoice> onAgentOsSelected;
 
   @override
   State<ConfigPickerScreen> createState() => _ConfigPickerScreenState();
@@ -264,24 +280,31 @@ class _ConfigPickerScreenState extends State<ConfigPickerScreen> {
     );
   }
 
+  /// Wrapped rather than in a row: a third card does not fit the content
+  /// width, and wrapping keeps them centred instead of overflowing.
   Widget _buildDemoSection() {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
+    return Wrap(
+      alignment: WrapAlignment.center,
+      spacing: _PickerLayout.spacing,
+      runSpacing: _PickerLayout.spacing,
       children: [
         if (!kIsWeb)
-          Padding(
-            padding: const EdgeInsets.only(right: _PickerLayout.spacing),
-            child: _DemoCard(
-              label: 'RISC-V 64-bit',
-              subtitle: 'RV64IMAFDC',
-              onTap: () => widget.onDemoSelected(Xlen.rv64),
-            ),
+          _DemoCard(
+            label: 'RISC-V 64-bit',
+            subtitle: 'RV64IMAFDC',
+            onTap: () => widget.onDemoSelected(Xlen.rv64),
           ),
         _DemoCard(
           label: 'RISC-V 32-bit',
           subtitle: 'RV32IMAFDC',
           onTap: () => widget.onDemoSelected(Xlen.rv32),
         ),
+        if (widget.agentOsSupported && widget.rv64Supported)
+          _DemoCard(
+            label: 'AgentOS',
+            subtitle: 'talk to it, not a shell',
+            onTap: _askForKeyAndBoot,
+          ),
       ],
     );
   }
@@ -303,6 +326,12 @@ class _ConfigPickerScreenState extends State<ConfigPickerScreen> {
         ),
       ],
     );
+  }
+
+  Future<void> _askForKeyAndBoot() async {
+    final choice = await ApiKeyDialog.show(context);
+    if (choice == null || !mounted) return;
+    widget.onAgentOsSelected(choice);
   }
 
   Future<void> _mountFolderAndBoot() async {

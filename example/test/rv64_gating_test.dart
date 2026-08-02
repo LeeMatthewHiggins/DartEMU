@@ -29,6 +29,7 @@ Widget _picker({required bool rv64Supported}) => MaterialApp(
     onConfigLoaded: (_) {},
     onDemoSelected: (_) {},
     onDemoWithShare: (_, __, ___) {},
+    onAgentOsSelected: (_) {},
   ),
 );
 

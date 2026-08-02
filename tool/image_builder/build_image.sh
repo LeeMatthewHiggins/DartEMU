@@ -19,6 +19,15 @@ case "${IMAGE_VARIANT}" in
     IMAGE_SIZE_MB="${IMAGE_SIZE_MB:-512}"
     OUTPUT_FILE="${OUTPUT_DIR}/alpine-${ARCH}-dev-rootfs.bin"
     ;;
+  agentos)
+    IMAGE_SIZE_MB="${IMAGE_SIZE_MB:-256}"
+    OUTPUT_FILE="${OUTPUT_DIR}/alpine-${ARCH}-agentos-rootfs.bin"
+    if [ ! -f /input/agentos ]; then
+      echo "ERROR: the agent binary was not provided at /input/agentos."
+      echo "       Build it first with agentos/build_guest.sh."
+      exit 1
+    fi
+    ;;
   *)
     IMAGE_SIZE_MB="${IMAGE_SIZE_MB:-256}"
     OUTPUT_FILE="${OUTPUT_DIR}/alpine-${ARCH}-rootfs.bin"
@@ -87,6 +96,68 @@ if [ "${IMAGE_VARIANT}" = "dev" ]; then
         nano
 fi
 
+if [ "${IMAGE_VARIANT}" = "agentos" ]; then
+  echo "==> Installing the agent (${ARCH})..."
+  mkdir -p "${MOUNT_DIR}/usr/local/bin" "${MOUNT_DIR}/workspace"
+  cp /input/agentos "${MOUNT_DIR}/usr/local/bin/agentos"
+  chmod +x "${MOUNT_DIR}/usr/local/bin/agentos"
+
+  # The console runs the agent and nothing else. init respawns this, so the
+  # agent restarting can never fall through to a shell.
+  cat > "${MOUNT_DIR}/usr/local/bin/agentos-console" << 'CONSOLE_EOF'
+#!/bin/sh
+export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export HOME=/root
+export TERM=vt100
+cd /workspace
+exec /usr/local/bin/agentos
+CONSOLE_EOF
+  chmod +x "${MOUNT_DIR}/usr/local/bin/agentos-console"
+
+  echo "==> Writing /llms.txt..."
+  cat > "${MOUNT_DIR}/llms.txt" << 'LLMS_EOF'
+# AgentOS
+
+> A disposable emulated RISC-V Linux machine you have complete control of.
+> These notes say what is here and what it costs, so you can spend your
+> commands well.
+
+## The machine
+
+- Alpine Linux on an emulated RISC-V CPU. Busybox provides most commands.
+- You are root. Install, change or destroy anything. The machine is thrown
+  away when the session ends and nothing here reaches the host.
+- Work in /workspace. It is empty and yours.
+- No Python. Use the shell, awk, sed and busybox.
+
+## What is expensive
+
+- The CPU is emulated, so it is perhaps a hundred times slower than the one
+  running it. Compiling anything large is not worth the wait.
+- Every byte of output crosses a serial console and is truncated past the
+  limit in your instructions. `du -sh`, `find -maxdepth 1`, `wc -l` and
+  `| head` are cheap; printing a whole tree is not.
+- `apk add` needs the network, which is restricted. Assume it will fail
+  unless the package host is one of the allowed destinations.
+
+## The network
+
+- This machine reaches nothing directly. Its only route out is the host,
+  which allows a fixed list of destinations and refuses everything else.
+- The host holds every credential. Requests from here carry a placeholder
+  naming the key, and the host substitutes the real value. There is no
+  secret on this machine to find.
+- A refused request comes back as JSON with the reason in it. Read it and
+  report it; there is no way around it from in here.
+
+## Files worth knowing
+
+- /workspace — your working directory.
+- /llms.txt — this file.
+- /etc/agentos/shares.md — present only when a host folder is shared in.
+LLMS_EOF
+fi
+
 echo "==> Writing /init..."
 cat > "${MOUNT_DIR}/init" << INIT_EOF
 #!/bin/sh
@@ -113,10 +184,18 @@ INIT_EOF
 chmod +x "${MOUNT_DIR}/init"
 
 echo "==> Writing /etc/inittab..."
-cat > "${MOUNT_DIR}/etc/inittab" << 'INITTAB_EOF'
+if [ "${IMAGE_VARIANT}" = "agentos" ]; then
+  # The console is the agent. There is no getty, so talking to this machine
+  # means talking to the agent; there is no shell to drop into.
+  CONSOLE_LINE="hvc0::respawn:/usr/local/bin/agentos-console"
+else
+  CONSOLE_LINE="hvc0::respawn:/sbin/getty -L 115200 hvc0 vt100"
+fi
+
+cat > "${MOUNT_DIR}/etc/inittab" << INITTAB_EOF
 ::sysinit:/bin/hostname dartemu
 ::sysinit:/bin/sh -c 'ifconfig eth0 10.0.2.15 netmask 255.255.255.0 up 2>/dev/null && route add default gw 10.0.2.2 2>/dev/null'
-hvc0::respawn:/sbin/getty -L 115200 hvc0 vt100
+${CONSOLE_LINE}
 ::shutdown:/bin/umount -a -r
 INITTAB_EOF
 

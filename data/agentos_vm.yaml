@@ -1,0 +1,15 @@
+# AgentOS: the console is the agent, and there is no shell behind it.
+#
+# The agent reaches the network only through a proxy on the host, which the
+# web demo provides. Booted from the CLI there is nothing listening, so it
+# comes up and says so rather than pretending to work.
+version: 1
+machine: riscv64
+memory_size: 256
+bios: bbl64.bin
+kernel: kernel-riscv64.bin
+cmdline: "console=hvc0 root=/dev/vda rw init=/init loglevel=3"
+drive0:
+  file: rootfs/alpine-riscv64-agentos-rootfs.bin
+eth0:
+  driver: user

@@ -1,4 +1,6 @@
 import 'package:dart_emu/dart_emu.dart';
+import 'package:dart_emu_example/src/agentos/agentos_demo.dart';
+import 'package:dart_emu_example/src/agentos/api_key_dialog.dart';
 import 'package:dart_emu_example/src/config/config_picker_screen.dart';
 import 'package:dart_emu_example/src/config/rv64_support.dart';
 import 'package:dart_emu_example/src/crt/crt_effect.dart';
@@ -35,6 +37,12 @@ class _AppState extends State<App> {
   List<NinePShare> _demoShares = const [];
   Future<void> Function()? _reloadShare;
 
+  /// Credentials for the AgentOS demo, held here and never given to a guest.
+  final _credentials = CredentialStore();
+
+  /// Set when the machine being booted is not described by its architecture.
+  String? _guestUserland;
+
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
@@ -51,6 +59,21 @@ class _AppState extends State<App> {
       _demoXlen = null;
       _demoShares = const [];
       _reloadShare = null;
+      _guestUserland = null;
+    });
+  }
+
+  /// Boots the agent machine, with the visitor's key held on this page.
+  ///
+  /// A visitor who supplies nothing still gets a working machine; its first
+  /// request comes back refused, naming the credential it lacks.
+  Future<void> _bootAgentOs(ApiKeyChoice choice) async {
+    _credentials.set(AgentOsDemo.credentialName, choice.key);
+    final config = await AgentOsDemo.buildConfig(_credentials);
+    if (!mounted) return;
+    setState(() {
+      _config = config;
+      _guestUserland = 'AgentOS';
     });
   }
 
@@ -58,6 +81,7 @@ class _AppState extends State<App> {
     if (_config != null) {
       return TerminalScreen(
         config: _config!,
+        guestUserland: _guestUserland,
         initialCrtEffect: widget.initialCrtEffect,
         onStopped: _reset,
       );
@@ -81,6 +105,7 @@ class _AppState extends State<App> {
       prefillBundleUrl: widget.bundleUrl,
       onConfigLoaded: (config) => setState(() => _config = config),
       onDemoSelected: (xlen) => setState(() => _demoXlen = xlen),
+      onAgentOsSelected: _bootAgentOs,
       onDemoWithShare: (xlen, share, refresh) => setState(() {
         _demoXlen = xlen;
         _demoShares = [share];

@@ -32,6 +32,7 @@ Widget _picker({String? url, BundleFetcher? fetcher}) => MaterialApp(
     onConfigLoaded: (_) {},
     onDemoSelected: (_) {},
     onDemoWithShare: (_, __, ___) {},
+    onAgentOsSelected: (_) {},
   ),
 );
 
