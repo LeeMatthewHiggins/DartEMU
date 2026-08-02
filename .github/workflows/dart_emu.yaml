@@ -12,6 +12,7 @@ on:
       - "test/**"
       - "example/lib/**"
       - "example/test/**"
+      - "harness/**"
       - "pubspec.yaml"
   push:
     branches:
@@ -112,6 +113,23 @@ jobs:
 
       - name: 🐧 Guest end-to-end tests
         run: dart test --run-skipped -t sandbox
+
+  harness-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 📚 Git Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: 📦 Install libcurl
+        run: sudo apt-get update && sudo apt-get install -y libcurl4-openssl-dev
+
+      - name: 🔨 Build the agent harness
+        working-directory: harness
+        run: make
+
+      - name: 🧪 Harness unit tests
+        working-directory: harness
+        run: make test
 
   verify-version:
     runs-on: ubuntu-latest
