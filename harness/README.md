@@ -34,6 +34,52 @@ export LLM_API_KEY=sk-...
 
 `--help` lists every option. All of them also have an environment variable.
 
+## AgentEMU: an AI terminal
+
+Where a terminal gives you a shell, AgentEMU gives you the agent. You type in
+plain language; the agent has the shell, inside the disposable machine.
+
+```sh
+./build/harness --interactive \
+  --kernel ../example/assets/kernel-riscv64.bin \
+  --bios ../example/assets/bbl64.bin \
+  --base-disk ../example/assets/root-riscv64.bin
+```
+
+The first thing it does is ask for an API key, with terminal echo off. The key
+stays on the host: it is never written to the transcript and never enters the
+guest. Set `LLM_API_KEY` to skip the prompt.
+
+```
+AgentEMU — an AI terminal
+You talk; the agent has the shell, inside a disposable machine.
+Model openai/gpt-4o · network none · 20 steps · 1800s
+Type /help for commands, /exit to leave.
+
+› create a file /workspace/hello.txt containing the word banana
+  $ echo "banana" > /workspace/hello.txt  [exit 0, 270ms]
+
+I created a file named `hello.txt` in the `/workspace` directory containing
+the word "banana".
+
+› what single word is in the file you just created?
+  $ cat /workspace/hello.txt  [exit 0, 258ms]
+
+The word in the file `hello.txt` is "banana".
+
+› /exit
+destroying the machine
+```
+
+Each command is shown as it runs, with its exit code and duration, so the
+session reads as work being done rather than a pause.
+
+One conversation and one machine last the whole session: the agent remembers
+what it did, and what it created is still there. The step and time budgets
+span the session rather than resetting per question, so a long conversation
+cannot outlive them. `/help`, `/steps` and `/exit` are handled locally;
+everything else goes to the agent.
+
 ## How it fits together
 
 ```

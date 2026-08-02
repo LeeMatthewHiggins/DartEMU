@@ -36,10 +36,43 @@ typedef bool (*LlmCompleteFn)(const Config *config,
 typedef void (*GuestExecFn)(Guest *guest, const char *command, const char *cwd,
                             long timeout_ms, ExecResult *result);
 
+/* Called as each command starts and finishes, so an interactive front end
+ * can show the work rather than sitting silent. */
+typedef void (*OnToolCallFn)(void *user, const char *command, const char *cwd);
+typedef void (*OnToolResultFn)(void *user, const ExecResult *result,
+                               long duration_ms);
+
 typedef struct {
     LlmCompleteFn complete;
     GuestExecFn exec;
+    OnToolCallFn on_tool_call;
+    OnToolResultFn on_tool_result;
+    void *user;
 } AgentHooks;
+
+/* A conversation that outlives a single question.
+ *
+ * One-shot runs create one, ask once and discard it. An interactive session
+ * keeps it, so the model remembers what it already did in the guest. */
+typedef struct {
+    Conversation conversation;
+    long steps_used;
+    long started_seconds;
+} AgentSession;
+
+/* Seeds the system prompt. The task is not added here: each question is
+ * supplied to agent_session_ask. */
+void agent_session_init(AgentSession *session);
+void agent_session_free(AgentSession *session);
+
+/* Asks one question and works until the model answers or a limit is hit.
+ * The step and time budgets in config apply to the session as a whole, so a
+ * long conversation cannot outlast them. */
+AgentOutcome agent_session_ask(AgentSession *session, const Config *config,
+                               Guest *guest, Transcript *transcript,
+                               const AgentHooks *hooks,
+                               const volatile sig_atomic_t *interrupted,
+                               const char *question);
 
 const char *agent_stop_reason_name(AgentStopReason reason);
 

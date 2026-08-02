@@ -6,6 +6,7 @@
 #include "agent.h"
 #include "config.h"
 #include "guest.h"
+#include "interactive.h"
 #include "llm.h"
 #include "transcript.h"
 
@@ -33,6 +34,13 @@ int main(int argc, char **argv) {
     sigaction(SIGTERM, &action, NULL);
     /* A guest that closes mid-write must not kill the harness. */
     signal(SIGPIPE, SIG_IGN);
+
+    /* Ask for the key before anything is started, so a session that cannot
+     * think never boots a machine. */
+    if (config.interactive && !interactive_prompt_for_api_key(&config)) {
+        config_free(&config);
+        return EXIT_SETUP_FAILED;
+    }
 
     if (!llm_global_init()) {
         fprintf(stderr, "harness: could not initialise the HTTP client\n");
@@ -63,6 +71,16 @@ int main(int argc, char **argv) {
                 guest_last_error(&guest));
         transcript_write_error(&transcript, 0, guest_last_error(&guest));
         status = EXIT_SETUP_FAILED;
+    } else if (config.interactive) {
+        transcript_write_start(&transcript, "interactive session", config.model,
+                               config_network_mode_name(config.network_mode),
+                               config.max_agent_steps, config.max_task_seconds);
+        status = interactive_run(&config, &guest, &transcript, &g_interrupted);
+        if (config.artifact_output_path != NULL &&
+            !guest_export_artifacts(&guest, config.artifact_output_path)) {
+            fprintf(stderr, "harness: could not export the workspace: %s\n",
+                    guest_last_error(&guest));
+        }
     } else {
         transcript_write_start(&transcript, config.task, config.model,
                                config_network_mode_name(config.network_mode),
