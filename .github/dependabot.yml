@@ -1,0 +1,9 @@
+# Keeps the SHA-pinned GitHub Actions current: Dependabot proposes updates
+# that move each pin to the new release's commit, keeping the version
+# comment beside it accurate.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
