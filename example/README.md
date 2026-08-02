@@ -30,6 +30,22 @@ The app supports three ways to boot:
 Pre-built ZIP bundles are available in the `data/` directory of the main
 package.
 
+## Terminal Shortcuts
+
+`Ctrl+A` and `Ctrl+V` go to the guest shell (start-of-line and
+literal-next), not the terminal UI, so readline behaves the way it does in
+a native terminal. Copy and paste use bindings no browser claims:
+
+| Action | Keys |
+| --- | --- |
+| Copy selection | `Ctrl+Insert` (also `Ctrl+Shift+C`, best effort — Chromium may open DevTools) |
+| Paste | `Shift+Insert` (also `Ctrl+Shift+V`) |
+| Copy / Paste / Select all | Right-click menu |
+
+On macOS the standard `Cmd+C` / `Cmd+V` / `Cmd+A` work as usual — meta
+chords never collide with guest control keys. The right-click menu is the
+keyboard-free path and behaves identically in every browser.
+
 ## Deployment
 
 Deployed to Firebase Hosting. To deploy manually:
