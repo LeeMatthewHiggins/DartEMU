@@ -20,6 +20,7 @@ export 'src/device/virtio/virtio_9p.dart';
 export 'src/emulator/emulator.dart';
 export 'src/emulator/emulator_status.dart';
 export 'src/machine/clint.dart';
+export 'src/machine/config_document.dart';
 export 'src/machine/htif.dart';
 export 'src/machine/machine_config.dart';
 export 'src/machine/machine_snapshot.dart';
