@@ -15,6 +15,9 @@ static const char *const DEFAULT_API_URL =
     "https://api.openai.com/v1/chat/completions";
 static const char *const DEFAULT_EMULATOR = "dart run bin/dart_emu.dart run";
 static const char *const DEFAULT_TRANSCRIPT = "transcript.jsonl";
+/* The guest needs a root device and a console; without these the kernel
+   boots and then panics looking for a filesystem. */
+static const char *const DEFAULT_CMDLINE = "console=hvc0 root=/dev/vda rw";
 
 static char *dup_or_null(const char *text) {
     return text != NULL ? strdup(text) : NULL;
@@ -49,6 +52,7 @@ void config_init(Config *config) {
     config->max_command_output_bytes = DEFAULT_MAX_OUTPUT_BYTES;
     config->emulator_command = strdup(DEFAULT_EMULATOR);
     config->transcript_path = strdup(DEFAULT_TRANSCRIPT);
+    config->cmdline = strdup(DEFAULT_CMDLINE);
     config->memory_mb = DEFAULT_MEMORY_MB;
     config->network_mode = NETWORK_NONE;
 }
@@ -63,7 +67,7 @@ void config_free(Config *config) {
     free(config->task_disk_path);
     free(config->bios_path);
     free(config->kernel_path);
-    free(config->machine);
+    free(config->cmdline);
     free(config->transcript_path);
     free(config->artifact_output_path);
     free(config->task);
@@ -91,7 +95,7 @@ void config_print_usage(const char *program) {
             "Options:\n"
             "  --task-file <path>       Read the task from a file\n"
             "  --bios <path>            Guest bootloader (BBL)\n"
-            "  --machine <riscv64|riscv32>\n"
+            "  --cmdline <text>         Kernel command line\n"
             "  --memory <mb>            Guest RAM (default %ld)\n"
             "  --task-disk <path>       Where to put the writable copy\n"
             "  --keep-task-disk         Do not delete the task disk at exit\n"
@@ -218,8 +222,8 @@ bool config_load(Config *config, int argc, char **argv) {
             TAKE(kernel_path);
         } else if (strcmp(arg, "--bios") == 0) {
             TAKE(bios_path);
-        } else if (strcmp(arg, "--machine") == 0) {
-            TAKE(machine);
+        } else if (strcmp(arg, "--cmdline") == 0) {
+            TAKE(cmdline);
         } else if (strcmp(arg, "--serial") == 0) {
             TAKE(guest_serial_device);
         } else if (strcmp(arg, "--emulator") == 0) {

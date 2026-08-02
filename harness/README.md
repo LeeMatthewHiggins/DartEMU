@@ -91,10 +91,36 @@ no rebuild. It reads one request per line, runs the command with `sh`, and
 answers with one response per line. Its readiness banner is what tells the
 harness the guest is genuinely executing commands rather than merely booted.
 
+A response must carry an `exit_code`. That requirement is what keeps the
+console echo of the harness's own request — valid JSON, matching `id`, no
+exit code — from being read as the guest's answer, which otherwise made every
+command report exit -1 with no output.
+
+The daemon is installed only once the console shows a shell prompt. A prompt
+has no trailing newline, so it cannot be waited for with a line reader;
+writing to a still-booting kernel loses the script entirely.
+
 Per-command timeouts use a watchdog subshell. The timeout marker is written
 *before* the kill: the parent's `wait` returns the instant the child dies and
 kills the watchdog next, so marking afterwards loses the race and a timeout
 reports as a plain failure.
+
+## Verified end to end
+
+Against the shipped RV64 image, a seeded `/workspace` containing a C project
+with an off-by-one bug, and `openai/gpt-4o`:
+
+```
+$ ls /workspace                    -> README run_tests.sh sum.c test_sum.c
+$ cat /workspace/run_tests.sh      -> exit 0
+$ cat /workspace/test_sum.c        -> exit 0
+$ cat /workspace/sum.c             -> exit 0
+$ sed -i 's/i < n/i <= n/' ...     -> exit 0
+$ /workspace/run_tests.sh          -> exit 0, all tests passed
+```
+
+The base image was byte-identical afterwards, the task disk was removed, and
+the exported tar contained the corrected source.
 
 ## Task lifecycle
 

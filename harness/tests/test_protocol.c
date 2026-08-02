@@ -154,6 +154,24 @@ static void test_binary_output_survives(void) {
     exec_result_free(&result);
 }
 
+static void test_echoed_request_is_not_a_response(void) {
+    /* The guest console echoes whatever is written to it, so the harness sees
+     * its own request come back. It is valid JSON with a matching id, and was
+     * being accepted as the answer — every command then reported exit -1 with
+     * no output. A response must carry an exit code. */
+    Buffer request;
+    buffer_init(&request);
+    ExecRequest sent = {.id = 1, .command = "ls /workspace"};
+    CHECK(protocol_encode_request(&request, &sent), "request encodes");
+
+    ExecResult result;
+    exec_result_init(&result);
+    CHECK(!protocol_decode_response(request.data, request.len, 4096, &result),
+          "an echoed request is refused as a response");
+    exec_result_free(&result);
+    buffer_free(&request);
+}
+
 static void test_malformed_frames_report_errors(void) {
     struct {
         const char *line;
@@ -163,8 +181,11 @@ static void test_malformed_frames_report_errors(void) {
         {"[1,2,3]", "a non-object is rejected"},
         {"{\"exit_code\":0}", "a response without an id is rejected"},
         {"{\"id\":\"seven\"}", "a non-numeric id is rejected"},
-        {"{\"id\":1,\"stdout\":42}", "a non-string stdout is rejected"},
-        {"{\"id\":1,\"stdout_b64\":\"!!!!\"}", "invalid base64 is rejected"},
+        {"{\"id\":1,\"exit_code\":0,\"stdout\":42}",
+         "a non-string stdout is rejected"},
+        {"{\"id\":1}", "a response without an exit code is rejected"},
+        {"{\"id\":1,\"exit_code\":0,\"stdout_b64\":\"!!!!\"}",
+         "invalid base64 is rejected"},
         {"{\"id\":1,", "a truncated object is rejected"},
     };
     for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
@@ -240,6 +261,7 @@ int main(void) {
     test_base64_encoder();
     test_optional_fields_are_omitted();
     test_response_decoding();
+    test_echoed_request_is_not_a_response();
     test_base64_streams();
     test_binary_output_survives();
     test_malformed_frames_report_errors();
