@@ -34,6 +34,32 @@ class AgentOsDemo {
   static const _cmdLine =
       'console=hvc0 root=/dev/vda rw init=/init loglevel=7 earlyprintk';
 
+  /// Models a visitor can pick between.
+  ///
+  /// The choice exists because an OpenRouter account's data policy decides
+  /// which providers it may reach, and a model whose every endpoint is ruled
+  /// out fails with a message about the account rather than about anything
+  /// here. Offering alternatives is the difference between a demo that is
+  /// broken for someone and one they can still use.
+  static const models = <String>[
+    'moonshotai/kimi-k3',
+    'openai/gpt-4o-mini',
+    'anthropic/claude-haiku-4.5',
+  ];
+
+  /// The model used when a visitor expresses no preference.
+  static const defaultModel = 'moonshotai/kimi-k3';
+
+  /// Rejects anything that could add a second word to the command line.
+  ///
+  /// The model reaches the guest as a kernel parameter, so a value carrying
+  /// whitespace would not be one parameter any more. Slashes, dots and
+  /// hyphens are what real model names are made of.
+  static final _modelShape = RegExp(r'^[A-Za-z0-9._/-]+$');
+
+  static bool isValidModel(String model) =>
+      model.isNotEmpty && model.length <= 100 && _modelShape.hasMatch(model);
+
   /// Whether this build can run the demo.
   ///
   /// The guest is RV64, and the proxy that gives it a network is built on
@@ -49,8 +75,21 @@ class AgentOsDemo {
     ),
   ];
 
+  /// Builds the command line, carrying the model the visitor chose.
+  ///
+  /// This is the only setting the page hands to the guest. Where requests go
+  /// and what they carry stays on this side, so a guest that rewrote its own
+  /// command line would still reach nothing new.
+  static String cmdLineFor(String model) {
+    final chosen = isValidModel(model) ? model : defaultModel;
+    return '$_cmdLine agentos.model=$chosen';
+  }
+
   /// Builds the machine, with [credentials] held here rather than in it.
-  static Future<MachineConfig> buildConfig(CredentialStore credentials) async {
+  static Future<MachineConfig> buildConfig(
+    CredentialStore credentials, {
+    String model = defaultModel,
+  }) async {
     final assets = await Future.wait([
       rootBundle.load(_AgentOsAssets.bios),
       rootBundle.load(_AgentOsAssets.kernel),
@@ -60,7 +99,7 @@ class AgentOsDemo {
     return MachineConfig(
       biosData: assets[0].buffer.asUint8List(),
       kernelData: assets[1].buffer.asUint8List(),
-      cmdLine: _cmdLine,
+      cmdLine: cmdLineFor(model),
       blockDevices: [
         MemoryBlockDevice.fromData(assets[2].buffer.asUint8List()),
       ],

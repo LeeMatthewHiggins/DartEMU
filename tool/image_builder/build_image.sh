@@ -104,11 +104,24 @@ if [ "${IMAGE_VARIANT}" = "agentos" ]; then
 
   # The console runs the agent and nothing else. init respawns this, so the
   # agent restarting can never fall through to a shell.
+  #
+  # The model comes from the kernel command line, which is the one channel
+  # the host can set per boot without rebuilding the image. Only the model:
+  # a visitor whose account cannot reach one provider can choose another,
+  # and nothing that decides where requests go or what they carry is
+  # settable from here.
   cat > "${MOUNT_DIR}/usr/local/bin/agentos-console" << 'CONSOLE_EOF'
 #!/bin/sh
 export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 export HOME=/root
 export TERM=vt100
+
+for arg in $(cat /proc/cmdline); do
+  case "$arg" in
+    agentos.model=*) AGENTOS_MODEL="${arg#agentos.model=}"; export AGENTOS_MODEL ;;
+  esac
+done
+
 cd /workspace
 exec /usr/local/bin/agentos
 CONSOLE_EOF

@@ -69,7 +69,10 @@ class _AppState extends State<App> {
   /// request comes back refused, naming the credential it lacks.
   Future<void> _bootAgentOs(ApiKeyChoice choice) async {
     _credentials.set(AgentOsDemo.credentialName, choice.key);
-    final config = await AgentOsDemo.buildConfig(_credentials);
+    final config = await AgentOsDemo.buildConfig(
+      _credentials,
+      model: choice.model,
+    );
     if (!mounted) return;
     setState(() {
       _config = config;

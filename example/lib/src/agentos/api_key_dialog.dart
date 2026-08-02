@@ -8,18 +8,21 @@ class _DialogLayout {
   static const noteFontSize = 12.0;
 }
 
-/// What the visitor chose to do about a key.
+/// What the visitor chose to do about a key, and which model to ask.
 class ApiKeyChoice {
-  const ApiKeyChoice._(this.key);
+  const ApiKeyChoice._(this.key, this.model);
 
   /// Boot with this key held on the page.
-  const ApiKeyChoice.withKey(String key) : this._(key);
+  const ApiKeyChoice.withKey(String key, String model) : this._(key, model);
 
   /// Boot without one, so the machine's requests are refused by name.
-  const ApiKeyChoice.keyless() : this._(null);
+  const ApiKeyChoice.keyless(String model) : this._(null, model);
 
   /// The key, or null when the visitor chose to go without.
   final String? key;
+
+  /// The model the guest should ask for.
+  final String model;
 
   /// Whether a key was supplied.
   bool get hasKey => key != null;
@@ -49,6 +52,7 @@ class ApiKeyDialog extends StatefulWidget {
 class _ApiKeyDialogState extends State<ApiKeyDialog> {
   final _controller = TextEditingController();
   bool _obscured = true;
+  String _model = AgentOsDemo.defaultModel;
 
   @override
   void dispose() {
@@ -59,7 +63,9 @@ class _ApiKeyDialogState extends State<ApiKeyDialog> {
   void _boot() {
     final key = _controller.text.trim();
     Navigator.of(context).pop(
-      key.isEmpty ? const ApiKeyChoice.keyless() : ApiKeyChoice.withKey(key),
+      key.isEmpty
+          ? ApiKeyChoice.keyless(_model)
+          : ApiKeyChoice.withKey(key, _model),
     );
   }
 
@@ -73,53 +79,83 @@ class _ApiKeyDialogState extends State<ApiKeyDialog> {
     return AlertDialog(
       backgroundColor: Colors.grey.shade900,
       title: const Text('Boot AgentOS'),
+      // Scrollable because the content is taller than a short window, and a
+      // dialog that clips the Boot button is a dialog nobody can use.
       content: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: _DialogLayout.maxWidth),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'The machine talks to a model through this page. Paste an '
-              'OpenRouter key to give it something to talk to.',
-              style: Theme.of(context).textTheme.bodyMedium,
-            ),
-            const SizedBox(height: _DialogLayout.spacing),
-            TextField(
-              controller: _controller,
-              obscureText: _obscured,
-              autofocus: true,
-              autocorrect: false,
-              enableSuggestions: false,
-              decoration: InputDecoration(
-                labelText: 'OpenRouter key (optional)',
-                hintText: 'sk-or-...',
-                border: const OutlineInputBorder(),
-                suffixIcon: IconButton(
-                  icon: Icon(
-                    _obscured ? Icons.visibility : Icons.visibility_off,
-                    size: 18,
-                  ),
-                  onPressed: () => setState(() => _obscured = !_obscured),
-                ),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'The machine talks to a model through this page. Paste an '
+                'OpenRouter key to give it something to talk to.',
+                style: Theme.of(context).textTheme.bodyMedium,
               ),
-              onSubmitted: (_) => _boot(),
-            ),
-            const SizedBox(height: _DialogLayout.spacing),
-            Text(
-              'The key stays in this browser tab. It is attached to requests '
-              'on their way out and is never written into the machine, which '
-              'only ever sees the name '
-              '\${${AgentOsDemo.credentialName}}.',
-              style: subtle,
-            ),
-            const SizedBox(height: _DialogLayout.smallSpacing),
-            Text(
-              'Leave it empty to boot anyway. The machine will run, ask, and '
-              'be told which credential it is missing.',
-              style: subtle,
-            ),
-          ],
+              const SizedBox(height: _DialogLayout.spacing),
+              TextField(
+                controller: _controller,
+                obscureText: _obscured,
+                autofocus: true,
+                autocorrect: false,
+                enableSuggestions: false,
+                decoration: InputDecoration(
+                  labelText: 'OpenRouter key (optional)',
+                  hintText: 'sk-or-...',
+                  border: const OutlineInputBorder(),
+                  suffixIcon: IconButton(
+                    icon: Icon(
+                      _obscured ? Icons.visibility : Icons.visibility_off,
+                      size: 18,
+                    ),
+                    onPressed: () => setState(() => _obscured = !_obscured),
+                  ),
+                ),
+                onSubmitted: (_) => _boot(),
+              ),
+              const SizedBox(height: _DialogLayout.spacing),
+              DropdownButtonFormField<String>(
+                initialValue: _model,
+                // Model names are long enough to overflow a narrow dialog on
+                // their own, so the field takes the width and the text yields.
+                isExpanded: true,
+                decoration: const InputDecoration(
+                  labelText: 'Model',
+                  border: OutlineInputBorder(),
+                ),
+                items: [
+                  for (final model in AgentOsDemo.models)
+                    DropdownMenuItem(
+                      value: model,
+                      child: Text(model, overflow: TextOverflow.ellipsis),
+                    ),
+                ],
+                onChanged: (model) =>
+                    setState(() => _model = model ?? AgentOsDemo.defaultModel),
+              ),
+              const SizedBox(height: _DialogLayout.smallSpacing),
+              Text(
+                'An OpenRouter account\'s data policy decides which providers '
+                'it can reach. If one model is refused, another may not be.',
+                style: subtle,
+              ),
+              const SizedBox(height: _DialogLayout.spacing),
+              Text(
+                'The key stays in this browser tab. It is attached to requests '
+                'on their way out and is never written into the machine, which '
+                'only ever sees the name '
+                '\${${AgentOsDemo.credentialName}}.',
+                style: subtle,
+              ),
+              const SizedBox(height: _DialogLayout.smallSpacing),
+              Text(
+                'Leave it empty to boot anyway. The machine will run, ask, '
+                'and be told which credential it is missing.',
+                style: subtle,
+              ),
+            ],
+          ),
         ),
       ),
       actions: [
