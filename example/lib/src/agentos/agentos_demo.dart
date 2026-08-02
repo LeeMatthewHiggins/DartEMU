@@ -22,6 +22,11 @@ class AgentOsDemo {
   const AgentOsDemo._();
 
   /// The name the guest's placeholder refers to.
+  ///
+  /// This and [upstreamHost] are compiled into the guest as well, in
+  /// `agentos/src/llm.c`, and nothing checks that the two agree — one side is
+  /// C in an emulated machine and the other is Dart on a page. Change one and
+  /// the guest addresses a host this proxy has never heard of.
   static const credentialName = 'OPENROUTER_KEY';
 
   /// What the guest calls the model, and where that actually goes.

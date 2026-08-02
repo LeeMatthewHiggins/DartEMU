@@ -5,7 +5,7 @@
 #include <string.h>
 
 #include "agent.h"
-#include "harness_test.h"
+#include "test_assert.h"
 
 /* ------------------------------------------------------------ fake model */
 

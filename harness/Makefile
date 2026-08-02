@@ -1,13 +1,14 @@
 CC ?= cc
 CFLAGS ?= -std=c11 -O2 -Wall -Wextra -Wpedantic -Wshadow
-CFLAGS += -Iinclude -D_POSIX_C_SOURCE=200809L -D_DARWIN_C_SOURCE
+CFLAGS += -Iinclude -I../common -D_POSIX_C_SOURCE=200809L -D_DARWIN_C_SOURCE
 LDLIBS_CURL ?= -lcurl
 
 BUILD := build
 SRC := src
 TESTS := tests
 
-CORE_SRC := $(SRC)/json.c $(SRC)/protocol.c $(SRC)/config.c \
+COMMON := ../common
+CORE_SRC := $(COMMON)/json.c $(COMMON)/chat.c $(SRC)/protocol.c $(SRC)/config.c \
             $(SRC)/transcript.c $(SRC)/guest.c $(SRC)/agent.c \
             $(SRC)/interactive.c
 HARNESS_SRC := $(CORE_SRC) $(SRC)/llm.c $(SRC)/main.c

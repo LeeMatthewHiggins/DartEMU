@@ -1,7 +1,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "harness_test.h"
+#include "test_assert.h"
 #include "protocol.h"
 
 static void test_request_encoding(void) {

@@ -3,7 +3,7 @@
 #include <string.h>
 
 #include "agentos.h"
-#include "harness_test.h"
+#include "test_assert.h"
 
 static void test_request_carries_the_tool_and_the_messages(void) {
     AgentConfig config;

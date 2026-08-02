@@ -201,10 +201,12 @@ concerns and are rejected rather than silently downgraded.
 
 ## Deviations from the specification
 
-- **No vendored JSON library.** `src/json.c` is a self-contained reader and
-  writer, about 550 lines, which is inside the specification's own budget for
-  protocol and JSON and avoids adding third-party source and its licence
-  bookkeeping to the tree.
+- **No vendored JSON library.** `../common/json.c` is a self-contained reader
+  and writer, about 550 lines, which is inside the specification's own budget
+  for protocol and JSON and avoids adding third-party source and its licence
+  bookkeeping to the tree. It sits in `common/` because the in-guest agent in
+  [`agentos/`](../agentos) reads the same wire format, alongside `chat.c`,
+  which holds the conversation and tool-call handling both agents share.
 - **No Python in the guest.** The specification lists Python among the guest
   tools; this project's standing constraint is that the guest image stays
   lean and Python-free. The shipped RV64 image provides a POSIX shell,
