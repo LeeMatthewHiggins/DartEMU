@@ -4,7 +4,9 @@ library;
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'package:dart_emu/src/net/backend/net_backend_web.dart';
 import 'package:dart_emu/src/net/http_proxy.dart';
+import 'package:dart_emu/src/net/net_const.dart';
 import 'package:test/test.dart';
 
 Uint8List bytes(String text) => Uint8List.fromList(utf8.encode(text));
@@ -168,6 +170,43 @@ void main() {
       expect(proxy.allows('llm.local:80'), isTrue, reason: 'a port is ignored');
       expect(proxy.allows('evil.example'), isFalse);
       expect(proxy.allows(null), isFalse);
+    });
+  });
+
+  group('the guest can actually route to the proxy', () {
+    WebNetBackend backend() => WebNetBackend(
+      upstreams: [
+        Upstream(host: 'llm.local', target: Uri.parse('https://example.test')),
+      ],
+    );
+
+    test(
+      'an allowed name resolves to an address the guest routes outwards',
+      () {
+        final resolved = backend().resolveDns('llm.local');
+        expect(resolved, isNotNull);
+        // Loopback would be answered by the guest's own stack and the packet
+        // would never reach the emulator, leaving the proxy unreachable.
+        expect(
+          resolved!.single,
+          isNot(equals(Uint8List.fromList([127, 0, 0, 1]))),
+        );
+        expect(resolved.single, equals(UserNetAddr.gateway));
+      },
+    );
+
+    test('an unknown name does not resolve', () {
+      expect(backend().resolveDns('evil.example'), isNull);
+    });
+
+    test('only the proxy port is accepted', () {
+      final net = backend();
+      expect(net.openTcpConnection(UserNetAddr.gateway, 80), isNotNull);
+      expect(
+        net.openTcpConnection(UserNetAddr.gateway, 443),
+        isNull,
+        reason: 'TLS would need a real socket, which a browser lacks',
+      );
     });
   });
 

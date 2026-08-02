@@ -3,7 +3,9 @@ import 'dart:typed_data';
 
 import 'package:dart_emu/src/net/backend/net_backend.dart';
 import 'package:dart_emu/src/net/http_proxy.dart';
-import 'package:dart_emu/src/net/web_fetch.dart';
+import 'package:dart_emu/src/net/net_const.dart';
+import 'package:dart_emu/src/net/web_fetch_stub.dart'
+    if (dart.library.js_interop) 'package:dart_emu/src/net/web_fetch.dart';
 
 /// Creates the default [NetBackend] for the web platform.
 NetBackend createDefaultNetBackend() => WebNetBackend();
@@ -12,9 +14,12 @@ class _Web {
   /// Guests speak plain HTTP; the host adds the TLS on the way out.
   static const proxyPort = 80;
 
-  /// Loopback, handed back for every allowed name. The guest only needs an
-  /// address to open a socket to; the host routes on the Host header.
-  static final loopback = Uint8List.fromList([127, 0, 0, 1]);
+  /// Every allowed name resolves to the virtual gateway.
+  ///
+  /// It must be an address the guest routes *out* through its interface.
+  /// Loopback would be answered by the guest's own stack and the packet
+  /// would never reach the emulator, so the proxy would be unreachable.
+  static final Uint8List proxyAddress = UserNetAddr.gateway;
 }
 
 /// Web network backend.
@@ -67,9 +72,10 @@ class WebNetBackend implements NetBackend {
 
   @override
   List<Uint8List>? resolveDns(String hostname) {
-    // Configured upstreams resolve to loopback: the guest needs an address
-    // to connect to, and the routing happens on the Host header.
-    return _proxy.allows(hostname) ? [_Web.loopback] : null;
+    // Configured upstreams resolve to the gateway: the guest needs an
+    // address it will route outwards, and the routing to a real endpoint
+    // happens on the Host header.
+    return _proxy.allows(hostname) ? [_Web.proxyAddress] : null;
   }
 
   @override
