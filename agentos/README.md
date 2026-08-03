@@ -12,11 +12,10 @@ What is left is small — a shell tool, a plain-HTTP client, a
 chat-completions client and a loop — and it is the whole program.
 
 The outside arrangement is still available in Dart, through
-[`AgentSandbox`](../lib/src/sandbox/agent_sandbox.dart), which boots a guest
-and runs commands against it under wall-clock and instruction budgets. Reach
-for that when the image cannot be modified or the budgets must sit somewhere
-the guest cannot reach; reach for this when the machine should simply *be*
-an agent.
+[`AgentSandbox`](../docs/agents.md). Reach for that when the image cannot be
+modified or the budgets must sit somewhere the guest cannot reach; reach for
+this when the machine should simply *be* an agent. [Agents](../docs/agents.md)
+compares them side by side.
 
 ## The credential it does not have
 
