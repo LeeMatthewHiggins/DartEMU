@@ -21,6 +21,9 @@ data/rootfs/
 data/kernel/
 tool/image_builder/.kernel-cache/
 
+# FreeRTOS kernel checkout and objects (built via freertos/build_freertos.sh)
+tool/image_builder/.freertos-cache/
+
 # Zip bundles (too large for git — rebuild with tool/build_zip.sh)
 data/*.zip
 original/
