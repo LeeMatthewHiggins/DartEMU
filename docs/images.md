@@ -6,6 +6,7 @@ root filesystem. Docker-based builders produce all of them.
 - [Root filesystems](#root-filesystems)
 - [Building a modern kernel](#building-a-modern-kernel)
 - [Booting without firmware](#booting-without-firmware)
+- [A FreeRTOS image](#a-freertos-image)
 - [An AgentOS image](#an-agentos-image)
 - [Prebuilt images](#prebuilt-images)
 
@@ -119,6 +120,66 @@ inter-processor interrupts reduce to local operations.
 One more thing firmware would otherwise have done: Linux never writes
 `scounteren`, so a guest reading `rdtime` from user space traps unless the
 emulator enables the counters at boot. It does.
+
+## A FreeRTOS image
+
+The emulator is not limited to Linux. A bare-metal RTOS image runs as
+machine-mode firmware via the `bios:` key — no BBL, no rootfs, no VirtIO —
+which makes the emulator a stand-in for embedded targets:
+
+```sh
+tool/image_builder/freertos/build_freertos.sh # every app under apps/
+dart run bin/dart_emu.dart run --config data/freertos_hello_vm.yaml
+dart run bin/dart_emu.dart run --config data/freertos_vm.yaml
+```
+
+No Docker is needed: the FreeRTOS kernel plus an app is a dozen C files,
+and any LLVM with the RISC-V backend cross-compiles them — `zig` (which
+bundles clang, lld and objcopy) or a Homebrew `llvm` with `lld` alongside.
+
+The stock FreeRTOS RISC-V port runs unmodified because the machine already
+looks like the hardware the port expects: the CLINT sits at the
+SiFive-standard addresses (`mtime` at `0x200BFF8`, `mtimecmp` at
+`0x2004000`), the boot path jumps to the start of RAM at `0x80000000`, and
+the HTIF console makes `putchar` two stores. The pieces an embedded project
+would normally get from a vendor BSP live in
+[`tool/image_builder/freertos/common`](../tool/image_builder/freertos/common):
+a startup stub that installs `freertos_risc_v_trap_handler` in `mtvec` (the
+port leaves that to startup code), `FreeRTOSConfig.h` wired to the CLINT
+addresses and the 10 MHz RTC, a linker script, and an HTIF console driver.
+
+Apps are one `main.c` each under
+[`tool/image_builder/freertos/apps`](../tool/image_builder/freertos/apps),
+and every one ends with an HTIF poweroff, so a scripted run exits cleanly.
+Two are provided:
+
+- **hello** (~5 KB, `data/freertos-hello-riscv64.bin`) — one task prints a
+  greeting and powers off. The smallest proof that boot, the trap handler,
+  the scheduler and the console all work, and the template to copy for a
+  new app.
+- **sensor** (~12 KB, `data/freertos-riscv64.bin`) — an embedded-style
+  firmware: a sensor task feeds a queue that a logger task drains to the
+  console under a mutex, then prints a summary:
+
+```
+FreeRTOS V11.2.0 on DartEMU riscv64
+[logger] t=100ms temp=23.0C
+...
+[logger] done: 25 samples, min=17.6C max=25.3C avg=21.9C
+```
+
+Both images are exercised end to end by
+[`test/machine/freertos_boot_test.dart`](../test/machine/freertos_boot_test.dart),
+which boots the committed binaries and runs them to their poweroff:
+
+```sh
+dart test --run-skipped -t machine test/machine/freertos_boot_test.dart
+```
+
+One caveat: `mtime` follows the host wall clock, and an interpreted CPU
+does not, so tick-relative delays stretch when the guest falls behind.
+Logical ordering and tick counts stay exact, which is what the scheduler
+and the demo depend on.
 
 ## An AgentOS image
 
