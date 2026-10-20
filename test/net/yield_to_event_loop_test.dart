@@ -1,3 +1,4 @@
+// This directory is the existing CI target for browser runtime tests.
 import 'dart:async';
 
 import 'package:dart_emu/src/sandbox/yield_to_event_loop.dart';

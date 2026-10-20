@@ -114,6 +114,8 @@ sleep is removed. Native Dart keeps the zero-delay timer behavior.
 The browser helper shares one channel and completes yield requests in order.
 It does not change guest instructions, device timers, or snapshot data.
 A yield is an event task, not a microtask, so other browser tasks can run.
+Hidden tabs may use more CPU because port messages do not use nested-timer
+throttling. Background-tab behavior is not covered by these benchmarks.
 
 See [browser sandbox benchmarks](../tool/browser_bench/README.md) for the
 fixed workloads and correctness checks. Measure responsiveness as well as
