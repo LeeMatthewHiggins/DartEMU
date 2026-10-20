@@ -1,3 +1,7 @@
+# Exercise both browser backends through the existing Chrome test job.
+# Platforms without a matching compiler keep their default.
+compilers: [dart2js, dart2wasm]
+
 tags:
   version-verify:
     skip: "Should only be run during pull request. Verifies if version file is updated."

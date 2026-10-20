@@ -22,6 +22,11 @@
     "**/tcc_tests2/**"
   ],
   "words": [
+    "microtask",
+    "mtvec",
+    "putchar",
+    "mtimecmp",
+    "objcopy",
     "afid",
     "agentic",
     "agentos",
