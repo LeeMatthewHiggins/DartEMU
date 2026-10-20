@@ -8,6 +8,7 @@ import 'package:dart_emu/src/machine/riscv_machine.dart';
 import 'package:dart_emu/src/sandbox/exec_result.dart';
 import 'package:dart_emu/src/sandbox/sandbox_config.dart';
 import 'package:dart_emu/src/sandbox/sandbox_console.dart';
+import 'package:dart_emu/src/sandbox/yield_to_event_loop.dart';
 
 /// Thrown when the guest fails to reach an expected state in time.
 class SandboxTimeoutException implements Exception {
@@ -40,8 +41,10 @@ class SandboxTimeoutException implements Exception {
 /// ```
 ///
 /// The exec loop drives emulation on the current isolate, yielding to
-/// the event loop periodically so it does not starve other work. A
-/// Flutter UI that needs frame-paced execution should drive the
+/// the event loop periodically so it does not starve other work. Each
+/// step runs up to 50,000 instructions. Browser execution yields every
+/// four steps; native execution yields every eight steps. A Flutter UI
+/// that needs frame-paced execution should drive the
 /// lower-level `Emulator` from a `Ticker` instead.
 class AgentSandbox {
   AgentSandbox(this.config);
@@ -243,8 +246,8 @@ class AgentSandbox {
       if (_machine!.cpu.state.shutDown) {
         return _partial(ExecOutcome.timedOut, retired, stopwatch.elapsed);
       }
-      if (++iterations % _yieldEvery == 0) {
-        await Future<void>.delayed(Duration.zero);
+      if (++iterations % stepsPerEventLoopYield == 0) {
+        await yieldToEventLoop();
       }
     }
 
@@ -301,8 +304,8 @@ class AgentSandbox {
         _booted = false;
         return;
       }
-      if (++iterations % _yieldEvery == 0) {
-        await Future<void>.delayed(Duration.zero);
+      if (++iterations % stepsPerEventLoopYield == 0) {
+        await yieldToEventLoop();
       }
     }
   }
@@ -322,8 +325,8 @@ class AgentSandbox {
           _console.tail(),
         );
       }
-      if (++iterations % _yieldEvery == 0) {
-        await Future<void>.delayed(Duration.zero);
+      if (++iterations % stepsPerEventLoopYield == 0) {
+        await yieldToEventLoop();
       }
     }
     onReady();
@@ -355,7 +358,6 @@ class AgentSandbox {
   }
 
   static const _cyclesPerStep = 50000;
-  static const _yieldEvery = 8;
   static const _ctrlC = 0x03;
   static const _recoverTimeout = Duration(seconds: 10);
   static const _sharedMsize = 65536;

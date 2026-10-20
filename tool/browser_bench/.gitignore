@@ -1,0 +1,7 @@
+node_modules/
+assets/
+results/
+environment.txt
+dart_adapter.wasm*
+dart_adapter.mjs
+dart_adapter.support.js
