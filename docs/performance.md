@@ -101,6 +101,24 @@ checked, so a failing command is reported rather than silently timed — a
 benchmark that measures a command which did not run is worse than no
 benchmark.
 
+## Browser sandbox scheduling
+
+`AgentSandbox` yields after each four 50,000-cycle steps on the web. Native
+Dart keeps its eight-step interval. The web path uses a `MessageChannel`
+event task. Repeated zero-delay browser timers can
+have a minimum delay of 4 ms, which adds idle time to long guest commands.
+Port messages avoid that timer delay without increasing the work between
+yields. The shorter browser interval limits event-loop delay after the timer
+sleep is removed. Native Dart keeps the zero-delay timer behavior.
+
+The browser helper shares one channel and completes yield requests in order.
+It does not change guest instructions, device timers, or snapshot data.
+A yield is an event task, not a microtask, so other browser tasks can run.
+
+See [browser sandbox benchmarks](../tool/browser_bench/README.md) for the
+fixed workloads and correctness checks. Measure responsiveness as well as
+elapsed time. Browser task scheduling and host load affect both.
+
 ## Measuring a change
 
 Record a baseline, make the change, compare:

@@ -1,0 +1,10 @@
+<!doctype html><meta charset="utf-8"><title>DartEMU benchmark</title>
+<pre id="terminal"></pre>
+<script type="module">
+import {compileStreaming} from './dart_adapter.mjs';
+window.moduleLoadStart=performance.now();
+const app = await compileStreaming(fetch('./dart_adapter.wasm'));
+const instance = await app.instantiate({});
+window.moduleLoadMs=performance.now()-window.moduleLoadStart;
+instance.invokeMain();
+</script>
