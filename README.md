@@ -10,7 +10,7 @@ Ported from [TinyEMU](https://bellard.org/tinyemu/) by Fabrice Bellard.
 
 **[Learn DartEMU with a live Linux machine →](https://leematthewhiggins.github.io/DartEMU/)**
 
-[![DartEMU tutorial with live Linux shell examples](docs/images/browser-demo.png)](https://leematthewhiggins.github.io/DartEMU/)
+[![DartEMU tutorial with live Linux shell examples](docs/images/browser-demo.jpg)](https://leematthewhiggins.github.io/DartEMU/)
 
 Run five examples in an RV32 Linux guest, including a Mandelbrot fractal
 computed by the guest shell. No login or installation is needed. Restarting
