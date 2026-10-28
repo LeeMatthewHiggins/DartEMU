@@ -1,156 +1,142 @@
-# DartEMU Flutter example
+# DartEMU example and live tutorial
 
-A Flutter application that boots RISC-V Linux with the `dart_emu` package.
-Runs on every Flutter platform, including web.
+The [live tutorial](https://leematthewhiggins.github.io/DartEMU/) runs five
+shell experiments in an embedded Flutter terminal, ending with a Mandelbrot
+renderer. Use the
+[written tutorial](../docs/browser-tutorial.md) for commands, expected output,
+keyboard controls and troubleshooting. The
+[Firebase demo](https://dartemu-3ef91.web.app/?boot=32) also supports
+[RV64 with a C compiler](https://dartemu-3ef91.web.app/?boot=64).
 
-Try the [live RV32 Linux demo](https://dartemu-3ef91.web.app/?boot=32)
-or open the [image picker](https://dartemu-3ef91.web.app/).
+See [Embedding](../docs/embedding.md) to use the emulator in your own app.
 
-For how to embed the emulator in your own app, see
-[Embedding](../docs/embedding.md).
+## Run and preview
 
-## Running
+From this directory:
 
 ```sh
+flutter pub get
 flutter run
-
-flutter build web --wasm --release      # for the web
 ```
 
-**`--wasm` is not optional if you want RV64.** Without it the build has no
-64-bit register file, and every RV64 demo — AgentOS included — disappears
-from the picker. The flag ships a JavaScript fallback automatically, so
-browsers without WasmGC still get RV32.
+`flutter run` is for developing the Flutter terminal. To preview the complete
+static tutorial and its embedded terminal, serve a release build:
+
+```sh
+flutter build web --wasm --release --pwa-strategy=none
+python3 -m http.server 8000 --directory build/web
+# Open http://localhost:8000/
+```
+
+`--wasm` enables RV64 and supplies a JavaScript fallback for browsers without
+WasmGC. A JavaScript-only build supports RV32; RV64 options are unavailable.
+Use HTTP hosting rather than opening the HTML files directly.
+
+## Pages and URL parameters
+
+| URL | Result |
+| --- | --- |
+| `/` | Tutorial, with an automatically booted RV32 terminal |
+| `terminal.html` | Image picker |
+| `terminal.html?boot=32` | New standalone RV32 machine |
+| `terminal.html?boot=64` | RV64 on a WasmGC build; otherwise the picker |
+| `terminal.html?bundle=vms/rv32-demo.zip` | Preload the included bundle; press Boot to start |
+| `terminal.html?crt=full\|flat\|glass\|off` | Choose one CRT effect value |
+
+Older root links containing `?boot=…`, `?bundle=…` or `?crt=…` redirect to
+`terminal.html`, preserving the full query and fragment. Relative bundle
+URLs still resolve beside the terminal page, so `vms/rv32-demo.zip` works
+at both the domain root and `/DartEMU/`. Remote bundle URLs require CORS
+permission from their host.
+
+The tutorial embeds `terminal.html?boot=32&tutorial=1`. Its bridge is enabled
+only in an iframe with `tutorial=1`. It accepts messages from its parent at
+the same origin. It runs five fixed example IDs when the guest shell is idle;
+messages cannot supply arbitrary shell text. Users can also type directly
+in the terminal.
 
 ## What you can boot
 
-| | |
+| Option | Availability |
 | --- | --- |
-| **RISC-V 32-bit** | Bundled demo image, works on any web backend |
-| **AgentOS** | A machine whose console is an agent, not a shell. Asks for an API key and a model first. RV64, so WasmGC only |
-| **Mount a folder** | Pick a host directory and boot RV64 with it shared over 9P |
-| **A `.zip` bundle** | Drag and drop, or browse. Carries its own config, kernel and rootfs |
-| **A `.yaml` config** | Desktop only — needs real file paths |
+| RV32 Linux | Bundled small BusyBox image; all web builds |
+| RV64 Linux | Bundled image with TCC (`cc`); native or WasmGC |
+| AgentOS | In-guest agent; asks for a model and optional API key; WasmGC browser only |
+| Mount a folder | RV64 with a 9P share; requires WasmGC and browser folder picker support |
+| ZIP bundle | Drag and drop or file picker; matching guest architecture required |
+| YAML config | Desktop only; resolves host file paths |
 
-Pre-built bundles live in the main package's `data/` directory. See
-[Bundles](../docs/configuration.md#bundles) for the layout.
+The small `web/vms/rv32-demo.zip` is tracked and deployed with the page.
+Generated bundles under the repository's `data/` directory are not included
+in a normal checkout. See [Bundles](../docs/configuration.md#bundles) for
+the archive format and [Building images](../docs/images.md) for guest images.
 
-## URL parameters
+The ordinary browser demos configure no external upstreams. They do not
+provide general Internet access or package downloads. AgentOS uses a
+configured HTTP proxy upstream, with its API key held in the page and
+injected into outbound requests. The supplied image sends the placeholder
+`${OPENROUTER_KEY}`. Leaving the key empty boots the guest but model requests
+return a missing-credential error. See [Networking](../docs/networking.md).
 
-| Parameter | Effect |
+## Structure and assets
+
+| Path or component | Role |
 | --- | --- |
-| `?boot=32` / `?boot=64` | Skip the picker and boot the bundled demo |
-| `?bundle=<url>` | Download a `.zip` bundle and preload it — the picker opens with the config parsed and only Boot left to press |
-| `?crt=full\|flat\|glass\|off` | Set the CRT effect |
+| `web/index.html`, `web/tutorial/` | Static tutorial, lesson controls and layout |
+| `web/terminal.html` | Flutter bootstrap for the terminal and image picker |
+| `TutorialSession`, tutorial bridge | Fixed commands, shell readiness, parent/iframe messages |
+| `EmulatorController` | Loads images and drives `Emulator` from a Flutter `Ticker` |
+| `TerminalScreen` | Guest output, keystrokes and tutorial integration |
+| `ConfigPickerScreen`, `ZipConfigLoader` | Demo selection and custom bundles |
+| `AgentOsDemo`, `ApiKeyDialog` | Agent configuration, model and host-held credentials |
 
-Relative bundle URLs resolve against the page's own address, so a bundle
-deployed next to the app (`?bundle=vms/alpine.zip`) always works. A
-cross-origin URL needs CORS headers from its host.
+`assets/` contains BBL firmware, matching legacy Linux kernels, RV32/RV64
+root filesystems, the AgentOS image and the bundled JetBrains Mono font.
+Image licences and source links are in
+[Third-party notices](../THIRD_PARTY_NOTICES.md).
 
-## AgentOS and the key
-
-The AgentOS card asks for an OpenRouter key and a model before booting. The
-key stays in the browser tab: it is attached to requests on their way out
-and never written into the machine, which only ever sees the placeholder
-`${OPENROUTER_KEY}`.
-
-Booting with the field empty is a first-class choice — the machine runs,
-asks, and is told which credential it is missing. That is the clearest
-demonstration that it never had one.
-
-The model matters because an OpenRouter account's data policy decides which
-providers it may reach; if one model is refused, another may not be. See
-[Networking](../docs/networking.md) for what the guest can and cannot reach.
-
-## Terminal shortcuts
-
-`Ctrl+A` and `Ctrl+V` go to the guest shell (start-of-line and
-literal-next), not the terminal UI, so readline behaves the way it does in a
-native terminal. Copy and paste use bindings no browser claims:
-
-| Action | Keys |
-| --- | --- |
-| Copy selection | `Ctrl+Insert` (also `Ctrl+Shift+C`, best effort — Chromium may open DevTools) |
-| Paste | `Shift+Insert` (also `Ctrl+Shift+V`) |
-| Copy / Paste / Select all | Right-click menu |
-
-On macOS the standard `Cmd+C` / `Cmd+V` / `Cmd+A` work as usual — meta
-chords never collide with guest control keys. The right-click menu is the
-keyboard-free path and behaves identically in every browser.
-
-## Assets
-
-```
-assets/bbl32.bin, bbl64.bin              BBL (Berkeley Boot Loader) firmware
-assets/kernel-riscv32.bin, …64.bin       Linux kernels
-assets/root-riscv32.bin, …64.bin         Root filesystems (ext2)
-assets/agentos-riscv64.bin               AgentOS image
-assets/fonts/JetBrainsMonoNL-*.ttf       Terminal font
-```
-
-The font is bundled rather than named: the web build resolves only fonts
-declared in `pubspec.yaml`, so asking for a system font silently falls back
-to a proportional face and the terminal grid spaces every glyph to a cell it
-does not fill.
-
-## Structure
-
-| | |
-| --- | --- |
-| `EmulatorController` | Loads assets, builds a `MachineConfig`, drives the `Emulator` from a `Ticker` |
-| `TerminalScreen` | Renders guest output and forwards keystrokes |
-| `ConfigPickerScreen` | Landing screen: drop zone, file picker, demo cards |
-| `ZipConfigLoader` | Resolves a bundle's config against archive entries |
-| `AgentOsDemo` | Upstreams, credentials and command line for the agent image |
-| `ApiKeyDialog` | Asks for a key and model, and rejects a key a browser cannot send |
+For UI changes, follow [DESIGN.md](../DESIGN.md) and update the shared
+[tokens.css](web/tutorial/tokens.css) before changing component styles.
 
 ## Deployment
 
 ### GitHub Pages
 
-The [Pages workflow](../.github/workflows/pages.yaml) builds the existing
-Flutter app and publishes it as a static site. It uses the JavaScript build
-for the RV32 demo, with the correct base path for a repository site.
+The [Pages workflow](../.github/workflows/pages.yaml) tests the tutorial
+controls, builds a JavaScript release for RV32, and publishes from `main`.
+Pull requests build without deploying. In repository **Settings → Pages →
+Build and deployment**, select **GitHub Actions** as the source. Run
+**GitHub Pages demo** manually or merge a relevant change to `main`.
 
-1. In the repository's **Settings → Pages → Build and deployment**, choose
-   **GitHub Actions** as the source.
-2. Merge the workflow into `main`, or run **GitHub Pages demo**
-   from the **Actions** tab after it has been merged.
-3. Open the URL in the successful deployment and add `?boot=32` to boot
-   directly into Linux.
+The tutorial URL is
+[GitHub Pages tutorial](https://leematthewhiggins.github.io/DartEMU/).
+Forks use `https://<owner>.github.io/<repository>/`. No Firebase account or
+extra deployment secrets are needed.
 
-For this repository the default URL is
-[leematthewhiggins.github.io/DartEMU/](https://leematthewhiggins.github.io/DartEMU/?boot=32).
-It becomes available after the first successful deployment. Forks use
-`https://<owner>.github.io/<repository>/?boot=32`. No Firebase account or
-additional deployment secrets are required.
-
-Pull requests build the site without publishing it. Changes to the emulator,
-example app, dependencies or workflow publish automatically after merging to
-`main`. RV64 demos remain available on the Wasm build hosted on Firebase.
-
-To build and check the Pages layout locally:
+To check the repository subpath locally, from this directory:
 
 ```sh
-cd example
 flutter pub get
 flutter build web --release --base-href /DartEMU/ --pwa-strategy=none
 mkdir -p build/pages/DartEMU
 cp -R build/web/. build/pages/DartEMU/
 python3 -m http.server 8000 --directory build/pages
-# Open http://localhost:8000/DartEMU/?boot=32
+# Open http://localhost:8000/DartEMU/
+# Standalone terminal: http://localhost:8000/DartEMU/terminal.html?boot=32
 ```
 
-The guest runs in the browser tab; refreshing discards its changes. The
-bundled RV32 demo has no external network access configured. Guest image
-licences and source links are in [Third-party notices](../THIRD_PARTY_NOTICES.md).
-
 ### Firebase Hosting
+
+The [Firebase workflow](../.github/workflows/deploy.yaml) publishes a Wasm
+release on relevant changes merged to `main`. It requires the repository
+secret `FIREBASE_SERVICE_ACCOUNT_DARTEMU_3EF91`.
+
+For a manual deployment from this directory, with the Firebase CLI installed
+and authenticated:
 
 ```sh
 tool/deploy.sh
 ```
 
-Auto-deploys on merge to `main` via GitHub Actions (needs the
-`FIREBASE_SERVICE_ACCOUNT` secret). The manual script uses the same flags as
-CI on purpose.
+The script uses the same build flags as CI. Both deployments disable the
+service worker so returning visitors can receive updated builds.
