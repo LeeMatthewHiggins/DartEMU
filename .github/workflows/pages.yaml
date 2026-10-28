@@ -1,0 +1,80 @@
+name: GitHub Pages demo
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/pages.yaml"
+      - "lib/**"
+      - "example/**"
+      - "pubspec.yaml"
+      - "pubspec.lock"
+  pull_request:
+    paths:
+      - ".github/workflows/pages.yaml"
+      - "lib/**"
+      - "example/**"
+      - "pubspec.yaml"
+      - "pubspec.lock"
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with:
+          channel: stable
+          flutter-version: "3.44.4"
+
+      - name: Install dependencies
+        working-directory: example
+        run: flutter pub get
+
+      - name: Build browser demo
+        working-directory: example
+        env:
+          REPOSITORY_NAME: ${{ github.event.repository.name }}
+        # The JavaScript build runs the RV32 demo across web browsers.
+        # Project Pages serves assets beneath /<repository>/; deriving that
+        # path also lets pull requests build before Pages is enabled.
+        # Disable offline caching so returning visitors receive new builds.
+        run: >-
+          flutter build web --release
+          --base-href "/${REPOSITORY_NAME}/"
+          --pwa-strategy=none
+
+      - name: Upload Pages artifact
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3
+        with:
+          path: example/build/web
+
+  deploy:
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    concurrency:
+      group: github-pages
+      cancel-in-progress: false
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4

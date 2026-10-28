@@ -3,7 +3,8 @@
 A Flutter application that boots RISC-V Linux with the `dart_emu` package.
 Runs on every Flutter platform, including web.
 
-Live at <https://dartemu-3ef91.web.app>.
+Try the [live RV32 Linux demo](https://dartemu-3ef91.web.app/?boot=32)
+or open the [image picker](https://dartemu-3ef91.web.app/).
 
 For how to embed the emulator in your own app, see
 [Embedding](../docs/embedding.md).
@@ -104,6 +105,47 @@ does not fill.
 | `ApiKeyDialog` | Asks for a key and model, and rejects a key a browser cannot send |
 
 ## Deployment
+
+### GitHub Pages
+
+The [Pages workflow](../.github/workflows/pages.yaml) builds the existing
+Flutter app and publishes it as a static site. It uses the JavaScript build
+for the RV32 demo, with the correct base path for a repository site.
+
+1. In the repository's **Settings → Pages → Build and deployment**, choose
+   **GitHub Actions** as the source.
+2. Merge the workflow into `main`, or run **GitHub Pages demo**
+   from the **Actions** tab after it has been merged.
+3. Open the URL in the successful deployment and add `?boot=32` to boot
+   directly into Linux.
+
+For this repository the default URL is
+[leematthewhiggins.github.io/DartEMU/](https://leematthewhiggins.github.io/DartEMU/?boot=32).
+It becomes available after the first successful deployment. Forks use
+`https://<owner>.github.io/<repository>/?boot=32`. No Firebase account or
+additional deployment secrets are required.
+
+Pull requests build the site without publishing it. Changes to the emulator,
+example app, dependencies or workflow publish automatically after merging to
+`main`. RV64 demos remain available on the Wasm build hosted on Firebase.
+
+To build and check the Pages layout locally:
+
+```sh
+cd example
+flutter pub get
+flutter build web --release --base-href /DartEMU/ --pwa-strategy=none
+mkdir -p build/pages/DartEMU
+cp -R build/web/. build/pages/DartEMU/
+python3 -m http.server 8000 --directory build/pages
+# Open http://localhost:8000/DartEMU/?boot=32
+```
+
+The guest runs in the browser tab; refreshing discards its changes. The
+bundled RV32 demo has no external network access configured. Guest image
+licences and source links are in [Third-party notices](../THIRD_PARTY_NOTICES.md).
+
+### Firebase Hosting
 
 ```sh
 tool/deploy.sh

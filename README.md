@@ -9,6 +9,15 @@ as something your program can hold, start, snapshot and throw away.
 
 Ported from [TinyEMU](https://bellard.org/tinyemu/) by Fabrice Bellard.
 
+**[Run Linux in your browser →](https://dartemu-3ef91.web.app/?boot=32)**
+
+[![DartEMU running an interactive RISC-V Linux shell](docs/images/browser-demo.png)](https://dartemu-3ef91.web.app/?boot=32)
+
+The demo boots a real RV32 Linux machine entirely in your browser. Click the
+terminal and try `uname -a`, `ls /`, or `cat /proc/cpuinfo`. No installation
+or login is needed. Refreshing the page starts a fresh machine; files you
+create in the demo are not saved.
+
 ```dart
 final sandbox = AgentSandbox(SandboxConfig(
   kernelData: kernel, rootfsData: rootfs, biosData: bios,
@@ -64,19 +73,25 @@ for embedding a real Linux machine in an application.
 
 ## Try it
 
-```sh
-# In a browser, right now — nothing to install
-open https://dartemu-3ef91.web.app
+[Launch the browser demo](https://dartemu-3ef91.web.app/?boot=32), or
+[open the image picker](https://dartemu-3ef91.web.app/) to choose another
+machine or load your own bundle.
 
-# Or locally
+To run locally:
+
+```sh
 git clone https://github.com/LeeMatthewHiggins/DartEMU
 cd DartEMU
 dart pub get
 dart run bin/dart_emu.dart run --config data/alpine_vm.yaml
 ```
 
-The RV64 demo image ships a C compiler, so `?boot=64` gives you a browser
-tab that compiles and runs C.
+The [RV64 demo](https://dartemu-3ef91.web.app/?boot=64) ships a C compiler,
+so browsers with WasmGC can compile and run C in the tab.
+
+The same app can also be hosted on GitHub Pages. See the
+[Pages deployment instructions](example/README.md#github-pages) to enable
+it for this repository or a fork.
 
 ## Install
 
