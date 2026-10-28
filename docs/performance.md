@@ -1,12 +1,13 @@
 # Performance
 
-What it costs to run a machine, how to measure it, and where the time goes.
+Recorded performance and how to measure your workload.
 
 - [Guest throughput](#guest-throughput)
 - [Boot, and the cheaper alternative](#boot-and-the-cheaper-alternative)
 - [Where the speed comes from](#where-the-speed-comes-from)
 - [Web download size](#web-download-size)
 - [Benchmarking](#benchmarking)
+- [Browser sandbox scheduling](#browser-sandbox-scheduling)
 - [Measuring a change](#measuring-a-change)
 
 ## Guest throughput
@@ -25,16 +26,17 @@ suite on your own hardware rather than trusting the table.**
 | process creation (100 forks) | 81 MIPS | 83 MIPS |
 | shell arithmetic loop | 77 MIPS | 107 MIPS |
 
-RV32 is consistently faster: 32-bit arithmetic avoids the 64-bit paths the
-Dart VM handles less cheaply. If your guest does not need a 64-bit address
-space, RV32 is the faster choice on every backend — and the only one that
-runs on the JavaScript web backend at all.
+RV32 was faster in these measurements, where 32-bit arithmetic avoids the
+64-bit execution paths. Measure your own workload and backend before
+assuming the same result. RV32 is also the only guest architecture supported
+by the JavaScript web backend.
 
 ## Boot, and the cheaper alternative
 
-Half a second to a shell is fast enough that booting per task is reasonable.
-Restoring a snapshot is faster still — **29 ms against a 1.1 s cold boot
-(~37x)** in `test/sandbox/snapshot_restore_test.dart`.
+The table above measures native boot, not browser download or page startup.
+A separate recorded run of `test/sandbox/snapshot_restore_test.dart`
+measured **29 ms restore against a 1.1 s cold boot (~37x)**. Re-run that test
+to measure the cost for your host and images.
 
 If you are running many short tasks, boot once, snapshot, and restore per
 task. See [Snapshot and restore](agents.md#snapshot-and-restore).
@@ -57,7 +59,10 @@ Roughly in order of contribution:
 
 ## Web download size
 
-Served with brotli from Firebase Hosting:
+Previously measured on a Firebase Hosting build served with brotli. These
+are reference measurements, not current download guarantees; Flutter
+version, renderer assets, hosting compression and cache state affect the
+actual total. GitHub Pages may serve different compressed sizes:
 
 | Artifact | Raw | Over the wire |
 | --- | --- | --- |
@@ -73,10 +78,10 @@ smaller of the two, but JavaScript compresses better, so over the wire they
 land within ~40 KB of each other; wasm buys roughly 1.5x faster execution
 for that.
 
-**The guest images dominate the payload.** The RV64 rootfs alone is about
-six times the engine over the wire. If download size matters, that is the
-only number worth attacking — shrink the image before optimising anything in
-the emulator.
+**Guest images are a substantial part of the payload.** The RV64 rootfs alone is about
+six times the engine over the wire. If download size matters, start by
+measuring the complete page transfer, including its renderer and guest
+assets, then compare the effect of shrinking the image.
 
 ## Benchmarking
 
@@ -97,9 +102,7 @@ dart tool/bench/bench.dart --workloads sh_loop_10k,disk_read_4m
 
 Results are aggregated as best/median/mean with a coefficient-of-variation
 column; `best` is the least noisy. Each workload's guest exit status is
-checked, so a failing command is reported rather than silently timed — a
-benchmark that measures a command which did not run is worse than no
-benchmark.
+checked; failed commands are reported instead of included in timings.
 
 ## Browser sandbox scheduling
 
@@ -133,8 +136,7 @@ dart tool/bench/compare.dart tool/bench/baselines/{before,after}.json
 ```
 
 The compare tool marks a phase FASTER or SLOWER only when the delta exceeds
-the measured noise of *both* baselines, which is what stops a run-to-run
-wobble being read as a result. `--fail-on-regress <pct>` makes it usable as
+the measured noise of both baselines. `--fail-on-regress <pct>` makes it usable as
 a CI gate.
 
 Baselines are host-specific and gitignored. Comparing one machine's numbers

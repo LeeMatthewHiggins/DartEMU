@@ -1,7 +1,6 @@
 # Architecture
 
-How the emulator is put together, what the seams are, and where the
-boundaries fall.
+The emulator layers, interfaces and host boundaries.
 
 - [The shape of the tree](#the-shape-of-the-tree)
 - [Layers](#layers)
@@ -122,8 +121,7 @@ See [Filesystems and shares](filesystems.md).
 
 ### Network
 
-The most load-bearing seam, because a server and a browser have nothing in
-common here:
+Native sockets and browser HTTP requests use the same backend interface:
 
 ```dart
 abstract class NetBackend {
@@ -147,11 +145,13 @@ abstract class TcpConnectionHandle {
 
 `UserNetDevice` implements the guest-facing TCP/IP stack — ARP, IPv4, ICMP,
 DHCP, DNS, TCP and UDP — and delegates everything outbound to a backend.
-Returning `null` is meaningful in both cases: from `openTcpConnection` it
-produces a RST the guest sees as *connection refused*, and from `resolveDns`
-it produces NXDOMAIN.
+Returning `null` from `openTcpConnection` produces a RST the guest sees as
+*connection refused*. `resolveDns` returns `null` for a pending or failed
+lookup; the stack retries and eventually drops unresolved queries, so the
+guest can time out. It does not produce an NXDOMAIN response.
 
-On the web that is the whole enforcement mechanism. See
+On the web, the HTTP proxy also checks the request's Host header against
+configured upstreams. See
 [Networking](networking.md).
 
 ### Internal seams
@@ -163,8 +163,9 @@ typedefs (`SetIrqCallback`, `DeviceReadFunc`, `DeviceWriteFunc`,
 
 ## The three entry points
 
-The split is enforced by imports, not convention — the core has no
-`dart:io`, which is why it runs in a browser at all.
+The CPU, machine and device interfaces are platform-neutral. Conditional
+imports select native or browser networking, while the I/O entry point
+exposes filesystem loading and file-backed devices.
 
 | Import | Holds | Use when |
 | --- | --- | --- |
@@ -181,9 +182,12 @@ final emulator = Emulator(config);
 emulator.output.listen(...);   // console bytes out
 emulator.status.listen(...);   // idle → starting → running → stopped
 emulator.sendInput(bytes);     // console bytes in
-await emulator.start();        // or stepFor(micros) to drive it yourself
+await emulator.start();        // runs until stopped or the guest shuts down
 await emulator.dispose();
 ```
+
+For frame-driven execution, call `await emulator.init()` and then
+`stepFor(micros)` repeatedly instead of calling `start()`.
 
 `stepFor` matters in Flutter: a browser clamps `Future.delayed`, so the demo
 drives the emulator from a `Ticker`, one frame's budget per frame, rather
@@ -194,28 +198,27 @@ under budgets, exchange files, snapshot. See [Agents](agents.md).
 
 ## Where the boundaries are
 
-Worth being exact about, because it is the design rather than a detail.
-
-**The emulator is the security boundary.** Nothing filters what a guest may
-run. `rm -rf /` executes, and a test asserts that it does. The guest never
-executes a host instruction, so containment is a property of emulation
-rather than of any check.
+**The emulator interprets guest instructions.** Guest programs run against
+an emulated CPU and a separate kernel. Commands are not filtered; a guest
+can overwrite its own disk. Host isolation still depends on the emulator,
+Dart runtime and connected backends working correctly.
 
 **The host is the network boundary.** A guest reaches exactly the
 destinations its backend allows. On native that is real sockets; in a
 browser it is a fixed list of upstreams over HTTP.
 
-**The page is the credential boundary.** Keys live on the host and are
-attached to requests on their way out. The guest image carries a placeholder
-naming the credential, and has no field able to hold the credential itself.
+**The page holds AgentOS credentials.** The supplied image sends a
+placeholder, and the configured proxy attaches the key on outbound
+requests. This keeps the key out of the supplied guest image; it does not
+make arbitrary guest memory incapable of storing secrets.
 
-Bounds that exist *inside* a guest — output caps, command timeouts — protect
-the machine from itself. They are not a security control, and a rooted guest
-can remove its own.
+AgentOS applies output and process limits inside the guest, so a guest
+with root access can change them. `AgentSandbox` checks time and instruction
+budgets in the host execution loop; these are separate limits.
 
 ## Following a request out of a browser guest
 
-The path that is hardest to reconstruct from the source, end to end:
+A request from the in-guest agent follows this path:
 
 ```
 in-guest agent            socket() → connect(10.0.2.2:80) → write(HTTP)
@@ -237,23 +240,22 @@ renderResponse()          back to HTTP/1.1 bytes, Content-Length rewritten
 UserNetDevice             segmented back to the guest, then FIN
 ```
 
-Two details in there are load-bearing and were each a bug first. DNS
-resolves an allowed name to the **gateway**, not loopback — a guest
-connecting to loopback answers itself and the packet never leaves. And the
-upstream's path is **appended** to, not replaced by, the guest's: `Uri.resolve`
-would send `/v1/chat/completions` to the site root.
+DNS resolves allowed names to the gateway. Loopback would route the packet
+back into the guest. The proxy appends the guest path to the upstream path;
+`Uri.resolve` would instead send `/v1/chat/completions` to the site root.
 
 ## Where state lives
 
-A snapshot has to capture all of this, which is a good way to enumerate it:
+A snapshot captures:
 
 - CPU registers, CSRs, and the current privilege level
 - All of guest RAM
 - The disk, as a byte array
-- Device state — VirtIO queues, CLINT/PLIC registers, console buffers
+- Device state — VirtIO queues and CLINT/PLIC registers
 - Timers, restored relative to a coherent clock rather than jumping
 
-What a snapshot deliberately does *not* capture is anything on the host: an
-open file handle, a socket, or a credential. That is what makes a restored
-guest independent of the one it came from, and why one snapshot can seed any
-number of clones.
+Snapshots currently require `MemoryBlockDevice` disks. They do not capture
+external network sessions, console transport buffers, credentials or shared
+folder contents. Active 9P sessions are not restored; re-establish the share
+after restoration. Restore with a matching configuration and give each
+clone separate network and filesystem backends when independence matters.

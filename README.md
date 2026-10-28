@@ -3,55 +3,54 @@
 [![style: very good analysis][very_good_analysis_badge]][very_good_analysis_link]
 [![License: MIT][license_badge]][license_link]
 
-A RISC-V system emulator written in pure Dart. It boots Linux, runs
-everywhere Dart runs — including a browser tab — and treats a whole machine
-as something your program can hold, start, snapshot and throw away.
+A RISC-V system emulator in pure Dart. Boot Linux, run commands, and restore
+VM snapshots on native Dart or in a browser.
 
 Ported from [TinyEMU](https://bellard.org/tinyemu/) by Fabrice Bellard.
+
+**[Learn DartEMU with a live Linux machine →](https://leematthewhiggins.github.io/DartEMU/)**
+
+[![DartEMU tutorial with live Linux shell examples](docs/images/browser-demo.jpg)](https://leematthewhiggins.github.io/DartEMU/)
+
+Run five examples in an RV32 Linux guest, including a Mandelbrot fractal
+computed by the guest shell. No login or installation is needed. Restarting
+discards guest files. The
+[written tutorial](docs/browser-tutorial.md) has commands and expected output.
+
+GitHub Pages publishes from `main`. The
+[Firebase demo](https://dartemu-3ef91.web.app/?boot=32) is also available.
 
 ```dart
 final sandbox = AgentSandbox(SandboxConfig(
   kernelData: kernel, rootfsData: rootfs, biosData: bios,
 ));
 
-await sandbox.boot();                          // ~0.5 s to a shell
-final r = await sandbox.exec('uname -m');      // riscv64
-await sandbox.dispose();                       // and it is gone
+await sandbox.boot();
+try {
+  final result = await sandbox.exec('uname -m');
+  print(result.stdout); // riscv64 with matching RV64 images
+} finally {
+  await sandbox.dispose();
+}
 ```
 
 ## Why this exists
 
-Most sandboxing borrows a boundary from the host: a container, a `chroot`, a
-seccomp filter, a user account. Each is a fence drawn around code that is
-still running on your CPU, and each fails the same way — one kernel bug and
-the fence is on the wrong side.
+DartEMU interprets guest instructions and boots a separate kernel. It needs
+no native emulator binary, hardware VM extensions, privileged daemon or
+Docker. Use it for browser lessons, disposable test environments, or running
+model-authored code.
 
-An emulated machine is different in kind. The guest never executes a host
-instruction. There is no syscall to escape through, because there is no
-shared kernel to make one to. Containment is a consequence of emulation
-rather than a set of rules that have to hold.
-
-That has a cost — you are paying an interpreter — and it buys three things
-worth having:
-
-- **It runs anywhere.** Same code on a server, a laptop, a phone and a
-  browser tab. No native binary, no VM extensions, no privileged daemon, no
-  Docker.
-- **A machine is a value.** Boot it, snapshot it in 29 ms, restore that
-  snapshot into as many independent clones as you like, discard them.
-- **You control what exists.** The guest reaches exactly the network,
-  files and devices you hand it. Not what a policy permits — what exists.
-
-Useful for running model-authored or untrusted code, for teaching and
-demonstrating systems in a browser, for reproducible test environments, and
-for embedding a real Linux machine in an application.
+Host access comes through disk, filesystem and network backends. Isolation
+still depends on the emulator, Dart runtime and those backends working
+correctly; it is not a guarantee against emulator bugs.
 
 ## What it does
 
 - **RV64IMAFDC and RV32IMAFDC**, all privilege levels (M/S/U), SV39 and SV32
   virtual memory with hardware page-table walking
-- **Boots current Linux** — 6.12 builds are provided — either behind BBL or
-  with the emulator answering SBI v2.0 calls itself as machine-mode firmware
+- **Boots Linux** — bundled legacy kernels use BBL; Linux 6.12 builds use
+  the emulator's built-in SBI v2.0 support
 - **VirtIO** console, block, network and 9P, plus CLINT, PLIC and HTIF
 - **User-mode networking** with ARP, DHCP, DNS, ICMP, TCP and UDP, and a
   swappable backend that decides what the guest can reach
@@ -64,19 +63,35 @@ for embedding a real Linux machine in an application.
 
 ## Try it
 
-```sh
-# In a browser, right now — nothing to install
-open https://dartemu-3ef91.web.app
+[Open a standalone terminal](https://leematthewhiggins.github.io/DartEMU/terminal.html?boot=32)
+or [choose an image](https://leematthewhiggins.github.io/DartEMU/terminal.html).
 
-# Or locally
+To run locally, install Dart 3.9 or later and use the images included in the
+checkout. The CLI writes to its disk image, so make a working copy first:
+
+```sh
 git clone https://github.com/LeeMatthewHiggins/DartEMU
 cd DartEMU
-dart pub get
-dart run bin/dart_emu.dart run --config data/alpine_vm.yaml
+dart pub get --no-example
+mkdir -p .dart_tool/demo
+cp example/assets/root-riscv64.bin .dart_tool/demo/rootfs.bin
+dart run bin/dart_emu.dart run \
+  --bios example/assets/bbl64.bin \
+  --kernel example/assets/kernel-riscv64.bin \
+  --drive .dart_tool/demo/rootfs.bin \
+  --cmdline "console=hvc0 root=/dev/vda rw"
 ```
 
-The RV64 demo image ships a C compiler, so `?boot=64` gives you a browser
-tab that compiles and runs C.
+Wait for the `~ #` shell prompt, then try `uname -m`. Press Ctrl+C to exit
+the CLI. Changes remain in `.dart_tool/demo/rootfs.bin`; copy the bundled
+image again to reset it. The `data/alpine*.yaml` configs require additional
+[locally built images](docs/images.md).
+
+The [RV64 demo](https://dartemu-3ef91.web.app/?boot=64)
+ships a C compiler, so browsers with WasmGC can compile and run C in the tab.
+
+The same app can also be hosted on a fork. See the
+[Pages deployment instructions](example/README.md#github-pages).
 
 ## Install
 
@@ -103,9 +118,7 @@ your program
         CharacterDevice
 ```
 
-Everything platform-specific sits behind one of those interfaces, which is
-why the same core runs on a server and in a browser tab. Three entry points
-keep the split honest:
+Choose the entry point for your platform:
 
 | Import | Use when |
 | --- | --- |
@@ -113,13 +126,15 @@ keep the split honest:
 | `package:dart_emu/dart_emu_io.dart` | server, desktop, CLI |
 | `package:dart_emu/dart_emu_web.dart` | browser |
 
-The core has no `dart:io` at all — that is what makes the browser target
-possible rather than merely intended.
+The CPU and device interfaces are platform-neutral. Conditional imports
+select native sockets or the browser HTTP backend; file-backed devices and
+configuration loading are exposed through `dart_emu_io.dart`.
 
 ## Documentation
 
 | Guide | What it covers |
 | --- | --- |
+| **[Browser tutorial](docs/browser-tutorial.md)** | First boot, guided shell examples, controls and troubleshooting |
 | **[Architecture](docs/architecture.md)** | Layers, every interface, where the boundaries are, how a request leaves a browser guest |
 | **[Agents](docs/agents.md)** | `AgentSandbox` and AgentOS, budgets, snapshots, the credential design |
 | **[Networking](docs/networking.md)** | The TCP/IP stack, backends, the browser proxy, credential injection |
@@ -144,9 +159,9 @@ suite rather than trusting the table:
 | gzip 512 KB | 108 MIPS | 131 MIPS |
 | pipes + context switches | 91 MIPS | 113 MIPS |
 
-Restoring a snapshot beats booting by ~37x — 29 ms against 1.1 s. RV32 is
-consistently faster than RV64, because 32-bit arithmetic avoids the 64-bit
-paths the Dart VM handles less cheaply.
+A separate recorded snapshot benchmark restored in 29 ms against a 1.1 s
+cold boot (~37x). RV32 was faster in the workloads above; timings depend on
+the host, runtime and guest image.
 
 More, including how to measure a change without fooling yourself, in
 [Performance](docs/performance.md).
@@ -154,13 +169,17 @@ More, including how to measure a change without fooling yourself, in
 ## Contributing
 
 ```sh
-dart pub get
+dart pub get --no-example
 dart test                                    # unit tests
 dart test --run-skipped -t machine           # whole-machine tests
 dart test --run-skipped -t sandbox           # boots a guest
 dart test -p chrome test/net                 # browser-only paths
 dart analyze --fatal-infos --fatal-warnings lib test
 ```
+
+The sandbox suite needs the additional images described in
+[Building images](docs/images.md#prebuilt-images); unavailable-image tests
+are skipped.
 
 Commits follow [Conventional Commits](https://www.conventionalcommits.org).
 CI runs analysis, formatting, a 50% coverage floor, spell-check, the C
@@ -177,8 +196,8 @@ Linux kernel (GPL-2.0-only) and JetBrains Mono (OFL-1.1). See
 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for sources and pinned
 revisions.
 
-If you use this as a library and supply your own guest images, only the MIT
-licence applies to you.
+The emulator source remains MIT licensed when you supply your own guest
+images; those images and your other dependencies keep their own licences.
 
 [license_badge]: https://img.shields.io/badge/license-MIT-blue.svg
 [license_link]: https://opensource.org/licenses/MIT

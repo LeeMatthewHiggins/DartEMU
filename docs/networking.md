@@ -1,6 +1,6 @@
 # Networking
 
-How a guest reaches the outside, and how much outside it gets.
+Guest networking and backend access controls.
 
 - [The stack](#the-stack)
 - [The backend seam](#the-backend-seam)
@@ -25,9 +25,9 @@ The virtual network is the familiar user-mode layout:
 | `10.0.2.2` | the gateway — where the host answers |
 | `10.0.2.3` | the DNS server |
 
-Nothing above the device driver in the guest knows any of this is simulated.
-`ping`, `curl` and a resolver behave normally, within the limits of whatever
-backend is underneath.
+The guest uses its ordinary network tools, within the backend's limits.
+ICMP echo replies are synthesized locally: a successful `ping` demonstrates
+the virtual stack, not connectivity to the destination.
 
 ## The backend seam
 
@@ -44,20 +44,22 @@ abstract class NetBackend {
 }
 ```
 
-Returning `null` is how a backend says no, and it says it in the guest's own
-vocabulary: `null` from `openTcpConnection` becomes a RST, which the guest
-reports as *connection refused*; `null` from `resolveDns` becomes NXDOMAIN.
-A refusal is therefore indistinguishable from an ordinary network failure,
-which is what you want — there is nothing to detect and route around.
+Returning `null` from `openTcpConnection` becomes a TCP RST, usually shown
+as *connection refused*. `resolveDns` returns `null` for pending or failed
+lookups. The stack retries those queries and eventually drops them without
+a reply; the guest may wait for a DNS timeout rather than receive NXDOMAIN.
 
 ## Native
 
-`createDefaultNetBackend()` gives real sockets. A guest gets what the host
-has, and the emulator imposes nothing. If you want it constrained, supply
-your own backend:
+`createDefaultNetBackend()` uses host TCP/UDP sockets and IPv4 DNS. These
+outbound connections have the host process's network access. It does not
+provide inbound port forwarding or a full raw-socket tunnel. To constrain
+outbound access, supply your own backend:
 
 ```dart
-UserNetDevice(backend: MyFilteringBackend())
+import 'package:dart_emu/dart_emu.dart';
+
+final network = UserNetDevice(backend: MyFilteringBackend());
 ```
 
 That is the intended extension point for an allow-list on a server. The
@@ -66,15 +68,18 @@ and one that is down.
 
 ## In a browser
 
-A browser has no raw sockets. It has `fetch`, and `fetch` owns the TLS — so
-a guest **cannot** speak HTTPS through it: the guest would have to hold the
-certificate and do the handshake, and the browser will not carry the result.
+The browser backend uses `fetch`, which accepts HTTP requests rather than
+arbitrary TCP bytes. It therefore cannot carry a guest's TLS handshake or
+provide a general HTTPS socket. The browser performs TLS for the configured
+upstream instead.
 
 So the guest speaks plain HTTP to a named upstream, and the page reissues
 the request over TLS:
 
 ```dart
-UserNetDevice(
+import 'package:dart_emu/dart_emu_web.dart';
+
+final network = UserNetDevice(
   backend: WebNetBackend(
     upstreams: [
       Upstream(
@@ -85,18 +90,16 @@ UserNetDevice(
     ],
     credentials: CredentialStore({'OPENROUTER_KEY': key}),
   ),
-)
+);
 ```
 
-That limitation turns out to be the feature. Since every request already has
-to pass through host code to reach the network at all, that code is the
-natural place to decide *which* requests exist and *what* they carry.
-
-`WebNetBackend` enforces exactly two things:
+`WebNetBackend` and `HttpProxy` restrict requests in three places:
 
 - `resolveDns` answers only for a configured upstream. Everything else
   fails to resolve.
 - `openTcpConnection` accepts only port 80. Everything else is refused.
+- `HttpProxy` requires a configured HTTP Host header before dispatching the
+  request, including when the guest connects directly to an IP address.
 
 An allowed name resolves to the **gateway**, not loopback — a guest
 connecting to loopback would answer itself and the packet would never leave
@@ -105,15 +108,17 @@ not the address.
 
 ## Credential injection
 
-The guest is built with a placeholder naming the credential it needs, never
-the credential:
+The supplied AgentOS image uses a placeholder naming the credential it
+needs. The host proxy injects the configured authorization header:
 
 ```
 guest writes:   Authorization: Bearer ${OPENROUTER_KEY}
 host resolves:  Authorization: Bearer sk-real-…
 ```
 
-`HttpProxy` substitutes `${NAME}` from a `CredentialStore` held on the host.
+`HttpProxy` substitutes `${NAME}` in configured `Upstream.injectHeaders`
+from a `CredentialStore` held on the host. It does not substitute arbitrary
+guest-supplied headers.
 Two tests state the property directly: one asserts the real key appears in
 the outbound request, the other asserts the guest's own bytes contain only
 the placeholder and never `sk-`.
@@ -124,13 +129,13 @@ one — and a key copied out of a rendered page can pick up a non-breaking
 space or a zero-width character while looking identical to a clean one.
 `fetch` answers that with a `TypeError` naming neither the header nor the
 value, so the proxy checks first and refuses with the header, the code point
-and the position. It refuses rather than repairs: quietly altering a
-credential would turn one confusing failure into a worse one.
+and the position. It reports invalid values without changing the credential.
 
 ## Failing usefully
 
-A guest that is refused must not meet a dead socket. Every refusal comes
-back as a real HTTP response with a JSON body:
+HTTP proxy refusals, such as a missing configured credential, return an
+HTTP response with a JSON body. Port refusals and DNS failures happen below
+HTTP and follow the behavior described above:
 
 ```
 HTTP/1.1 401 Unauthorized
@@ -139,12 +144,9 @@ HTTP/1.1 401 Unauthorized
   "type":"dartemu_proxy"}}
 ```
 
-An agent reads that like any other API error. The `type` field marks it as
-the proxy's own, which matters more than it looks: a refusal from the host
-and a refusal from the API beyond it arrive in the same shape and read
-identically, and every layer in the chain can answer 401. Without the mark,
-a message like *"Missing Authentication header"* sends you looking at the
-wrong layer.
+The `type` field distinguishes proxy errors from upstream API errors,
+which can also return 401 with a message such as "Missing Authentication
+header".
 
 Response framing is rewritten rather than echoed. An upstream
 `Content-Length` that disagreed with the body actually forwarded would
@@ -160,10 +162,14 @@ In a browser, with the configuration above:
 | `llm.local:443` | refused — only port 80 |
 | `github.com` | does not resolve |
 | `apk add …` | fails; the mirror is not an upstream |
-| ping, UDP, raw sockets | nothing |
+| ping by IP | synthetic local echo; does not test external connectivity |
+| outbound UDP other than local DHCP/DNS | not forwarded |
+| arbitrary TCP protocols / guest TLS | unsupported |
 
-Widening it means adding entries to `upstreams`, each with its own injected
-headers. Note that a destination must also permit cross-origin requests:
+The ordinary RV32/RV64 browser demos configure no upstreams, so they do
+not provide general Internet access. The AgentOS demo configures its model
+provider upstream. Widening access in your app means adding entries to
+`upstreams`, each with its own injected headers. Note that a destination must also permit cross-origin requests:
 most package mirrors send no CORS headers, so `apk add` cannot work from a
 browser even if the mirror is allow-listed. On native that constraint
 disappears, because there the backend opens real sockets.
@@ -177,6 +183,6 @@ typedef ProxyTransport = Future<ProxyResponse> Function(ProxyRequest request);
 ```
 
 `fetchTransport` on the web, a fake in tests. That is why the proxy has unit
-tests rather than a manual browser check — only `web_fetch.dart` is
-genuinely web-specific, and it has its own tests that run in real Chrome via
+tests as well as a browser transport check. `web_fetch.dart` calls browser
+APIs and has tests that run in real Chrome via
 `dart test -p chrome test/net`, which CI runs as a separate job.
