@@ -36,7 +36,7 @@ jobs:
       min_coverage: 50
 
   spell-check:
-    uses: VeryGoodOpenSource/very_good_workflows/.github/workflows/spell_check.yml@0d81600dd37bc87a473ee5b6e2293bef05751b04 # v1.20.1
+    uses: VeryGoodOpenSource/very_good_workflows/.github/workflows/spell_check.yml@bf86fc749b907c6cc60e655f7f2ef619287b1b15 # v2.0.3
     with:
       includes: |
         **/*.md
