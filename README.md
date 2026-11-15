@@ -163,8 +163,8 @@ dart analyze --fatal-infos --fatal-warnings lib test
 ```
 
 Commits follow [Conventional Commits](https://www.conventionalcommits.org).
-CI runs analysis, formatting, a 50% coverage floor, spell-check, the C
-agent's tests and a riscv64 cross-compile.
+CI runs analysis, formatting, a 50% coverage floor, the C agent's
+tests and a riscv64 cross-compile.
 
 ## Licence
 
