@@ -139,6 +139,7 @@ class DhcpServer {
       if (offset + 1 >= data.length) break;
       final length = data[offset + 1];
       if (code == optionCode && length >= 1) {
+        if (offset + 2 >= data.length) break;
         return data[offset + 2];
       }
       offset += 2 + length;

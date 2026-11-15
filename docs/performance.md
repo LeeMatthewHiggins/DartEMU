@@ -45,13 +45,17 @@ Roughly in order of contribution:
 
 - **A predecoded instruction cache** in front of the decoder — about 1.7x on
   RV64 and 1.9x on RV32. Decoding is the dominant cost in a naive
-  interpreter, and most instructions are executed many times.
+  interpreter, and most instructions are executed many times. The cache
+  holds 1,024 decoded pages (4 MiB of guest code, at most 16 MiB of host
+  memory); a running Linux guest touches several thousand code pages, and
+  at a quarter of that size nearly every insert evicted a live page.
 - **A separate RV32 predecoder**, so the 32-bit path never touches 64-bit
   arithmetic.
 - **Inline fast paths for memory access**, with the TLB checked before the
   general page-walk machinery.
-- **Block-boundary checks** rather than per-instruction bookkeeping for
-  timers and interrupts.
+- **Timers checked between execution slices**, not per instruction. The
+  pending-interrupt test that does run per instruction is two field loads
+  and a mask, inlined into the dispatch loop.
 - **WasmGC over JavaScript** on the web — roughly 1.4–1.7x on guest
   workloads and kernel boot.
 

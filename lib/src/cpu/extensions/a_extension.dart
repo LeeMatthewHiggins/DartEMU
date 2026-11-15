@@ -62,8 +62,7 @@ class AExtension {
       rs2Val: _truncate32(rs2Val),
       read: read,
       write: write,
-      signExtend: _signExtend32,
-      toUnsigned: _toUnsigned32,
+      isWord: true,
     );
     _writeRd(rd, _signExtend32(result));
   }
@@ -82,8 +81,7 @@ class AExtension {
       rs2Val: rs2Val,
       read: read,
       write: write,
-      signExtend: _identity,
-      toUnsigned: _toUnsigned64,
+      isWord: false,
     );
     _writeRd(rd, result);
   }
@@ -94,78 +92,59 @@ class AExtension {
     required int rs2Val,
     required MemoryReadCallback read,
     required MemoryWriteCallback write,
-    required int Function(int) signExtend,
-    required int Function(int) toUnsigned,
+    required bool isWord,
   }) {
-    return switch (funct5) {
-      _Funct5.lr => _executeLr(addr, read),
-      _Funct5.sc => _executeSc(addr, rs2Val, write),
-      _Funct5.amoSwap => _executeAmo(
-        addr,
-        rs2Val,
-        read,
-        write,
-        (_, val2) => val2,
-      ),
-      _Funct5.amoAdd => _executeAmo(
-        addr,
-        rs2Val,
-        read,
-        write,
-        (old, val2) => signExtend(old + val2),
-      ),
-      _Funct5.amoXor => _executeAmo(
-        addr,
-        rs2Val,
-        read,
-        write,
-        (old, val2) => signExtend(old ^ val2),
-      ),
-      _Funct5.amoAnd => _executeAmo(
-        addr,
-        rs2Val,
-        read,
-        write,
-        (old, val2) => signExtend(old & val2),
-      ),
-      _Funct5.amoOr => _executeAmo(
-        addr,
-        rs2Val,
-        read,
-        write,
-        (old, val2) => signExtend(old | val2),
-      ),
-      _Funct5.amoMin => _executeAmo(
-        addr,
-        rs2Val,
-        read,
-        write,
-        (old, val2) => old < val2 ? old : val2,
-      ),
-      _Funct5.amoMax => _executeAmo(
-        addr,
-        rs2Val,
-        read,
-        write,
-        (old, val2) => old > val2 ? old : val2,
-      ),
-      _Funct5.amoMinU => _executeAmo(
-        addr,
-        rs2Val,
-        read,
-        write,
-        (old, val2) => toUnsigned(old) < toUnsigned(val2) ? old : val2,
-      ),
-      _Funct5.amoMaxU => _executeAmo(
-        addr,
-        rs2Val,
-        read,
-        write,
-        (old, val2) => toUnsigned(old) > toUnsigned(val2) ? old : val2,
-      ),
-      _ => throw const IllegalAtomicException(),
-    };
+    if (funct5 == _Funct5.lr) return _executeLr(addr, read);
+    if (funct5 == _Funct5.sc) return _executeSc(addr, rs2Val, write);
+    if (!_isAmo(funct5)) throw const IllegalAtomicException();
+
+    final oldVal = read(addr);
+    write(addr, _amoResult(funct5, oldVal, rs2Val, isWord));
+    return oldVal;
   }
+
+  static bool _isAmo(int funct5) =>
+      funct5 <= _Funct5.amoSwap ||
+      (funct5 & _Funct5.amoLowBitsMask) == 0 && funct5 <= _Funct5.amoMaxU;
+
+  /// The value an AMO stores. Word operands are compared as 32-bit
+  /// quantities whatever the width of the registers that carry them.
+  static int _amoResult(int funct5, int oldVal, int rs2Val, bool isWord) {
+    switch (funct5) {
+      case _Funct5.amoSwap:
+        return rs2Val;
+      case _Funct5.amoAdd:
+        return isWord ? _signExtend32(oldVal + rs2Val) : oldVal + rs2Val;
+      case _Funct5.amoXor:
+        return isWord ? _signExtend32(oldVal ^ rs2Val) : oldVal ^ rs2Val;
+      case _Funct5.amoAnd:
+        return isWord ? _signExtend32(oldVal & rs2Val) : oldVal & rs2Val;
+      case _Funct5.amoOr:
+        return isWord ? _signExtend32(oldVal | rs2Val) : oldVal | rs2Val;
+      case _Funct5.amoMin:
+        return _signedKey(oldVal, isWord) < _signedKey(rs2Val, isWord)
+            ? oldVal
+            : rs2Val;
+      case _Funct5.amoMax:
+        return _signedKey(oldVal, isWord) > _signedKey(rs2Val, isWord)
+            ? oldVal
+            : rs2Val;
+      case _Funct5.amoMinU:
+        return _unsignedKey(oldVal, isWord) < _unsignedKey(rs2Val, isWord)
+            ? oldVal
+            : rs2Val;
+      default:
+        return _unsignedKey(oldVal, isWord) > _unsignedKey(rs2Val, isWord)
+            ? oldVal
+            : rs2Val;
+    }
+  }
+
+  static int _signedKey(int value, bool isWord) =>
+      isWord ? value.toSigned(_Width.wordBits) : value;
+
+  static int _unsignedKey(int value, bool isWord) =>
+      isWord ? value & _Masks.word : value ^ _Masks.doubleSignBit;
 
   int _executeLr(int addr, MemoryReadCallback read) {
     state.loadReservation = addr;
@@ -180,19 +159,6 @@ class AExtension {
     }
     state.loadReservation = _noReservation;
     return _scFailure;
-  }
-
-  int _executeAmo(
-    int addr,
-    int rs2Val,
-    MemoryReadCallback read,
-    MemoryWriteCallback write,
-    int Function(int oldVal, int rs2Val) op,
-  ) {
-    final oldVal = read(addr);
-    final newVal = op(oldVal, rs2Val);
-    write(addr, newVal);
-    return oldVal;
   }
 
   void _writeRd(int rd, int value) {
@@ -210,12 +176,6 @@ class AExtension {
   }
 
   static int _truncate32(int value) => value & _Masks.word;
-
-  static int _identity(int value) => value;
-
-  static int _toUnsigned32(int value) => value & _Masks.word;
-
-  static int _toUnsigned64(int value) => value ^ _Masks.doubleSignBit;
 
   static const _noReservation = -1;
   static const _scSuccess = 0;
@@ -270,11 +230,15 @@ class _Funct5 {
   static const amoMax = 0x14;
   static const amoMinU = 0x18;
   static const amoMaxU = 0x1C;
+
+  /// Every AMO above `amoswap` has its two low bits clear.
+  static const amoLowBitsMask = 0x03;
 }
 
 class _Width {
   static const word = 2;
   static const doubleWord = 3;
+  static const wordBits = 32;
 }
 
 class _Shifts {

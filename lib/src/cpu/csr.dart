@@ -215,7 +215,7 @@ class CsrHandler {
   int _readTime() {
     _checkCounterAccess(_Addr.time);
     final rtcTime = state.rtcTimeRead();
-    return rtcTime & _counterHighMask;
+    return state.isRv32 ? rtcTime & _counterHighMask : rtcTime;
   }
 
   int _readTimeHigh() {

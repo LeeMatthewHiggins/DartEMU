@@ -109,20 +109,7 @@ class RunCommand extends Command<int> {
   MachineConfig _buildConfig() {
     final configPath = argResults!['config'] as String?;
     if (configPath != null) {
-      final loaded = ConfigLoader.loadFromFile(configPath);
-      return MachineConfig(
-        xlen: loaded.xlen,
-        memorySizeMb: loaded.memorySizeMb,
-        biosPath: loaded.biosPath,
-        kernelPath: loaded.kernelPath,
-        initrdPath: loaded.initrdPath,
-        cmdLine: loaded.cmdLine,
-        driveConfigs: loaded.driveConfigs,
-        filesystemConfigs: loaded.filesystemConfigs,
-        ethernetConfigs: loaded.ethernetConfigs,
-        rtcLocalTime: loaded.rtcLocalTime,
-        accel: loaded.accel,
-      );
+      return ConfigLoader.loadFromFile(configPath);
     }
 
     final memorySizeMb = int.parse(argResults!['memory'] as String);

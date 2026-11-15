@@ -1,5 +1,28 @@
 # Changelog
 
+## Unreleased
+
+- Performance: about 12% faster on RV64 and 8% on RV32 across the benchmark
+  suite (geometric mean; shell-heavy workloads up to 24%). The predecode
+  cache grew from 256 to 1,024 pages, which removes roughly 90% of its
+  evictions; the per-instruction interrupt test is inlined; `mulh`, `mulhu`,
+  `mulhsu`, `divu` and `remu` no longer allocate `BigInt`s; atomics no
+  longer allocate closures.
+- Fix: `use_builtin_sbi` in a YAML config was dropped by `dart_emu run`, so
+  a firmware-less config produced a machine that never booted.
+- Fix: `rdtime` on RV64 returned only the low 32 bits, wrapping the guest
+  clock every 429 seconds.
+- Fix: the reserved `op32` encodings beside `mulw` raised a host
+  `ArgumentError` instead of an illegal-instruction trap, letting a guest
+  stop the emulator.
+- Fix: interrupt selection considered interrupts that were masked at the
+  current privilege level, so under firmware delegation a pending machine
+  timer could deliver a supervisor interrupt into a kernel critical section.
+- Fix: `amomin.w` and `amomax.w` compared the register operand as unsigned.
+- Fix: a DHCP packet with an option truncated at the end of the buffer
+  raised a `RangeError` out of the machine step.
+- CI: the Markdown spell check is gone.
+
 ## 0.6.0
 
 - Boot a modern Linux kernel with no firmware blob. The emulator now

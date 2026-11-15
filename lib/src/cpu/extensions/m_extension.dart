@@ -8,6 +8,12 @@ abstract class MExtension {
 
   MExtension._();
 
+  /// Whether [funct3] names a real `*W` instruction. RV64 defines only
+  /// `mulw`, `divw`, `divuw`, `remw` and `remuw`; the encodings where
+  /// `mulh`, `mulhsu` and `mulhu` would sit are reserved and must trap.
+  static bool isValidWordOp(int funct3) =>
+      funct3 == _Funct3.mul || funct3 >= _Funct3.div;
+
   int executeMulDiv({
     required int funct3,
     required int rs1Val,
@@ -52,17 +58,41 @@ class _MExtension64 extends MExtension {
   };
 
   static int _mulh64(int a, int b) =>
-      (BigInt.from(a) * BigInt.from(b) >> _Bits.dword).toInt();
+      _mulhu64(a, b) - (a < 0 ? b : 0) - (b < 0 ? a : 0);
 
-  static int _mulhsu64(int a, int b) =>
-      (BigInt.from(a) * BigInt.from(b).toUnsigned(_Bits.dword) >> _Bits.dword)
-          .toInt();
+  static int _mulhsu64(int a, int b) => _mulhu64(a, b) - (a < 0 ? b : 0);
 
-  static int _mulhu64(int a, int b) =>
-      (BigInt.from(a).toUnsigned(_Bits.dword) *
-                  BigInt.from(b).toUnsigned(_Bits.dword) >>
-              _Bits.dword)
-          .toInt();
+  /// High 64 bits of the unsigned 128-bit product, from four 32x32
+  /// partial products. Each partial product fits in 64 bits, and the
+  /// wrap-around of native integers is exactly unsigned arithmetic.
+  static int _mulhu64(int a, int b) {
+    final aLo = a & _Limits.wordMask;
+    final aHi = a >>> _Bits.word;
+    final bLo = b & _Limits.wordMask;
+    final bHi = b >>> _Bits.word;
+    final lowHigh = aLo * bHi;
+    final highLow = aHi * bLo;
+    final carry =
+        ((aLo * bLo) >>> _Bits.word) +
+        (lowHigh & _Limits.wordMask) +
+        (highLow & _Limits.wordMask);
+    return aHi * bHi +
+        (lowHigh >>> _Bits.word) +
+        (highLow >>> _Bits.word) +
+        (carry >>> _Bits.word);
+  }
+
+  static bool _unsignedLess(int a, int b) =>
+      (a ^ _Limits.signedMin64) < (b ^ _Limits.signedMin64);
+
+  /// Unsigned quotient for a divisor below 2^63. A dividend with the top
+  /// bit set is halved first so the native signed division applies, which
+  /// leaves the quotient at most one short.
+  static int _unsignedQuotient(int a, int b) {
+    if (a >= 0) return a ~/ b;
+    final estimate = ((a >>> 1) ~/ b) << 1;
+    return _unsignedLess(a - estimate * b, b) ? estimate : estimate + 1;
+  }
 
   static int _div64(int a, int b) {
     if (b == 0) return -1;
@@ -72,9 +102,8 @@ class _MExtension64 extends MExtension {
 
   static int _divu64(int a, int b) {
     if (b == 0) return -1;
-    return (BigInt.from(a).toUnsigned(_Bits.dword) ~/
-            BigInt.from(b).toUnsigned(_Bits.dword))
-        .toInt();
+    if (b < 0) return _unsignedLess(a, b) ? 0 : 1;
+    return _unsignedQuotient(a, b);
   }
 
   static int _rem64(int a, int b) {
@@ -85,10 +114,8 @@ class _MExtension64 extends MExtension {
 
   static int _remu64(int a, int b) {
     if (b == 0) return a;
-    return BigInt.from(a)
-        .toUnsigned(_Bits.dword)
-        .remainder(BigInt.from(b).toUnsigned(_Bits.dword))
-        .toInt();
+    if (b < 0) return _unsignedLess(a, b) ? a : a - b;
+    return a - _unsignedQuotient(a, b) * b;
   }
 
   static int _mulw(int a, int b) =>
@@ -164,23 +191,42 @@ class _MExtension32 extends MExtension {
     return (lo + ((cross & _Half.mask) << _Half.bits)) & _Limits.wordMask;
   }
 
-  static int _mulh(int a, int b) =>
-      (BigInt.from(a.toSigned(_Bits.word)) *
-                  BigInt.from(b.toSigned(_Bits.word)) >>
-              _Bits.word)
-          .toInt();
+  static bool _isNegative(int value) => (value & _Limits.signBit32) != 0;
 
-  static int _mulhsu(int a, int b) =>
-      (BigInt.from(a.toSigned(_Bits.word)) *
-                  BigInt.from(b).toUnsigned(_Bits.word) >>
-              _Bits.word)
-          .toInt();
+  static int _mulh(int a, int b) {
+    final ua = a & _Limits.wordMask;
+    final ub = b & _Limits.wordMask;
+    final high =
+        _mulhu(ua, ub) -
+        (_isNegative(ua) ? ub : 0) -
+        (_isNegative(ub) ? ua : 0);
+    return high & _Limits.wordMask;
+  }
 
-  static int _mulhu(int a, int b) =>
-      (BigInt.from(a).toUnsigned(_Bits.word) *
-                  BigInt.from(b).toUnsigned(_Bits.word) >>
-              _Bits.word)
-          .toInt();
+  static int _mulhsu(int a, int b) {
+    final ua = a & _Limits.wordMask;
+    final ub = b & _Limits.wordMask;
+    return (_mulhu(ua, ub) - (_isNegative(ua) ? ub : 0)) & _Limits.wordMask;
+  }
+
+  /// High 32 bits of the unsigned 64-bit product, from 16-bit halves so
+  /// every intermediate stays inside the JavaScript safe-integer range.
+  static int _mulhu(int a, int b) {
+    final aLo = a & _Half.mask;
+    final aHi = (a >>> _Half.bits) & _Half.mask;
+    final bLo = b & _Half.mask;
+    final bHi = (b >>> _Half.bits) & _Half.mask;
+    final lowHigh = aLo * bHi;
+    final highLow = aHi * bLo;
+    final carry =
+        ((aLo * bLo) >>> _Half.bits) +
+        (lowHigh & _Half.mask) +
+        (highLow & _Half.mask);
+    return aHi * bHi +
+        (lowHigh >>> _Half.bits) +
+        (highLow >>> _Half.bits) +
+        (carry >>> _Half.bits);
+  }
 
   static int _div(int a, int b) {
     final sa = a.toSigned(_Bits.word);
@@ -228,11 +274,11 @@ class _Limits {
   static const signedMin64 = -9223372036854775808;
   static const signedMin32 = -2147483648;
   static const wordMask = 0xFFFFFFFF;
+  static const signBit32 = 0x80000000;
 }
 
 class _Bits {
   static const word = 32;
-  static const dword = 64;
 }
 
 class _Half {

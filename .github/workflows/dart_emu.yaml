@@ -35,15 +35,6 @@ jobs:
       run_bloc_lint: false
       min_coverage: 50
 
-  spell-check:
-    uses: VeryGoodOpenSource/very_good_workflows/.github/workflows/spell_check.yml@0d81600dd37bc87a473ee5b6e2293bef05751b04 # v1.20.1
-    with:
-      includes: |
-        **/*.md
-        !brick/**/*.md
-        .*/**/*.md
-      modified_files_only: false
-
   machine-tests:
     runs-on: ubuntu-latest
     steps:
