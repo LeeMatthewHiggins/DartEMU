@@ -47,9 +47,15 @@ class ExceptionHandler {
     state.pc = state.sepc;
   }
 
-  bool hasPendingInterrupt() {
+  bool hasPendingInterrupt() => _deliverableInterrupts() != 0;
+
+  /// The pending, enabled interrupts that may be taken at the current
+  /// privilege level. A machine-level interrupt is masked by `mstatus.MIE`
+  /// only in machine mode, a delegated one by `mstatus.SIE` only in
+  /// supervisor mode; lower privilege levels never mask a higher one.
+  int _deliverableInterrupts() {
     final mask = state.mip & state.mie;
-    if (mask == 0) return false;
+    if (mask == 0) return 0;
 
     final priv = state.privilege.value;
     final mie = (state.mstatus >> _Mstatus.mieShift) & 1;
@@ -65,13 +71,13 @@ class ExceptionHandler {
     final mEnabled = enabledAtM ? mask & ~state.mideleg : 0;
     final sEnabled = enabledAtS ? mask & state.mideleg : 0;
 
-    return (mEnabled | sEnabled) != 0;
+    return mEnabled | sEnabled;
   }
 
   void handlePendingInterrupt() {
-    final mask = state.mip & state.mie;
-    if (mask == 0) return;
-    final irq = BitUtils.ctz32(mask);
+    final deliverable = _deliverableInterrupts();
+    if (deliverable == 0) return;
+    final irq = BitUtils.ctz32(deliverable);
     raiseException(irq | state.signBit, 0);
   }
 

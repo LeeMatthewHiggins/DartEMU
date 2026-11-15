@@ -7,7 +7,7 @@
 ///
 /// Must be launched with the VM service and profiler enabled:
 ///
-///   dart --enable-vm-service=0 --disable-service-auth-codes \
+///   dart --profiler --enable-vm-service=0 --disable-service-auth-codes \
 ///     tool/bench/profile.dart [--xlen rv64] [--workloads a,b] [--top 30]
 library;
 
@@ -54,7 +54,8 @@ Future<void> main(List<String> args) async {
     stderr
       ..writeln('VM service not available. Launch with:')
       ..writeln(
-        '  dart --enable-vm-service=0 --disable-service-auth-codes '
+        '  dart --profiler --enable-vm-service=0 '
+        '--disable-service-auth-codes '
         'tool/bench/profile.dart',
       );
     exit(2);

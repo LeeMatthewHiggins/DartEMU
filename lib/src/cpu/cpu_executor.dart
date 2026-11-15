@@ -159,6 +159,7 @@ class CpuExecutor {
 
   int get mip => state.mip;
 
+  @pragma('vm:prefer-inline')
   bool _hasPendingInterrupt() =>
       (state.mip & state.mie) != 0 && exceptionHandler.hasPendingInterrupt();
 
@@ -1189,6 +1190,10 @@ class CpuExecutor {
 
     if (funct7 == _MExtFunct7.muldiv) {
       final funct3 = InstructionDecoder.extractFunct3(insn);
+      if (!MExtension.isValidWordOp(funct3)) {
+        _raiseIllegalInsn(insn);
+        return false;
+      }
       final result = _mExt.executeMulDiv(
         funct3: funct3,
         rs1Val: state.regs[rs1],
@@ -1410,10 +1415,10 @@ class CpuExecutor {
         rd: rd,
         rs1Val: state.regs[rs1],
         rs2Val: state.regs[rs2],
-        readWord: _amoReadWord,
-        readDouble: _amoReadDouble,
-        writeWord: _amoWriteWord,
-        writeDouble: _amoWriteDouble,
+        readWord: _amoReadWordFn,
+        readDouble: _amoReadDoubleFn,
+        writeWord: _amoWriteWordFn,
+        writeDouble: _amoWriteDoubleFn,
       );
     } on IllegalAtomicException {
       _raiseIllegalInsn(insn);
@@ -1425,6 +1430,13 @@ class CpuExecutor {
     state.pc += instrSize;
     return true;
   }
+
+  /// Tear-offs taken once: evaluating `_amoReadWord` as a value allocates a
+  /// closure each time, and atomics back every guest lock and refcount.
+  late final MemoryReadCallback _amoReadWordFn = _amoReadWord;
+  late final MemoryReadCallback _amoReadDoubleFn = _amoReadDouble;
+  late final MemoryWriteCallback _amoWriteWordFn = _amoWriteWord;
+  late final MemoryWriteCallback _amoWriteDoubleFn = _amoWriteDouble;
 
   int _amoReadWord(int addr) {
     final val = _memReadU32(addr);

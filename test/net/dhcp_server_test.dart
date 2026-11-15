@@ -38,6 +38,27 @@ void main() {
       );
     }
 
+    test('an option truncated at the end of the packet is ignored', () {
+      // The message-type option announces a value byte the packet does not
+      // contain; reading it must not run off the end of the buffer.
+      final dhcp = Uint8List(242)
+        ..[0] = DhcpConst.bootRequest
+        ..[236] = 99
+        ..[237] = 130
+        ..[238] = 83
+        ..[239] = 99
+        ..[240] = DhcpConst.optionMessageType
+        ..[241] = 1;
+      final truncated = UdpPacket(
+        sourcePort: DhcpConst.clientPort,
+        destinationPort: DhcpConst.serverPort,
+        payload: dhcp,
+      );
+
+      expect(() => server.handlePacket(truncated), returnsNormally);
+      expect(server.handlePacket(truncated), isNull);
+    });
+
     test('DISCOVER produces OFFER', () {
       final reply = server.handlePacket(
         buildRequest(DhcpConst.messageDiscover),

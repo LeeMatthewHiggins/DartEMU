@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 
 import 'package:dart_emu/src/cpu/decoder.dart';
+import 'package:dart_emu/src/cpu/extensions/m_extension.dart';
 import 'package:dart_emu/src/cpu/tlb.dart';
 
 /// Micro-op identifiers for predecoded instructions.
@@ -152,7 +153,12 @@ class PredecodeCache {
     return false;
   }
 
-  static const _entryCount = 256;
+  /// Sized to hold a running Linux guest's working set of code pages.
+  /// At 256 entries almost every insert evicted a live page — 650,000
+  /// evictions across the benchmark suite, each a fresh 16 KiB decode.
+  /// 1,024 entries removes about 90% of them for at most 16 MiB of
+  /// decoded pages.
+  static const _entryCount = 1024;
   static const int _indexMask = _entryCount - 1;
 }
 
@@ -359,7 +365,9 @@ class Rv64Predecoder {
 
       case _Opcode.op32:
         if (funct7 == 1) {
-          if (rd == 0) return _fallback(page, slot, 4);
+          if (rd == 0 || !MExtension.isValidWordOp(funct3)) {
+            return _fallback(page, slot, 4);
+          }
           return _store(
             page,
             slot,
