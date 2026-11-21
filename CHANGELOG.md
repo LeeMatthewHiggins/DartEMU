@@ -8,6 +8,12 @@
   evictions; the per-instruction interrupt test is inlined; `mulh`, `mulhu`,
   `mulhsu`, `divu` and `remu` no longer allocate `BigInt`s; atomics no
   longer allocate closures.
+- Fix: under the Dart JIT (`dart run`, `dart test`) an RV64 guest could drop
+  to a fifteenth of its speed partway through a run and stay there. The
+  dispatch loop exhausted the VM's limit of sixteen deoptimizations, one per
+  arithmetic site the first time it met a 64-bit value, and was never
+  optimized again. The loop is now shown full-width operands before the JIT
+  compiles it. Ahead-of-time and WebAssembly builds were never affected.
 - Fix: `use_builtin_sbi` in a YAML config was dropped by `dart_emu run`, so
   a firmware-less config produced a machine that never booted.
 - Fix: `rdtime` on RV64 returned only the low 32 bits, wrapping the guest
