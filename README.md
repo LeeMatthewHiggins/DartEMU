@@ -180,6 +180,50 @@ revisions.
 If you use this as a library and supply your own guest images, only the MIT
 licence applies to you.
 
+## Benchmarks
+
+How a guest program running in DartEMU compares with the same C code run
+natively, compiled straight to WebAssembly, and run under QEMU.
+[`tool/bench/guest/bench.c`](tool/bench/guest/bench.c) is one file of five
+small tests that the guest compiles with its own C compiler. To rerun it in
+the [browser demo](https://dartemu.weareaifirst.com/?boot=64), paste the file
+into the guest with `cat > bench.c`, then:
+
+```sh
+cc bench.c -o bench && ./bench
+```
+
+Best time per test in milliseconds; lower is better.
+
+| Test | Native `-O2` | Native `-O0` | Wasm `-O2` | Wasm `-O0` | QEMU | DartEMU (AOT) | DartEMU (wasm) |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| crc32 | 0.44 | 0.82 | 0.28 | 1.30 | 2.5 | 93 | 180 |
+| fib | 0.12 | 0.84 | 0.10 | 1.18 | 27.5 | 100 | 214 |
+| sieve | 0.12 | 0.65 | 0.24 | 1.59 | 3.3 | 102 | 203 |
+| qsort | 0.28 | 0.37 | 2.18 | 2.66 | 28.5 | 165 | 296 |
+| mandel | 0.39 | 0.97 | 0.44 | 1.01 | 7.3 | 182 | 386 |
+| **Total** | **1.3** | **3.6** | **3.2** | **7.7** | **69** | **642** | **1,279** |
+
+- **DartEMU is about 9x slower than QEMU** when compiled ahead of time, and
+  about 18x slower as WebAssembly, which is how the browser demo runs it.
+  QEMU translates guest code into host machine code; DartEMU interprets it.
+  The gap is widest on tight loops (crc32, sieve) and narrowest on function
+  and indirect calls (fib, qsort), which are expensive for QEMU too.
+- **The fair comparison for the guest is `-O0`**, because the guest's Tiny C
+  Compiler does not optimise. Against that, DartEMU is about 180x slower than
+  native C as AOT and about 350x as WebAssembly.
+- **Wasm `qsort` is slow because of its C library**, not WebAssembly: the
+  wasm build uses wasi-libc's `qsort`, the native build the system one.
+
+Measured on an Apple Silicon Mac under Dart 3.12, Node 24 (V8) and QEMU 11.1
+with one CPU and the TCG accelerator. DartEMU booted its bundled RV64 images;
+QEMU booted the 6.12 kernel with OpenSBI on its `virt` machine against the
+same root filesystem and compiler. Every build produced the same checksums.
+The machine was busy during the runs, so treat the ratios rather than the
+absolute times as the result. The DartEMU figures assume an ahead-of-time or
+WebAssembly build: under the Dart JIT (`dart run`), the interpreter loop can
+stop being optimised partway through a long run and slow down sharply.
+
 [license_badge]: https://img.shields.io/badge/license-MIT-blue.svg
 [license_link]: https://opensource.org/licenses/MIT
 [very_good_analysis_badge]: https://img.shields.io/badge/style-very_good_analysis-B22C89.svg
