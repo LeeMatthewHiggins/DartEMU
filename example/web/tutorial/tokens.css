@@ -1,0 +1,50 @@
+/* Adapted from WAAF Digital Workforce DESIGN.md and theme.css.
+   Keep reusable visual decisions here; style.css only composes these tokens. */
+:root {
+  color-scheme: light;
+  --background: #F7F8F8;
+  --foreground: #1A1A1A;
+  --card: #FFFFFF;
+  --primary: #00DBA8;
+  --primary-foreground: #002B22;
+  --secondary: #E0FAF5;
+  --secondary-foreground: #006B53;
+  --muted: #F0F2F1;
+  --muted-foreground: #6B7280;
+  --border: #E2E5E4;
+  --input: #EAEDEC;
+  --ring: #00DBA8;
+  --destructive: #C62828;
+  --status-working: #B86E00;
+  --dark-background: #0F1210;
+  --dark-foreground: #E8EDEB;
+  --dark-card: #181D1B;
+  --dark-muted: #131815;
+  --dark-muted-foreground: #8A9490;
+  --dark-border: #242E2B;
+  --dark-status-working: #FFB74D;
+  --dark-destructive: #EF5350;
+  --font-sans: "Geist Sans", Geist, ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "Geist Mono", "SFMono-Regular", Consolas, monospace;
+  --display-size: 32px;
+  --display-line-height: 40px;
+  --heading-size: 20px;
+  --heading-line-height: 28px;
+  --body-size: 14px;
+  --body-line-height: 22px;
+  --label-size: 12px;
+  --label-line-height: 16px;
+  --weight-normal: 400;
+  --weight-label: 500;
+  --weight-heading: 600;
+  --radius-sm: 4px;
+  --radius-control: 6px;
+  --radius-card: 8px;
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 16px;
+  --space-lg: 20px;
+  --space-xl: 24px;
+  --control-height: 36px;
+  --compact-control-height: 32px;
+}

@@ -1,7 +1,10 @@
 # Building guest images
 
-The emulator needs three things: firmware or a built-in SBI, a kernel, and a
-root filesystem. Docker-based builders produce all of them.
+Linux guests need firmware or the built-in SBI, a matching kernel, and a
+root filesystem. The repository includes legacy Linux demo images in
+`example/assets/`; use the [README quick start](../README.md#try-it) to run
+them without building anything. The Docker-based builders below produce
+additional images in `data/`. FreeRTOS guests use only a firmware image.
 
 - [Root filesystems](#root-filesystems)
 - [Building a modern kernel](#building-a-modern-kernel)
@@ -16,8 +19,11 @@ root filesystem. Docker-based builders produce all of them.
 `example/assets/root-riscv64.bin`:
 
 ```sh
-tool/image_builder/build_tcc.sh               # ~23 MB, includes cc (TCC)
+tool/image_builder/build_tcc.sh               # includes cc (TCC)
 ```
+
+The output is `data/rootfs/alpine-riscv64-tcc-rootfs.bin`; the builder does
+not overwrite `example/assets/root-riscv64.bin` automatically.
 
 TCC is a few hundred KB and links binaries itself, so the image stays small
 enough to ship as a demo asset. The build cross-compiles a statically linked
@@ -66,7 +72,9 @@ ext2 root images — because nothing can be loaded as a module before the root
 filesystem is mounted. The build refuses to finish if any of those ended up
 modular. Override the version with `KERNEL_VERSION=6.12.41`.
 
-The result is around 7 MB and reaches a shell in roughly three seconds. Each
+Outputs are written under `data/kernel/`, for example
+`kernel-riscv64-6.12.bin`. Size and boot time depend on the architecture,
+configuration and host. Each
 architecture keeps its own tree under `tool/image_builder/.kernel-cache`, so
 changing the config fragment costs an incremental rebuild rather than
 another download and full compile.
@@ -84,7 +92,8 @@ tool/image_builder/build_buildroot.sh
 
 ## Booting without firmware
 
-Set `use_builtin_sbi`, and note there is no `bios:` line:
+Set `use_builtin_sbi`, and omit `bios:`. Save this example in `data/` after
+building the kernel and Alpine rootfs:
 
 ```yaml
 version: 1
@@ -111,8 +120,36 @@ Three constraints come with this path:
   OpenSBI serve SBI calls from the trap path, so installing the emulator's
   would shadow the firmware.
 
-The equivalent in library code is `MachineConfig(useBuiltinSbi: true)`. The
-interface lives in [`lib/src/machine/sbi.dart`](../lib/src/machine/sbi.dart)
+Load it through the library or a browser bundle. The current CLI does not
+forward `use_builtin_sbi` from YAML; use this library path for native runs:
+
+```dart
+import 'dart:io';
+import 'package:dart_emu/dart_emu_io.dart';
+
+Future<void> main() async {
+  final config = ConfigResolver.resolve(
+    ConfigLoader.loadFromFile('data/modern_vm.yaml'),
+  );
+  final emulator = Emulator(config);
+  final output = emulator.output.listen(stdout.add);
+  final input = stdin.listen(emulator.sendInput);
+  try {
+    await emulator.start();
+  } finally {
+    await input.cancel();
+    await output.cancel();
+    await emulator.dispose();
+  }
+}
+```
+
+This minimal example uses line-buffered host input. Run it from a Dart file
+in the checkout; press Enter to send a line to the guest. `data/modern_vm.yaml`
+requires its named kernel and rootfs to exist, and its disk is writable.
+
+For in-memory images, set `MachineConfig(useBuiltinSbi: true, kernelData: …)`.
+The interface lives in [`lib/src/machine/sbi.dart`](../lib/src/machine/sbi.dart)
 and covers SBI v2.0 Base, TIME, IPI, RFENCE, HSM, SRST and DBCN, plus the
 v0.1 legacy console calls. It assumes a single hart, so remote fences and
 inter-processor interrupts reduce to local operations.
@@ -196,10 +233,22 @@ to whatever is driving it. See [Agents](agents.md#agentos--the-agent-inside).
 
 ## Prebuilt images
 
-Kernels and the RV32 userspace are attached to each
-[GitHub release](https://github.com/LeeMatthewHiggins/DartEMU/releases) as
-gzipped assets with checksums — which is also where the `guest-e2e` CI job
-fetches them. Building locally is only needed to change them.
+The `guest-e2e` CI job fetches Linux 6.12 kernels and a modern RV32 userspace
+from [release v0.6.0](https://github.com/LeeMatthewHiggins/DartEMU/releases/tag/v0.6.0).
+They are not part of a normal checkout. To run those tests locally, download
+and decompress these release assets:
+
+| Release asset | Local path |
+| --- | --- |
+| `kernel-riscv64-6.12.bin.gz` | `data/kernel/kernel-riscv64-6.12.bin` |
+| `kernel-riscv32-6.12.bin.gz` | `data/kernel/kernel-riscv32-6.12.bin` |
+| `alpine-riscv32-rootfs.bin.gz` | `data/rootfs/alpine-riscv32-rootfs.bin` |
+
+Use the checksums in [the CI workflow](../.github/workflows/dart_emu.yaml)
+to verify the decompressed files. The RV32 userspace filename retains the
+`alpine` prefix, but the modern RV32 builder uses Buildroot and musl.
+Bundled BBL kernels and roots in `example/assets/` remain separate demo
+images; do not mix the legacy RV32 rootfs with a modern kernel.
 
 Images can also be packaged as `.zip` bundles the Flutter app loads by
 drag-and-drop or file picker. See [Bundles](configuration.md#bundles).

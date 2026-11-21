@@ -8,6 +8,7 @@ import 'package:dart_emu_example/src/crt/crt_effect_widget.dart';
 import 'package:dart_emu_example/src/emulator/emulator_controller.dart';
 import 'package:dart_emu_example/src/terminal/demo_terminal_view.dart';
 import 'package:dart_emu_example/src/terminal/greeting.dart';
+import 'package:dart_emu_example/src/tutorial/tutorial_bridge.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -17,6 +18,7 @@ class _TerminalLayout {
   static const standardColumns = 80;
   static const referenceFontSize = 16.0;
   static const minFontSize = 8.0;
+  static const minTutorialFontSize = 12.0;
   static const maxFontSize = 24.0;
 
   /// Bundled with the app rather than asked of the system.
@@ -100,12 +102,14 @@ class _TerminalScreenState extends State<TerminalScreen>
     with TickerProviderStateMixin {
   final _terminal = Terminal(maxLines: 10000);
   final _terminalController = TerminalController();
+  final _terminalViewKey = GlobalKey<DemoTerminalViewState>();
 
   /// Owned here so a tap can restore focus even when it lands on an
   /// existing selection, which xterm clears without refocusing.
   final _terminalFocusNode = FocusNode();
 
   EmulatorController? _controller;
+  TutorialSession? _tutorial;
   StreamSubscription<List<int>>? _outputSub;
   StreamSubscription<EmulatorStatus>? _statusSub;
   EmulatorStatus _status = EmulatorStatus.idle;
@@ -161,7 +165,7 @@ class _TerminalScreenState extends State<TerminalScreen>
       final program = await ui.FragmentProgram.fromAsset('shaders/crt.frag');
       if (!mounted) return;
       setState(() => _crtShader = program.fragmentShader());
-    } catch (e) {
+    } on Object catch (e) {
       debugPrint('Failed to load CRT shader: $e');
     }
   }
@@ -174,7 +178,19 @@ class _TerminalScreenState extends State<TerminalScreen>
 
   void _launchEmulator() {
     _controller = EmulatorController(vsync: this);
-    _terminal.onOutput = _controller!.sendInput;
+    if (widget.useBundledDemoAssets && widget.sharedFolders.isEmpty) {
+      _tutorial = createTutorialBridge(
+        sendInput: (input) {
+          _terminalViewKey.currentState?.resumeFollowingOutput();
+          _controller!.sendInput(input);
+        },
+      );
+    }
+    _terminal.onOutput = (input) {
+      _terminalViewKey.currentState?.resumeFollowingOutput();
+      _tutorial?.receiveUserInput(input);
+      _controller!.sendInput(input);
+    };
     _startEmulator();
   }
 
@@ -188,23 +204,40 @@ class _TerminalScreenState extends State<TerminalScreen>
     _statusSub = _controller!.status.listen((status) {
       if (!mounted) return;
       setState(() => _status = status);
+      if (status == EmulatorStatus.error) {
+        _tutorial?.fail(
+          'The emulator could not start. Reload the demo to retry.',
+        );
+      }
       if (status == EmulatorStatus.stopped) {
+        _tutorial?.fail(
+          'The emulator has stopped. Reload the demo to restart.',
+        );
         widget.onStopped?.call();
       }
     });
 
     _outputSub = _controller!.output.listen((bytes) {
-      _terminal.write(utf8.decode(bytes, allowMalformed: true));
-      _maybeAutoMount(utf8.decode(bytes, allowMalformed: true));
+      final output = utf8.decode(bytes, allowMalformed: true);
+      _terminal.write(output);
+      _maybeAutoMount(output);
+      _tutorial?.receiveOutput(output);
     });
 
-    if (widget.useBundledDemoAssets) {
-      await _controller!.start(
-        xlen: widget.config.xlen,
-        sharedFolders: widget.sharedFolders,
+    try {
+      if (widget.useBundledDemoAssets) {
+        await _controller!.start(
+          xlen: widget.config.xlen,
+          sharedFolders: widget.sharedFolders,
+        );
+      } else {
+        await _controller!.startWithConfig(widget.config);
+      }
+    } on Object {
+      _tutorial?.fail(
+        'The emulator could not start. Reload the demo to retry.',
       );
-    } else {
-      await _controller!.startWithConfig(widget.config);
+      rethrow;
     }
   }
 
@@ -254,7 +287,9 @@ class _TerminalScreenState extends State<TerminalScreen>
         (_TerminalLayout.standardColumns * _charWidthAtReference);
     final fontSize = _TerminalLayout.referenceFontSize * scaleFactor;
     return fontSize.clamp(
-      _TerminalLayout.minFontSize,
+      _tutorial == null
+          ? _TerminalLayout.minFontSize
+          : _TerminalLayout.minTutorialFontSize,
       _TerminalLayout.maxFontSize,
     );
   }
@@ -264,6 +299,7 @@ class _TerminalScreenState extends State<TerminalScreen>
     if (kIsWeb) {
       unawaited(BrowserContextMenu.enableContextMenu());
     }
+    _tutorial?.dispose();
     _reloadTimer?.cancel();
     _outputSub?.cancel();
     _statusSub?.cancel();
@@ -303,6 +339,8 @@ class _TerminalScreenState extends State<TerminalScreen>
                   shader: _crtShader,
                   effect: _crtEffect,
                   child: DemoTerminalView(
+                    key: _terminalViewKey,
+                    autofocus: _tutorial == null,
                     terminal: _terminal,
                     controller: _terminalController,
                     focusNode: _terminalFocusNode,

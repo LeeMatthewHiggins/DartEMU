@@ -24,8 +24,11 @@ eth0:
   driver: user
 ```
 
-Relative paths resolve against the config file's own directory, not the
-working directory.
+Provide the image files named above, or start with the tracked assets in
+the [README quick start](../README.md#try-it). BIOS, kernel, initrd and drive
+paths resolve against the config file's directory. Native `fs<n>.file` paths
+currently resolve against the process working directory; use absolute paths
+for shares.
 
 ## Key reference
 
@@ -33,12 +36,12 @@ working directory.
 
 | Key | Type | Default | Meaning |
 | --- | --- | --- | --- |
-| `version` | int | `1` | Config format. Anything else is refused. |
+| `version` | int | `1` | Config format. Other integer versions are refused. |
 | `machine` | string | `riscv64` | `riscv64` or `riscv32`. |
 | `memory_size` | int | 256 | Guest RAM in MB. |
 | `cmdline` | string | — | Kernel command line. |
-| `rtc_local_time` | bool | `false` | Guest clock follows local time rather than UTC. |
-| `accel` | string | — | Acceleration hint, passed through. |
+| `rtc_local_time` | bool | `false` | Parsed and retained; currently unused by the machine. |
+| `accel` | string | — | Parsed and retained; no accelerated execution backend is selected. |
 
 ### Boot
 
@@ -59,7 +62,7 @@ kernel](images.md#building-a-modern-kernel).
 | Key | Type | Meaning |
 | --- | --- | --- |
 | `file` | path | Disk image. Required, or the entry is ignored. |
-| `device` | string | Device name hint, e.g. `vda`. |
+| `device` | string | Retained hint; disks are attached in configuration order. |
 
 ### Shares — `fs0` … `fs3`
 
@@ -67,7 +70,7 @@ kernel](images.md#building-a-modern-kernel).
 | --- | --- | --- | --- |
 | `file` | path | — | Host directory to serve. Required. |
 | `tag` | string | `fs<n>` | Mount tag the guest selects. |
-| `readonly` | bool | `false` | Enforced by the server, not the guest. |
+| `readonly` | bool | `false` | Native directory backend rejects writes. The example's ZIP loader currently ignores this flag. |
 
 See [Filesystems and shares](filesystems.md).
 
@@ -76,13 +79,13 @@ See [Filesystems and shares](filesystems.md).
 | Key | Type | Meaning |
 | --- | --- | --- |
 | `driver` | string | `user` for the built-in user-mode stack. |
-| `ifname` | string | Interface name, where a backend uses one. |
+| `ifname` | string | Retained hint; unused by the built-in user-mode backend. |
 
 See [Networking](networking.md).
 
 ## How a config becomes a machine
 
-In two steps, deliberately, because only the second knows where bytes live:
+Parsing and image loading are separate steps:
 
 ```
 YAML ──ConfigDocument.parse──▶ ConfigDocument ──resolve──▶ MachineConfig
@@ -91,8 +94,7 @@ YAML ──ConfigDocument.parse──▶ ConfigDocument ──resolve──▶ M
 ```
 
 `ConfigDocument` is platform-neutral and holds paths exactly as written.
-What they are relative to is the resolver's business, and the resolvers
-disagree about it:
+Each resolver determines where to load them:
 
 - **`ConfigLoader` / `ConfigResolver`** (`dart_emu_io.dart`) resolve against
   the filesystem — the only part that needs `dart:io`, and so the only part
@@ -100,15 +102,13 @@ disagree about it:
 - **`ZipConfigLoader`** (in the example app) resolves against entries in an
   archive.
 
-Splitting them is why both understand the same keys. When each parsed for
-itself they drifted, and bundles silently lost every key only one of them
-knew.
+Both resolvers use the same parser, so they recognize the same keys.
 
 ## Bundles
 
-A `.zip` containing a YAML config and everything it names. This is the only
-way to carry a whole machine into a browser, where there is no filesystem to
-resolve paths against.
+A `.zip` containing a YAML config and everything it names. This is the
+example app's way to import a custom machine in a browser. Embedding apps
+can also load images as bytes from assets, uploads or HTTP responses.
 
 ```
 my-vm.zip
@@ -122,8 +122,10 @@ my-vm.zip
 
 The archive must hold exactly one `.yaml` or `.yml` file; paths resolve
 against that file's directory inside the archive. A share becomes an
-in-memory tree seeded from the entries beneath it — writes last as long as
-the machine and go with it.
+in-memory tree seeded from the files beneath it — writes last as long as
+the machine and go with it. The current loader requires at least one file
+inside each shared directory and does not enforce the share's `readonly`
+flag.
 
 Anything the config names but the archive lacks is an error, not a silent
 omission.
@@ -136,12 +138,19 @@ The Flutter example loads a bundle by drag-and-drop, file picker, or a
 ```sh
 dart pub global activate dart_emu
 
-dart_emu run --config data/alpine_vm.yaml
+dart_emu run --config /path/to/my-vm.yaml
 dart_emu run --bios bbl64.bin --kernel kernel-riscv64.bin --drive rootfs.bin \
              --cmdline "console=hvc0 root=/dev/vda rw"
 ```
 
 From a checkout, `dart run bin/dart_emu.dart run --config …` does the same.
+The [README quick start](../README.md#try-it) uses committed images and a
+writable disk copy. CLI disks are file-backed: guest writes persist.
+
+Run `dart_emu run --help` for flags. Explicit image flags use RV64; choose
+RV32 through a YAML config. The current CLI drops `use_builtin_sbi` while
+loading YAML, so use `ConfigLoader` + `ConfigResolver` with `Emulator`, or a
+browser bundle, for firmware-free kernels.
 
 ## In code
 
@@ -164,5 +173,6 @@ final config = MachineConfig(
 
 `MachineConfig` accepts images either as paths (`biosPath`, `kernelPath`,
 `initrdPath`) or as bytes (`biosData`, `kernelData`, `initrdData`). Paths
-need a resolver and therefore `dart:io`; bytes work anywhere. `copyWith`
+need `ConfigResolver.resolve(config)` before constructing the machine;
+that resolver uses `dart:io`. Bytes work anywhere. `copyWith`
 returns a modified copy, which is how the resolvers turn one into the other.

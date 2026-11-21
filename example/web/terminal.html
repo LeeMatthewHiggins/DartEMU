@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <!-- Relative to this file so both / and /<repository>/ work. -->
+  <base href="./">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#1e1e1e">
+  <meta name="description" content="An interactive RISC-V Linux terminal powered by DartEMU.">
+  <title>DartEMU — Linux terminal</title>
+  <link rel="icon" href="favicon.png">
+  <link rel="manifest" href="manifest.json">
+  <style>html,body{margin:0;height:100%;background:#1e1e1e;color:#d3ded8;font:14px monospace}.loading{padding:24px}</style>
+</head>
+<body>
+  <p class="loading">Starting your machine…</p>
+  <noscript>Enable JavaScript to run the emulator.</noscript>
+  <script>window.addEventListener("flutter-first-frame", () => document.querySelector(".loading")?.remove(), {once: true});</script>
+  <script src="flutter_bootstrap.js" async></script>
+</body>
+</html>

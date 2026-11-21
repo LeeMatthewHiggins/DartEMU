@@ -2,7 +2,7 @@
 
 Running untrusted or model-authored commands inside a disposable machine.
 
-There are two arrangements, and the difference is where the agent sits.
+The agent can run in the host process or inside the guest.
 
 - [Choosing between them](#choosing-between-them)
 - [AgentSandbox — the agent outside](#agentsandbox--the-agent-outside)
@@ -19,17 +19,13 @@ There are two arrangements, and the difference is where the agent sits.
 | --- | --- | --- |
 | Where the agent runs | your process | inside the guest |
 | Language | Dart | C, compiled into the image |
-| Works with an unmodified image | yes | no — it must be baked in |
+| Guest requirement | interactive shell with a known prompt | agent installed in the image |
 | Budgets and kill switch | outside the guest's reach | inside it |
 | Model, prompt, loop | yours to write | built in |
 | Browser | yes | yes |
 
-Reach for **`AgentSandbox`** when you have a task and want a machine to run
-it in — you keep control of the loop, and the limits sit somewhere the guest
-cannot touch.
-
-Reach for **AgentOS** when the machine should simply *be* an agent: you hand
-someone a console and they talk to it.
+Use `AgentSandbox` to control commands and budgets from your application.
+Use AgentOS for an agent that interacts through the guest console.
 
 ## AgentSandbox — the agent outside
 
@@ -49,7 +45,7 @@ final sandbox = AgentSandbox(
   ),
 );
 
-await sandbox.boot(); // ~0.5 s to a ready shell
+await sandbox.boot(); // waits for the configured shell prompt
 
 final r = await sandbox.exec('echo hello && uname -m');
 r.stdout;    // hello\nriscv64
@@ -63,17 +59,23 @@ await sandbox.dispose();
 `useBuiltinSbi`, `bootTimeout`, `defaultTimeout`, `defaultMaxInstructions`,
 and the shared-folder options below.
 
+Provide matching firmware, kernel and rootfs bytes for the selected
+architecture. The default prompt is `~ # `; configure `shellPrompt` for
+other images. Login prompts and interactive authentication are not handled
+automatically.
+
 Commands run over the guest's serial console, with markers framing each
-one's output. The exec loop drives emulation on the current isolate,
-yielding to the event loop periodically. **A Flutter UI wanting frame-paced
+one's output. `stdout` combines stdout and stderr. The exec loop drives
+emulation on the current isolate, yielding to the event loop periodically. **A Flutter UI wanting frame-paced
 execution should drive `Emulator` from a `Ticker` instead** — see
 [Architecture](architecture.md#the-two-facades).
 
 ## Budgets
 
 Two independent limits, because wall-clock and work are different failures.
-A command that overruns either is interrupted, and the sandbox stays usable
-for the next one:
+When a command overruns either, the sandbox sends Ctrl+C and tries to
+recover the shell. Check `sandbox.ready` before reusing it: failed recovery
+marks it not ready, and recovery may take up to another 10 seconds:
 
 ```dart
 final slow = await sandbox.exec('sleep 60',
@@ -85,14 +87,16 @@ final busy = await sandbox.exec(r'while true; do :; done',
 busy.outcome; // ExecOutcome.budgetExceeded
 ```
 
-Instruction budgets are deterministic in a way wall-clock is not: the same
-command costs the same number of instructions on a fast machine and a slow
-one, which makes them the better limit for anything you intend to reproduce.
+Instruction budgets count guest instructions, while wall-clock budgets
+measure host time. Checks happen between execution batches, so limits can
+overshoot by a batch. Scheduling, guest timers and I/O can change instruction
+counts between runs; they are not a guarantee of deterministic execution.
 
 ## Snapshot and restore
 
-Booting is fast; restoring is faster by a wide margin — **29 ms against a
-1.1 s cold boot (~37x)** in `test/sandbox/snapshot_restore_test.dart`. Boot
+A recorded run of `test/sandbox/snapshot_restore_test.dart` measured
+**29 ms restore against a 1.1 s cold boot (~37x)**. These timings depend on
+the host and guest image. Boot
 once, warm whatever you need, then stamp out clones:
 
 ```dart
@@ -103,7 +107,10 @@ final snapshot = origin.snapshot();
 
 final a = AgentSandbox.restore(config, snapshot);
 final b = AgentSandbox.restore(config, snapshot);
-await a.exec('echo from-clone-a'); // ready immediately
+await a.exec('echo from-clone-a'); // no reboot required
+await a.dispose();
+await b.dispose();
+await origin.dispose();
 ```
 
 A snapshot is a deep copy of the guest's architectural state — registers,
@@ -112,8 +119,13 @@ running, and one snapshot can seed any number of clones. Restored guests
 roll back anything that happened after the snapshot and keep a coherent
 clock, so timers resume rather than jumping.
 
-This is the cheapest way to get a clean machine per task: snapshot after
-boot, restore per request, discard.
+Take snapshots while the shell is idle, and restore with a matching
+configuration. Network sessions and shared-folder contents are not included.
+Use separate backends for independent clones, and call
+`await clone.mountSharedFolder()` to re-establish a configured 9P share.
+
+For repeated tasks, snapshot after boot, restore per request, and dispose
+each clone after use.
 
 ## Files
 
@@ -145,9 +157,8 @@ Talking to the machine means talking to the agent, and there is no shell
 behind it. `init` respawns the agent, so a restart cannot fall through to
 one either.
 
-Because it is *inside*, running a command is `fork` and `exec` — none of the
-console transport that driving a guest from outside requires exists here. It
-is a shell tool, an HTTP client, a chat-completions client and a loop.
+AgentOS runs commands through `fork` and `exec` inside the guest. It
+includes a shell tool, HTTP client, chat-completions client and agent loop.
 
 Build it, put it in an image, and boot:
 
@@ -165,18 +176,18 @@ is the one channel a page can set per boot without rebuilding the image.
 
 ## The credential it does not have
 
-The machine never holds a key. Requests leave carrying a placeholder that
-names the credential they need:
+The supplied AgentOS image contains no API key. Requests leave carrying a
+placeholder that names the credential configured on the host:
 
 ```
 guest writes:   Authorization: Bearer ${OPENROUTER_KEY}
 host resolves:  Authorization: Bearer sk-real-…
 ```
 
-This is a property rather than a practice. It is not that care is taken
-never to write a key into the image — it is that the image has no field
-capable of holding one. A guest taken apart byte by byte yields the string
-`${OPENROUTER_KEY}`.
+The host's configured proxy header resolves `${OPENROUTER_KEY}` before
+sending the upstream request. The key is kept out of the supplied image and
+console configuration. This does not prevent guest programs from storing
+secrets supplied through other channels.
 
 When the host has no credential of that name, the request comes back as a
 401 whose message says which one is missing, so the agent reports it instead
@@ -186,13 +197,10 @@ The substitution happens in [`HttpProxy`](networking.md#credential-injection).
 
 ## What neither of them does
 
-Neither filters what may run. There is no command allowlist, no path
-restriction, no shell filtering, no confirmation prompt. The machine is the
-boundary; asking an agent inside it to be a second one would only make the
-real boundary harder to reason about.
+Neither filters guest commands, restricts guest paths, or asks for
+confirmation. Host access depends on the configured devices and backends.
 
-What *is* bounded is resource use, and for the machine's sake rather than
-the user's:
+AgentOS applies these limits inside the guest:
 
 - Output is capped **as the pipe is drained**, so a command that prints
   without end is killed rather than allowed to exhaust memory. Truncating
@@ -200,6 +208,9 @@ the user's:
 - A timeout kills the whole process group, so a backgrounded child cannot
   hold the pipe open and hang the agent.
 
-Both are limits on the guest's own resources. Neither is a security control,
-and in AgentOS a sufficiently determined guest can remove its own — which is
-exactly the difference the table at the top is describing.
+A guest with root access can change those AgentOS limits. `AgentSandbox`
+instead checks time and instruction budgets on the host, but currently has
+no output-size cap: its console capture grows in host memory. Its serial
+markers and reported exit codes also assume a cooperating guest shell.
+Use a separate host process and host resource limits when those guarantees
+are required.
