@@ -13,7 +13,7 @@ keeps.
 
 ## Block devices
 
-A disk is a `BlockDevice`, and the guest treats it as a normal drive:
+The guest accesses a `BlockDevice` as a drive:
 
 ```dart
 abstract class BlockDevice {
@@ -36,8 +36,8 @@ lives behind `package:dart_emu/dart_emu_io.dart`. Writes are real.
 ## Shares over 9P
 
 A share is a directory the *host* owns and the guest mounts. Unlike a block
-device it needs no filesystem image, changes are visible on both sides
-immediately, and it can be backed by something that is not a disk at all.
+device it needs no filesystem image. Visibility and write timing depend on
+the backend, and guest filesystem caching may delay what a process sees.
 
 ```yaml
 fs0:
@@ -66,8 +66,6 @@ abstract class NinePBackend {
 }
 ```
 
-Anything that can answer those can be a filesystem to a guest.
-
 ## Mounting
 
 In the guest:
@@ -90,24 +88,24 @@ a `fs0:` in a YAML config resolves to.
 **Memory** — `MemoryNinePBackend`. An in-memory tree, seeded with
 `addFile`/`addDirectory`. Works everywhere. It is what a share inside a
 `.zip` bundle becomes: entries beneath the named directory are loaded in,
-and writes last as long as the machine does and go with it — which is the
-most an archive can honestly offer.
+and writes last until the machine is discarded.
 
 **Browser folder** — the File System Access picker, in
 `package:dart_emu/dart_emu_web.dart`. The user chooses a real directory and
-it is loaded into an in-memory tree, with a write-back sink so changes reach
-the disk. Refreshing re-reads the host side without clobbering guest-only
-files.
+it is loaded into an in-memory tree, with an asynchronous write-back sink
+for guest changes. Host edits require an explicit refresh, which re-reads
+the host side without clobbering guest-only files. Browser support and a
+user-granted folder permission are required.
 
 ## Containment
 
-The directory backend resolves every path and refuses anything that escapes
-the share root, including through an intermediate symlink. A symlink that
+The directory backend checks resolved paths against the share root and
+rejects paths outside it, including intermediate symlinks. A symlink that
 resolves *inside* the root still works. This is enforced on read, write,
 create and truncate, and the cases are covered in
-`test/device/virtio/ninep/`.
+`test/device/ninep_directory_backend_test.dart`.
 
-`readOnly` is enforced by the server, not by the guest: the guest may hold a
+Native directory `readOnly` is enforced by the backend, not by the guest: the guest may hold a
 writable file descriptor and still have its writes rejected, which is what
 you want when the guest is untrusted.
 
@@ -123,8 +121,7 @@ Practical guidance:
 - **A working directory, or anything of size** — a share.
 - **A whole root filesystem** — a block device.
 
-One caution learned the hard way: a share is a *live* view of a real
-directory, so a guest walking it walks all of it. Pointing a share at a home
+A directory share exposes its entire tree to the guest. Pointing a share at a home
 directory or a large source tree means the guest can enumerate every file in
 it, and a command like `du -a` will try to. Share the narrowest directory
 that does the job.

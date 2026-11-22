@@ -21,6 +21,7 @@ class _Harness {
     terminal.onOutput = output.write;
   }
 
+  final viewKey = GlobalKey<DemoTerminalViewState>();
   final Terminal terminal;
   final TerminalController controller;
   final FocusNode focusNode;
@@ -29,6 +30,7 @@ class _Harness {
   Widget build() => MaterialApp(
     home: Scaffold(
       body: DemoTerminalView(
+        key: viewKey,
         terminal: terminal,
         controller: controller,
         focusNode: focusNode,
@@ -190,6 +192,79 @@ void main() {
       await tester.pump(kDoubleTapTimeout);
       h.dispose();
     }, variant: nonApple);
+  });
+
+  group('output scrolling', () {
+    ScrollPosition position(WidgetTester tester) => tester
+        .widget<TerminalView>(find.byType(TerminalView))
+        .scrollController!
+        .position;
+
+    Future<void> writeLines(WidgetTester tester, _Harness h) async {
+      h.terminal.write(List.generate(80, (i) => 'line $i\r\n').join());
+      await tester.pump();
+      await tester.pump();
+    }
+
+    testWidgets('output chunks follow the bottom while unfocused', (
+      tester,
+    ) async {
+      final h = _Harness();
+      await tester.pumpWidget(h.build());
+      h.focusNode.unfocus();
+      await tester.pump();
+      expect(h.focusNode.hasFocus, isFalse);
+      await writeLines(tester, h);
+      final initialEnd = position(tester).maxScrollExtent;
+      expect(initialEnd, greaterThan(0));
+      expect(position(tester).extentAfter, closeTo(0, 1));
+
+      await writeLines(tester, h);
+      expect(position(tester).maxScrollExtent, greaterThan(initialEnd));
+      expect(position(tester).extentAfter, closeTo(0, 1));
+      expect(h.focusNode.hasFocus, isFalse);
+      await tester.pumpWidget(const SizedBox());
+      h.dispose();
+    });
+
+    testWidgets('manual scrollback stays put until a command resumes output', (
+      tester,
+    ) async {
+      final h = _Harness();
+      await tester.pumpWidget(h.build());
+      await writeLines(tester, h);
+      position(tester).pointerScroll(-200);
+      await tester.pump();
+      final readingOffset = position(tester).pixels;
+      await writeLines(tester, h);
+      expect(position(tester).pixels, readingOffset);
+      expect(position(tester).extentAfter, greaterThan(200));
+
+      h.viewKey.currentState!.resumeFollowingOutput();
+      await tester.pump();
+      await tester.pump();
+      expect(position(tester).extentAfter, closeTo(0, 1));
+      await writeLines(tester, h);
+      expect(position(tester).extentAfter, closeTo(0, 1));
+      await tester.pumpWidget(const SizedBox());
+      h.dispose();
+    });
+
+    testWidgets('scrolling back to the bottom resumes following', (
+      tester,
+    ) async {
+      final h = _Harness();
+      await tester.pumpWidget(h.build());
+      await writeLines(tester, h);
+      position(tester).pointerScroll(-200);
+      await tester.pump();
+      position(tester).pointerScroll(position(tester).maxScrollExtent);
+      await tester.pump();
+      await writeLines(tester, h);
+      expect(position(tester).extentAfter, closeTo(0, 1));
+      await tester.pumpWidget(const SizedBox());
+      h.dispose();
+    });
   });
 
   group('right-click menu', () {

@@ -1,38 +1,141 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <!--
-    If you are serving your web app in a path other than the root, change the
-    href value below to reflect the base path you are serving from.
-
-    The path provided below has to start and end with a slash "/" in order for
-    it to work correctly.
-
-    For more details:
-    * https://developer.mozilla.org/en-US/docs/Web/HTML/Element/base
-
-    This is a placeholder for base href that will be replaced by the value of
-    the `--base-href` argument provided to `flutter build`.
-  -->
   <base href="$FLUTTER_BASE_HREF">
-
   <meta charset="UTF-8">
-  <meta content="IE=Edge" http-equiv="X-UA-Compatible">
-  <meta name="description" content="A RISC-V system emulator in Dart that boots Linux.">
-
-  <!-- iOS meta tags & icons -->
-  <meta name="mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black">
-  <meta name="apple-mobile-web-app-title" content="DartEMU">
-  <link rel="apple-touch-icon" href="icons/Icon-192.png">
-
-  <!-- Favicon -->
-  <link rel="icon" type="image/png" href="favicon.png"/>
-
-  <title>DartEMU</title>
-  <link rel="manifest" href="manifest.json">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#F7F8F8">
+  <meta name="description" content="Run Linux shell commands in a live RISC-V emulator with five interactive DartEMU examples.">
+  <title>DartEMU | Linux tutorial</title>
+  <link rel="icon" href="favicon.png">
+  <link rel="stylesheet" href="tutorial/tokens.css">
+  <link rel="stylesheet" href="tutorial/style.css">
+  <script src="tutorial/main.js" defer></script>
 </head>
 <body>
-  <script src="flutter_bootstrap.js" async></script>
+  <a class="skip-link" href="#playground">Skip to the live tutorial</a>
+  <header class="site-header">
+    <div class="header-content wrap">
+      <a class="wordmark" href="./" aria-label="DartEMU home"><span class="brand-icon" aria-hidden="true">&gt;_</span>DartEMU</a>
+      <nav aria-label="Main navigation">
+        <a href="./" aria-current="page">Tutorial</a>
+        <a href="https://github.com/LeeMatthewHiggins/DartEMU/tree/main/docs">Docs</a>
+        <a href="https://github.com/LeeMatthewHiggins/DartEMU">GitHub ↗</a>
+      </nav>
+    </div>
+  </header>
+  <main class="wrap">
+    <section class="page-heading" aria-labelledby="page-title">
+      <div><h1 id="page-title">Linux in your browser</h1><p>Run an example or click the terminal to enter a shell command.</p></div>
+      <dl class="machine-metadata" aria-label="Machine configuration">
+        <div><dt>Architecture</dt><dd>RISC-V 32-bit</dd></div>
+        <div><dt>Userland</dt><dd>BusyBox</dd></div>
+      </dl>
+    </section>
+    <section class="playground" id="playground" aria-label="Live Linux tutorial">
+      <div class="workbench">
+        <div class="lesson-panel">
+          <div class="lesson-topline"><h2>Examples</h2><span id="progress">0 / 5 explored</span></div>
+          <div class="lesson-tabs" role="tablist" aria-label="Tutorial lessons">
+            <button id="tab-inspect" role="tab" aria-selected="true" aria-controls="lesson-inspect" data-lesson="inspect">01<span class="sr-only"> Inspect the machine</span></button>
+            <button id="tab-files" role="tab" aria-selected="false" aria-controls="lesson-files" data-lesson="files" tabindex="-1">02<span class="sr-only"> Record temperatures</span></button>
+            <button id="tab-pipeline" role="tab" aria-selected="false" aria-controls="lesson-pipeline" data-lesson="pipeline" tabindex="-1">03<span class="sr-only"> Find the warmest places</span></button>
+            <button id="tab-chart" role="tab" aria-selected="false" aria-controls="lesson-chart" data-lesson="chart" tabindex="-1">04<span class="sr-only"> Draw a temperature chart</span></button>
+            <button id="tab-script" role="tab" aria-selected="false" aria-controls="lesson-script" data-lesson="script" tabindex="-1">05<span class="sr-only"> Render a fractal</span></button>
+          </div>
+          <article id="lesson-inspect" role="tabpanel" aria-labelledby="tab-inspect" tabindex="0">
+            <h3>Inspect the machine</h3>
+            <p>Ask Linux for its architecture and CPU details.</p>
+            <pre><code>uname -m
+cat /proc/cpuinfo</code></pre>
+            <p class="expected-result">Expected: <code>riscv32</code> and the guest CPU details.</p>
+          </article>
+          <article id="lesson-files" role="tabpanel" aria-labelledby="tab-files" tabindex="0" hidden>
+            <h3>Record temperatures</h3>
+            <p>Use <code>&gt;</code> to save four temperatures in Celsius to a file.</p>
+            <pre><code>mkdir -p /tmp/tutorial
+printf '%s\n' \
+  'roof 18' 'garden 24' \
+  'attic 31' 'cellar 16' \
+  &gt; /tmp/tutorial/weather.txt
+cat /tmp/tutorial/weather.txt</code></pre>
+            <p class="expected-result">Expected: Four rows saved in <code>/tmp/tutorial/weather.txt</code>.</p>
+          </article>
+          <article id="lesson-pipeline" role="tabpanel" aria-labelledby="tab-pipeline" tabindex="0" hidden>
+            <h3>Find the warmest places</h3>
+            <p>Sort these two-digit readings as text, then use <code>head</code> to keep the warmest two.</p>
+            <pre><code>printf '%s\n' \
+  'roof 18' 'garden 24' \
+  'attic 31' 'cellar 16' |
+  sort -r -k2 | head -n 2</code></pre>
+            <p class="expected-result">Expected: <code>attic 31</code> and <code>garden 24</code>.</p>
+          </article>
+          <article id="lesson-chart" role="tabpanel" aria-labelledby="tab-chart" tabindex="0" hidden>
+            <h3>Draw a temperature chart</h3>
+            <p>Use a shell loop to draw one <code>#</code> for each degree Celsius.</p>
+            <pre><code>printf '%s\n' \
+  'roof 18' 'garden 24' \
+  'attic 31' 'cellar 16' |
+  while read place temp; do
+    printf '%-7s ' "$place"
+    i=0
+    while [ "$i" -lt "$temp" ]; do
+      printf '#'; i=$((i + 1))
+    done
+    echo " $temp C"
+  done</code></pre>
+            <p class="expected-result">Expected: Four bars, with the longest at <code>attic 31 C</code>.</p>
+          </article>
+          <article id="lesson-script" role="tabpanel" aria-labelledby="tab-script" tabindex="0" hidden>
+            <h3>Render a fractal</h3>
+            <p>Compute the Mandelbrot set with integer arithmetic, and increase <code>limit</code> for more detail.</p>
+            <pre tabindex="0" aria-label="Mandelbrot shell code"><code>limit=16
+y=-8
+while [ "$y" -le 8 ]; do
+  row=; x=-30
+  while [ "$x" -le 10 ]; do
+    a=0; b=0; n=0
+    while [ "$((a*a+b*b))" -le 40000 ] &amp;&amp;
+          [ "$n" -lt "$limit" ]; do
+      t=$(((a*a-b*b)/100+x*7))
+      b=$((2*a*b/100+y*14))
+      a=$t; n=$((n+1))
+    done
+    case $n in
+      "$limit") p=@;;
+      [0-2]) p=' ';;
+      [3-5]) p=.;;
+      [6-9]) p='*';;
+      *) p=+;;
+    esac
+    row="$row$p"; x=$((x+1))
+  done
+  printf '%s\n' "$row"
+  y=$((y+1))
+done</code></pre>
+            <p class="expected-result">Expected: a computed 41 by 17 fractal, with <code>@</code> marking points that reach the limit.</p>
+          </article>
+          <div class="lesson-actions"><button class="button primary" id="run-example" disabled>Run example</button><button class="text-button" id="copy-example" aria-label="Copy example command">Copy command</button></div>
+          <p class="lesson-feedback" id="lesson-feedback" role="status"></p>
+          <div class="lesson-bottom"><button class="text-button" id="next-lesson">Next lesson</button></div>
+        </div>
+        <div class="terminal-panel" id="live-terminal">
+          <div class="terminal-toolbar"><div><span class="terminal-led" id="terminal-led" aria-hidden="true"></span><span>Terminal</span></div><div class="terminal-tools"><button id="restart" aria-controls="restart-confirmation" aria-expanded="false" title="Restart Linux and discard this demo's files">Restart</button><a href="terminal.html?boot=32" target="_blank" rel="noopener" aria-label="Open a new Linux terminal in a new tab">Open terminal ↗</a></div></div>
+          <div id="restart-confirmation" class="restart-confirmation" hidden role="group" aria-label="Restart confirmation"><p>Files created in this demo will be discarded.</p><div><button id="cancel-restart">Keep working</button><button id="confirm-restart">Restart machine</button></div></div>
+          <iframe id="emulator" title="Live RISC-V Linux terminal" src="terminal.html?boot=32&amp;tutorial=1" allow="clipboard-read; clipboard-write"></iframe>
+          <div class="terminal-footer"><span id="machine-status" role="status">Booting Linux…</span></div>
+          <p class="terminal-hint"><kbd>Enter</kbd> runs a command. <kbd>Ctrl</kbd> + <kbd>C</kbd> interrupts it. Right-click to copy or paste.</p>
+          <div class="boot-help" id="boot-help" hidden><p>Keep this tab visible while Linux boots. If it does not start, restart it or <a href="terminal.html?boot=32" target="_blank" rel="noopener">open a separate terminal</a>.</p></div>
+        </div>
+      </div>
+      <noscript><style>[role="tabpanel"][hidden]{display:block!important;margin-top:24px}.lesson-tabs,.lesson-actions,.lesson-feedback,.lesson-bottom{display:none}</style><p class="boot-help">JavaScript is needed to run the emulator. You can read all five examples above.</p></noscript>
+    </section>
+    <section class="session-notes" aria-label="Session limits"><p>Restarting or reloading discards this machine's files. This demo has no external network access.</p></section>
+    <section class="documentation" aria-label="Documentation">
+      <p>DartEMU emulates the CPU, memory, and devices in Dart.</p>
+      <nav aria-label="More documentation"><a href="https://github.com/LeeMatthewHiggins/DartEMU/blob/main/docs/browser-tutorial.md">Tutorial reference ↗</a><a href="https://github.com/LeeMatthewHiggins/DartEMU/blob/main/docs/embedding.md">Embed DartEMU ↗</a><a href="terminal.html">Load a VM bundle ↗</a></nav>
+    </section>
+  </main>
+  <footer class="wrap site-footer"><span>Ported from <a href="https://bellard.org/tinyemu/">TinyEMU</a> by Fabrice Bellard.</span><a href="https://github.com/LeeMatthewHiggins/DartEMU/blob/main/THIRD_PARTY_NOTICES.md">Licences &amp; sources</a></footer>
 </body>
 </html>
