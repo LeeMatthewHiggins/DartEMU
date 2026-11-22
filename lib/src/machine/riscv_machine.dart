@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import 'package:dart_emu/src/cpu/cpu_executor.dart';
 import 'package:dart_emu/src/cpu/cpu_state.dart';
+import 'package:dart_emu/src/cpu/hot_loop_warmup.dart';
 import 'package:dart_emu/src/device/memory_block_device.dart';
 import 'package:dart_emu/src/device/virtio/virtio_9p.dart';
 import 'package:dart_emu/src/device/virtio/virtio_block.dart';
@@ -49,6 +50,7 @@ class RiscVMachine {
   ) => RiscVMachine._skeleton(config).._applySnapshot(snapshot);
 
   factory RiscVMachine._skeleton(MachineConfig config) {
+    if (config.xlen == Xlen.rv64) HotLoopWarmup.ensure();
     final memMap = PhysMemoryMap();
     final cpu = CpuExecutor(memMap: memMap, xlen: config.xlen);
 
